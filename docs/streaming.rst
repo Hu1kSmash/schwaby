@@ -8,12 +8,12 @@
 Streaming Client
 ================
 
-A wrapper around the Schwab streaming data API.  This API is a websockets-based 
-streaming API that provides to up-to-the-second data on market activity. Most 
-impressively, it provides realtime data, including Level Two and time of sale 
-data for major equities, options, and futures exchanges. 
+A wrapper around the Schwab streaming data API. This is a websockets-based
+streaming API that provides up-to-the-second data on market activity,
+including Level Two and time-of-sale data for major equities, options and
+futures exchanges.
 
-Here's an example of how you can receive book snapshots of ``GOOG`` (note if you 
+Here's an example of how you can receive book snapshots of ``GOOG`` (note if you
 run this outside regular trading hours you may not see anything):
 
 .. code-block:: python
@@ -36,11 +36,11 @@ run this outside regular trading hours you may not see anything):
 
   async def read_stream():
       await stream_client.login()
- 
+
       def print_message(message):
         print(json.dumps(message, indent=4))
 
-      # Always add handlers before subscribing because many streams start sending 
+      # Always add handlers before subscribing because many streams start sending
       # data immediately after success, and messages with no handlers are dropped.
       stream_client.add_nasdaq_book_handler(print_message)
       await stream_client.nasdaq_book_subs(['GOOG'])
@@ -79,7 +79,7 @@ run this outside regular trading hours you may not see anything):
 Use Overview
 ++++++++++++
 
-The example above demonstrates the end-to-end workflow for using ``schwab.stream``. 
+The example above demonstrates the end-to-end workflow for using ``schwab.stream``.
 There's more in there than meets the eye, so let's dive into the details.
 
 
@@ -87,14 +87,15 @@ There's more in there than meets the eye, so let's dive into the details.
 Logging In
 ----------
 
-Before we can perform any stream operations, the client must be logged in to the 
-stream. Unlike the HTTP client, in which every request is authenticated using a 
-token, this client sends unauthenticated requests and instead authenticates the 
-entire stream. As a result, this login process is distinct from the token 
+Before we can perform any stream operations, the client must be logged in to the
+stream. Unlike the HTTP client, in which every request is authenticated using a
+token, this client sends unauthenticated requests and instead authenticates the
+entire stream. As a result, this login process is distinct from the token
 generation step that's used in the HTTP client.
 
 Stream login is accomplished simply by calling :meth:`StreamClient.login()`. Once
-this happens successfully, all stream operations can be performed. Attemping to
+this happens successfully, all stream operations can be performed. Attempting
+to
 perform operations that require login before this function is called raises an
 exception.
 
@@ -159,22 +160,22 @@ is reading the socket hands the response to whoever is waiting for it, so a
 subscription made against a quiet stream is sent immediately rather than waiting
 for a message to arrive first.
 
-When subscriptions are called multiple times on the same stream, the results 
-vary. What's more, these results aren't documented in the official 
-documentation. As a result, it's recommended not to call a subscription function 
+When subscriptions are called multiple times on the same stream, the results
+vary. What's more, these results aren't documented in the official
+documentation. As a result, it's recommended not to call a subscription function
 more than once for any given stream.
 
-Some services, notably :ref:`equity_charts` and :ref:`futures_charts`, 
-offer ``SERVICE_NAME_add`` functions which can be used to add symbols to the 
-stream after the subscription has been created. For others, calling the 
-subscription methods again seems to clear the old subscription and create a new 
-one. Note this behavior is not officially documented, so this interpretation may 
+Some services, notably :ref:`equity_charts` and :ref:`futures_charts`,
+offer ``SERVICE_NAME_add`` functions which can be used to add symbols to the
+stream after the subscription has been created. For others, calling the
+subscription methods again seems to clear the old subscription and create a new
+one. Note this behavior is not officially documented, so this interpretation may
 be incorrect.
 
 
-----------------------
-Add symbols to Streams
-----------------------
+-------------------------
+Adding Symbols to Streams
+-------------------------
 
 These functions have names that follow the pattern ``SERVICE_NAME_add``.
 These functions send a request to add to the list of subscribed symbols for a
@@ -186,20 +187,19 @@ Un-Subscribing to Streams
 -------------------------
 
 These functions have names that follow the pattern ``SERVICE_NAME_unsubs``.
-These functions send a request to disable the symbols of a streaming data for a
-particular data stream. They are *not* thread safe, so they should only be
-called from one thread. When unsubscribing to services with symbols, symbols
-which were not explicitly unsubscribed remain subscribed.
+These functions send a request to stop streaming the named symbols for a
+particular service. They are *not* thread safe, so they should only be called
+from one thread. Symbols you do not name stay subscribed.
 
 
 --------------------
 Registering Handlers
 --------------------
 
-By themselves, the subscription functions outlined above do nothing except cause 
-messages to be sent to the client. The ``add_SERVICE_NAME_handler`` functions 
-register functions that will receive these messages when they arrive. When 
-messages arrive, these handlers will be called serially. There is no limit to 
+By themselves, the subscription functions outlined above do nothing except cause
+messages to be sent to the client. The ``add_SERVICE_NAME_handler`` functions
+register functions that will receive these messages when they arrive. When
+messages arrive, these handlers will be called serially. There is no limit to
 the number of handlers that can be registered to a service.
 
 
@@ -209,9 +209,9 @@ the number of handlers that can be registered to a service.
 Handling Messages
 -----------------
 
-Once the stream client is properly logged in, subscribed to streams, and has 
-handlers registered, we can start handling messages. This is done simply by 
-awaiting on the ``handle_message()`` function. This function reads a single 
+Once the stream client is properly logged in, subscribed to streams, and has
+handlers registered, we can start handling messages. This is done simply by
+awaiting on the ``handle_message()`` function. This function reads a single
 message and dispatches it to the appropriate handler or handlers.
 
 If a message is received for which no handler is registered, that message is
@@ -226,7 +226,7 @@ applies equally to synchronous and coroutine handlers.
 That is worth knowing when debugging: **a handler which is quietly failing shows
 up in the logs and nowhere else** -- unless you ask for it. See
 :ref:`error_handlers` below. If you are relying on a handler to do something
-important, do one or the other. See :ref:`enable_logging <help>` for how to turn
+important, do one or the other. :ref:`enable_logging` shows how to turn
 logging on.
 
 Handlers should take a single argument representing the stream message received:
@@ -396,7 +396,7 @@ Data Field Relabeling
 ---------------------
 
 Under the hood, this API returns JSON objects with numerical key representing
-labels: 
+labels:
 
 .. code-block:: python
 
@@ -418,9 +418,9 @@ labels:
       }]
   }
 
-These labels are tricky to decode, and require a knowledge of the documentation 
-to decode properly. ``schwaby`` makes your life easier by doing this decoding 
-for you, replacing numerical labels with strings proposed by the community For 
+These labels are tricky to decode, and require a knowledge of the documentation
+to decode properly. ``schwaby`` makes your life easier by doing this decoding
+for you, replacing numerical labels with strings proposed by the community For
 instance, the message above would be relabeled as:
 
 .. code-block:: python
@@ -443,7 +443,7 @@ instance, the message above would be relabeled as:
       }]
   }
 
-This documentation describes the various fields and their numerical values. You 
+This documentation describes the various fields and their numerical values. You
 can find them by investigating the various enum classes ending in ``***Fields``.
 
 .. warning::
@@ -463,7 +463,7 @@ can find them by investigating the various enum classes ending in ``***Fields``.
 Some streams, such as the ones described in :ref:`level_one`, allow you to
 specify a subset of fields to be returned. Subscription handlers for these
 services take a list of the appropriate field enums the extra ``fields``
-parameter. If nothing is passed to this parameter, all supported fields are 
+parameter. If nothing is passed to this parameter, all supported fields are
 requested.
 
 
@@ -471,18 +471,18 @@ requested.
 Stream Statuses
 ---------------
 
-Schwab's streaming functionality is closely modelled on that of the former 
-TDAmeritrade API, and this module was adapted from an implementation written 
+Schwab's streaming functionality is closely modelled on that of the former
+TDAmeritrade API, and this module was adapted from an implementation written
 against it.
 
-As a result, some streams may have been carried over which don't actually work. 
-Some never worked at all, and were implemented only because now-defunct 
+As a result, some streams may have been carried over which don't actually work.
+Some never worked at all, and were implemented only because now-defunct
 documentation referred to them.
 
 Which of them still work is not documented anywhere, so it is worked out by
 trying them. If you find one that behaves differently from what is described
 here, please report it
-`on the issue tracker <https://github.com/Hu1kSmash/schwaby/issues>`__. We'll be updating 
+`on the issue tracker <https://github.com/Hu1kSmash/schwaby/issues>`__. We'll be updating
 this page as we discover new things.
 
 The following streams are confirmed working:
@@ -499,7 +499,7 @@ The following streams are confirmed working:
 OHLCV Charts
 ++++++++++++
 
-These streams summarize trading activity on a minute-by-minute basis for 
+These streams summarize trading activity on a minute-by-minute basis for
 equities and futures, providing OHLCV (Open/High/Low/Close/Volume) data.
 
 
@@ -543,8 +543,8 @@ Minute-by-minute OHLCV data for futures.
 Level One Quotes
 ++++++++++++++++
 
-Level one quotes provide an up-to-date view of bid/ask/volume data. In 
-particular they list the best available bid and ask prices, together with the 
+Level one quotes provide an up-to-date view of bid/ask/volume data. In
+particular they list the best available bid and ask prices, together with the
 requested volume of each. They are updated live as market conditions change.
 
 
@@ -571,7 +571,7 @@ Level one quotes for equities traded on NYSE, AMEX, and PACIFIC.
 Options Quotes
 --------------
 
-Level one quotes for options. Note you can use 
+Level one quotes for options. Note you can use
 :meth:`Client.get_option_chain() <schwab.client.Client.get_option_chain>` to fetch
 available option symbols.
 
@@ -638,23 +638,23 @@ Level one quotes for foreign exchange pairs.
 .. _level_two:
 
 ++++++++++++++++++++
-Level Two Order Book 
+Level Two Order Book
 ++++++++++++++++++++
 
 Level two streams provide a view on continuous order books of various securities.
-The level two order book describes the current bids and asks on the market, and 
+The level two order book describes the current bids and asks on the market, and
 these streams provide snapshots of that state.
 
-Due to the lack of official documentation, these streams are largely reverse 
+Due to the lack of official documentation, these streams are largely reverse
 engineered.  While the labeled data represents a best effort attempt to
 interpret stream fields, it's possible that something is wrong or incorrectly
 labeled.
 
-The documentation lists more book types than are implemented here. In 
+The documentation lists more book types than are implemented here. In
 particular, it also lists ``FOREX_BOOK``, ``FUTURES_BOOK``, and
-``FUTURES_OPTIONS_BOOK`` as accessible streams. All experimentation has resulted 
-in these streams refusing to connect, typically returning errors about 
-unavailable services. Due to this behavior and the lack of official 
+``FUTURES_OPTIONS_BOOK`` as accessible streams. All experimentation has resulted
+in these streams refusing to connect, typically returning errors about
+unavailable services. Due to this behavior and the lack of official
 documentation for book streams generally, ``schwaby`` assumes these streams are not
 actually implemented, and so excludes them. If you have any insight into using
 them, please `let us know <https://github.com/Hu1kSmash/schwaby/issues>`__.
@@ -664,8 +664,8 @@ them, please `let us know <https://github.com/Hu1kSmash/schwaby/issues>`__.
 Equities Order Books: NYSE and NASDAQ
 -------------------------------------
 
-``schwaby`` supports level two data for NYSE and NASDAQ, which are the two major 
-exchanges dealing in equities, ETFs, etc. Stocks are typically listed on one or 
+``schwaby`` supports level two data for NYSE and NASDAQ, which are the two major
+exchanges dealing in equities, ETFs, etc. Stocks are typically listed on one or
 the other, and it is useful to learn about the differences between them:
 
  * `"The NYSE and NASDAQ: How They Work" on Investopedia
@@ -680,14 +680,18 @@ You can identify on which exchange a symbol is listed by using
 
 .. code-block:: python
 
-  r = c.get_instruments(
-          ['GOOG'], projection=c.Instrument.Projection.FUNDAMENTAL)
+  import httpx2
+
+  from schwab.client import Client
+
+  r = client.get_instruments(
+          ['GOOG'], projection=Client.Instrument.Projection.FUNDAMENTAL)
   assert r.status_code == httpx2.codes.OK, r.raise_for_status()
   print(r.json())
 
-However, many symbols have order books available on these streams even though 
+However, many symbols have order books available on these streams even though
 this API call returns neither NYSE nor NASDAQ. The only sure-fire way to find out
-whether the order book is available is to attempt to subscribe and see what 
+whether the order book is available is to attempt to subscribe and see what
 happens.
 
 Note to preserve equivalence with what little documentation there is, the NYSE
@@ -710,10 +714,10 @@ book, but if you find any behavior that suggests otherwise please
 Options Order Book
 ------------------
 
-This stream provides the order book for options. It's not entirely clear what 
-exchange it aggregates from, but it's been tested to work and deliver data. The 
-leading hypothesis is that it is the order book for the 
-`Chicago Board of Exchange <https://www.cboe.com/us/options>`__ options 
+This stream provides the order book for options. It's not entirely clear what
+exchange it aggregates from, but it's been tested to work and deliver data. The
+leading hypothesis is that it is the order book for the
+`Chicago Board of Exchange <https://www.cboe.com/us/options>`__ options
 exchanges, although this is an admittedly an uneducated guess.
 
 .. automethod:: schwab.streaming::StreamClient.options_book_subs
