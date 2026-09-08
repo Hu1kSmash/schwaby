@@ -24,7 +24,7 @@ Before You Ask
 Most problems are solved faster by gathering a little information first.
 
  1. Check that you are on the latest version, and note which version you are
-    using. ``print(schwab.version.version)`` will tell you.
+    using. ``print(schwab.__version__)`` will tell you.
  2. Note your OS and how you are running your code -- a terminal, a notebook, a
     container, an IDE. Several common failures are specific to one of these.
  3. Capture the full stack trace and error message, not just the last line.
@@ -48,13 +48,25 @@ Enable Logging
 
 Behind the scenes, ``schwaby`` performs diagnostic logging of its activity
 using Python's `logging <https://docs.python.org/3/library/logging.html>`__
-module. You can enable this debug information by telling the root logger to
-print these messages:
+module. Two things are needed to see it: somewhere for the messages to go,
+and a level low enough to let them through.
 
 .. code-block:: python
 
   import logging
+
   logging.getLogger('').addHandler(logging.StreamHandler())
+  logging.getLogger('schwab').setLevel(logging.DEBUG)
+
+**The second line is the one people miss.** A handler on its own changes
+nothing, because the root logger's default level is ``WARNING`` and almost
+everything this library logs is ``DEBUG``. Adding the handler and stopping
+there produces a program that looks like it has logging switched on and emits
+none of it.
+
+Setting the level on ``schwab`` rather than on the root logger keeps the output
+to this library. Point it at ``''`` instead if you want everything, including
+whatever your other dependencies have to say.
 
 Sometimes this additional logging is enough to debug the problem yourself.
 Before you ask for help, read through your logs to see whether there is
