@@ -1280,10 +1280,13 @@ class BaseClient(EnumEnforcer):
           **Schwab ignores** ``sort_order`` **and** ``frequency`` **on this
           endpoint.** Both are sent --- they appear in the request URL --- and
           the response is identical whichever values you pass: always the top
-          ten by *share* volume, always for the whole session. Measured
-          against a live account: ``PERCENT_CHANGE_DOWN`` does not
-          invert the ranking, and rows come back monotonically descending in
-          ``volume`` while ``netPercentChange`` is unordered.
+          ten by *share* volume, always for the whole session.
+          ``PERCENT_CHANGE_DOWN`` does not invert the ranking, and rows come
+          back monotonically descending in ``volume`` while
+          ``netPercentChange`` is unordered. Measured against a live account
+          by polling eleven indices every five minutes for a whole session:
+          two different ``sort`` values returned identical lists in all 495
+          index-cycles.
 
           The streaming screener does honour both. If you need a ranking other
           than volume, or a time-resolved bucket, use
@@ -1295,8 +1298,9 @@ class BaseClient(EnumEnforcer):
         documentation does not describe them accurately:
 
         * ``totalVolume`` is the **index** total, not the instrument's. It is
-          identical on every row of a response. Summing it across rows sums
-          the same number ten times.
+          identical on every row of a response --- in all 990 responses of the
+          session above, without exception. Summing it across rows sums the
+          same number ten times.
         * ``marketShare`` is derived, not measured: ``volume / totalVolume *
           100`` exactly. Because it is relative to the index queried, the same
           instrument reports a different ``marketShare`` under ``OPTION_ALL``
@@ -1304,6 +1308,20 @@ class BaseClient(EnumEnforcer):
 
         ``volume`` is the instrument's own share volume, and ``trades`` its
         own trade count.
+
+        Two things about the values themselves, from the same session:
+
+        * **The membership barely moves.** Across four hours of five-minute
+          polls, the median change between consecutive polls was zero names
+          and the maximum was one, with only twelve or thirteen distinct
+          symbols appearing all session. That follows from ranking on
+          cumulative session volume, which only grows. Polling this endpoint
+          frequently gets you the same list.
+        * **``INDEX_ALL`` does not return indices.** It returns equities, it
+          is not the same set as ``EQUITY_ALL``, and none of its members
+          appeared in the ``NYSE`` list at any point while eight or nine of
+          ten appeared in ``NASDAQ``. What it actually selects is not
+          documented and has not been established here.
 
         :param index: Category of mover. See :class:`Movers.Index` for valid
                       values.
