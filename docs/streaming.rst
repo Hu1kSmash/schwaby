@@ -420,8 +420,8 @@ labels:
 
 These labels are tricky to decode, and require a knowledge of the documentation
 to decode properly. ``schwaby`` makes your life easier by doing this decoding
-for you, replacing numerical labels with strings proposed by the community For
-instance, the message above would be relabeled as:
+for you, replacing numerical labels with names proposed by the community. The
+message above is delivered as:
 
 .. code-block:: python
 
@@ -460,11 +460,10 @@ can find them by investigating the various enum classes ending in ``***Fields``.
 
    This is a property of the library, not of Schwab's protocol.
 
-Some streams, such as the ones described in :ref:`level_one`, allow you to
-specify a subset of fields to be returned. Subscription handlers for these
-services take a list of the appropriate field enums the extra ``fields``
-parameter. If nothing is passed to this parameter, all supported fields are
-requested.
+Some streams let you ask for a subset of the fields. The five
+:ref:`level_one` subscription functions take a list of the appropriate field
+enums as an extra ``fields`` argument; omit it and every supported field is
+requested. No other service accepts one.
 
 
 ---------------
@@ -481,9 +480,8 @@ documentation referred to them.
 
 Which of them still work is not documented anywhere, so it is worked out by
 trying them. If you find one that behaves differently from what is described
-here, please report it
-`on the issue tracker <https://github.com/Hu1kSmash/schwaby/issues>`__. We'll be updating
-this page as we discover new things.
+here, please report it `on the issue tracker
+<https://github.com/Hu1kSmash/schwaby/issues>`__.
 
 The following streams are confirmed working:
  * :ref:`charts`
@@ -646,7 +644,7 @@ The level two order book describes the current bids and asks on the market, and
 these streams provide snapshots of that state.
 
 Due to the lack of official documentation, these streams are largely reverse
-engineered.  While the labeled data represents a best effort attempt to
+engineered. While the labeled data represents a best-effort attempt to
 interpret stream fields, it's possible that something is wrong or incorrectly
 labeled.
 
@@ -694,9 +692,9 @@ this API call returns neither NYSE nor NASDAQ. The only sure-fire way to find ou
 whether the order book is available is to attempt to subscribe and see what
 happens.
 
-Note to preserve equivalence with what little documentation there is, the NYSE
-book is called "listed." Testing indicates this stream corresponds to the NYSE
-book, but if you find any behavior that suggests otherwise please
+Note that, to match what little documentation exists, the NYSE book is called
+"listed". Testing indicates this stream corresponds to the NYSE book; if you
+see behaviour suggesting otherwise, please
 `let us know <https://github.com/Hu1kSmash/schwaby/issues>`__.
 
 .. automethod:: schwab.streaming::StreamClient.nyse_book_subs
@@ -718,7 +716,7 @@ This stream provides the order book for options. It's not entirely clear what
 exchange it aggregates from, but it's been tested to work and deliver data. The
 leading hypothesis is that it is the order book for the
 `Chicago Board of Exchange <https://www.cboe.com/us/options>`__ options
-exchanges, although this is an admittedly an uneducated guess.
+exchanges, though that is a guess and not an informed one.
 
 .. automethod:: schwab.streaming::StreamClient.options_book_subs
 .. automethod:: schwab.streaming::StreamClient.options_book_unsubs
@@ -933,9 +931,9 @@ exception. A consumer comparing against an upper-case ``'ORDERCREATED'``
 matches nothing.
 
 **Match case-insensitively, and do not assume case is the only difference.**
-``ORDERUROUT`` --- which this list also carried, and which at least one consumer
-copied from it --- is not a case variant of ``OrderUROutCompleted``. Upper-casing
-does not rescue the truncated form; nothing matches it at all.
+``ORDERUROUT`` is not a case variant of ``OrderUROutCompleted`` but a truncation
+of it, and no amount of case folding will make the two meet. A list containing
+it matches nothing at all.
 
 .. code-block:: python
 
@@ -962,9 +960,9 @@ within Schwab's own tokens, so match on both.
 ``OrderUROutCompleted`` says the order **came off the book**. It does not say
 why, and it is worth resisting the obvious gloss. Calling it "an unsolicited
 out" asserts that nobody asked for the cancellation --- and the same token ends
-a cancel you issued yourself. Any name
-or operator-facing phrase built on it should describe what the venue did, not
-what caused it. The cause is carried by the token beside it, below.
+a cancel you issued yourself. Any name or operator-facing phrase built on it
+should describe what the venue did, not what caused it. The cause is carried by
+the token beside it, below.
 
 **A cancel you issue yourself looks like this**, measured by placing a
 resting order and cancelling it::
@@ -991,8 +989,8 @@ presence of ``OrderUROutCompleted`` alone to tell a cancel from a rejection.
 stop order sitting on the book, and a program that places only market orders
 will never see them --- it will meet them the first time a human places an order
 by hand in the same account from Schwab's own interface. That is exactly how
-they were observed. If you match ``MESSAGE_TYPE`` against an
-allow-list, an ordinary hand trade will otherwise raise an unknown-shape alert.
+they were observed. If you match ``MESSAGE_TYPE`` against an allow-list, an
+ordinary hand trade will otherwise raise an unknown-shape alert.
 
 Their provenance is thinner than the rest of this list, and that is worth
 saying. They were recorded as a vocabulary at the time they were seen, but the
@@ -1017,10 +1015,10 @@ changes what an operator should do about it.
 **Distinguishing a relabeled item from a raw one.** After relabeling, a
 ``data``-channel content item carries ``seq``, ``key``, ``ACCOUNT``,
 ``MESSAGE_TYPE`` and ``MESSAGE_DATA``. A content item carrying none of those is
-a ``notify``-channel item, which this library forwards unchanged -- see the
-warning under :ref:`Data Field Relabeling <data_field_relabeling>` above. Observed values there
-include an activity token of ``orderfill`` and a benign notice reading
-``feature not supported``.
+a ``notify``-channel item, which this library forwards unchanged --- see the
+warning under :ref:`Data Field Relabeling <data_field_relabeling>` above.
+Observed values there include an activity token of ``orderfill`` and a benign
+notice reading ``feature not supported``.
 
 If you learn something this list gets wrong, a pull request correcting it is
 more useful than a private patch.
