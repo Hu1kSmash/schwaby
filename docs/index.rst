@@ -1,14 +1,14 @@
 .. _index:
 
 ``schwaby``: An Unofficial Charles Schwab API Client
-======================================================
+====================================================
 
 .. image:: _static/github-logo.png
    :width: 40
    :target: https://github.com/Hu1kSmash/schwaby
 
-``schwaby`` is an unofficial Python client for the Charles Schwab trading API. It
-covers every endpoint Schwab publishes, turns the streaming websocket into
+``schwaby`` is an unofficial Python client for the Charles Schwab trading API.
+It covers every endpoint Schwab publishes, turns the streaming websocket into
 something you can read, builds orders Schwab will accept, and takes the sharp
 edges off the parts that matter when the account is funded.
 
@@ -16,9 +16,24 @@ edges off the parts that matter when the account is funded.
 
   pip install schwaby
 
-The distribution is ``schwaby``; the importable package is ``schwab``. Note that
-it cannot be installed alongside ``schwab-py``, which provides the same package
+The distribution is ``schwaby``; the package you import is ``schwab``. It
+cannot be installed alongside ``schwab-py``, which provides that same package
 --- see :ref:`getting_started`.
+
+Once you have a token, the shape of it is this:
+
+.. code-block:: python
+
+  from schwab.auth import client_from_token_file
+
+  c = client_from_token_file(
+          token_path='/path/to/token.json',
+          api_key='APIKEY',
+          app_secret='APP_SECRET')
+
+  r = c.get_quote('AAPL')
+  r.raise_for_status()
+  print(r.json())
 
 New here? Start with :ref:`getting_started`, then :ref:`auth`.
 
@@ -35,11 +50,9 @@ New here? Start with :ref:`getting_started`, then :ref:`auth`.
    and the next one is in there somewhere too, unfound.
 
    **You are responsible for every order your code places.** Not the author,
-   not the maintainer, not anyone who has ever contributed. The MIT licence
-   puts it in legal terms --- no warranty of any kind, and no liability for any
-   claim or damages --- and it means what it says: if this library loses you
-   money, the loss is yours. Nothing here is financial advice. There is no
-   undo; a wrong order is filled before you know it was wrong.
+   not the maintainer, not anyone who has ever contributed. If this library
+   loses you money, the loss is yours. Nothing here is financial advice. There
+   is no undo; a wrong order is filled before you know it was wrong.
 
    Start with size you can afford to lose entirely and stay there longer than
    feels necessary. Reconcile against the broker rather than trusting what this
@@ -62,10 +75,9 @@ New here? Start with :ref:`getting_started`, then :ref:`auth`.
   contributing
 
 
-
-------------------------
+--------------------
 Where this came from
-------------------------
+--------------------
 
 ``schwaby`` began from `alexgolec/schwab-py
 <https://github.com/alexgolec/schwab-py>`__, an MIT-licensed library by Alex
@@ -81,13 +93,20 @@ See the `changelog
 changed, and the `README <https://github.com/Hu1kSmash/schwaby>`__ for the
 longer version.
 
-**Disclaimer.** ``schwaby`` is an unofficial API wrapper, in no way endorsed by
-or affiliated with Charles Schwab or any associated organization. Read and
-understand the terms of service of the underlying API before using it.
+
+-----------------------
+Disclaimer and licence
+-----------------------
+
+``schwaby`` is an unofficial API wrapper, in no way endorsed by or affiliated
+with Charles Schwab or any associated organization. Read and understand the
+terms of service of the underlying API before using it.
 
 The software is provided **as is, without warranty of any kind**. The author,
 the maintainer and every contributor accept no responsibility or liability for
 any loss, damage, missed trade, unintended order, or any other consequence
 whatsoever arising from its use --- financial or otherwise, foreseeable or not.
-Using it against a funded account is entirely at your own risk. See the
-``LICENSE`` file for the binding text.
+Using it against a funded account is entirely at your own risk.
+
+The ``LICENSE`` file carries the binding text; where this page and that file
+differ, that file governs.
