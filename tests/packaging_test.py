@@ -666,6 +666,46 @@ class ScreenerVocabularyTest(unittest.TestCase):
         self.assertNotIn('$SPX.X', documented)
 
 
+class SplitLinkTest(unittest.TestCase):
+    """No hyperlink target is broken across a line.
+
+    RST allows a link target to wrap, and sphinx renders it correctly by
+    joining the lines. Everything that reads the source instead sees a
+    truncated URL, and that is most things: `LinkTest` below, a grep, a
+    reviewer skimming a diff.
+
+    Five links across four pages had wrapped, and the halves left behind were
+    plausible enough to pass unnoticed --- `https://www.sec.gov/`,
+    `https://www.investopedia.com/articles/active-trading/032614/`,
+    `https://www.pandas.pydata.org/...api/`. `LinkTest` had been checking
+    those, reporting the host was fine, and never seeing the article.
+
+    Catching it needs the raw text rather than the parsed document, because
+    by the time sphinx has parsed it the defect is gone.
+    """
+
+    @no_duplicates
+    def test_no_link_target_wraps_across_a_line(self):
+        import pathlib
+        import re
+
+        with in_repo_root():
+            offenders = []
+            for path in sorted(pathlib.Path('docs').glob('*.rst')):
+                text = path.read_text(encoding='utf-8')
+                for m in re.finditer(r'<(https?://[^>]*)>', text, re.S):
+                    if '\n' in m.group(1):
+                        line = text[:m.start()].count('\n') + 1
+                        offenders.append('%s:%d %r' % (
+                                path, line, m.group(1)[:60]))
+
+        self.assertEqual(
+                [], offenders,
+                'link targets split across a line -- sphinx joins them, but '
+                'anything reading the source sees only the first half: %s'
+                % offenders)
+
+
 class DocReferenceTest(unittest.TestCase):
     """Every name the documentation points at, resolved against the code.
 
