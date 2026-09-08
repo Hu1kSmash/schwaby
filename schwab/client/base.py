@@ -1275,12 +1275,48 @@ class BaseClient(EnumEnforcer):
     def get_movers(self, index, *, sort_order=None, frequency=None):
         '''Get a list of the top ten movers for a given index.
 
-        :param index: Category of mover. See :class:`Movers.Index` for valid 
+        .. warning::
+
+          **Schwab ignores** ``sort_order`` **and** ``frequency`` **on this
+          endpoint.** Both are sent --- they appear in the request URL --- and
+          the response is identical whichever values you pass: always the top
+          ten by *share* volume, always for the whole session. Measured
+          2026-09-08 against a live account: ``PERCENT_CHANGE_DOWN`` does not
+          invert the ranking, and rows come back monotonically descending in
+          ``volume`` while ``netPercentChange`` is unordered.
+
+          The streaming screener does honour both. If you need a ranking other
+          than volume, or a time-resolved bucket, use
+          :meth:`~schwab.streaming.StreamClient.screener_equity_subs`; a
+          subscription at frequency ``0`` reproduces this endpoint's output.
+          See :ref:`screener`.
+
+        Two fields in the response are easy to misread, and Schwab's own
+        documentation does not describe them accurately:
+
+        * ``totalVolume`` is the **index** total, not the instrument's. It is
+          identical on every row of a response. Summing it across rows sums
+          the same number ten times.
+        * ``marketShare`` is derived, not measured: ``volume / totalVolume *
+          100`` exactly. Because it is relative to the index queried, the same
+          instrument reports a different ``marketShare`` under ``OPTION_ALL``
+          than under ``OPTION_PUT`` while its ``volume`` is unchanged.
+
+        ``volume`` is the instrument's own share volume, and ``trades`` its
+        own trade count.
+
+        :param index: Category of mover. See :class:`Movers.Index` for valid
                       values.
-        :param sort_order: Order in which to return values. See 
-                           :class:`Movers.SortOrder for valid values`
-        :param frequency: Only return movers that saw this magnitude or greater. 
-                          See :class:`Movers.Frequency` for valid values.
+        :param sort_order: Requested ranking. See :class:`Movers.SortOrder`
+                           for valid values. **Ignored by Schwab** --- see the
+                           warning above.
+        :param frequency: Requested time bucket, in minutes, ``0`` meaning the
+                          whole session. See :class:`Movers.Frequency` for
+                          valid values. **Ignored by Schwab** --- see the
+                          warning above. (It is a bucket, not a threshold; an
+                          earlier version of this docstring described it as
+                          "movers that saw this magnitude or greater", which
+                          it never was.)
         '''
         index = self.convert_enum(index, self.Movers.Index)
         sort_order = self.convert_enum(sort_order, self.Movers.SortOrder)

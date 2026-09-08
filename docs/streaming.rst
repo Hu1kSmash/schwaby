@@ -810,7 +810,7 @@ volume.
 --- passing a ticker subscribes to nothing and reports no error.
 
 (PREFIX)_(SORTFIELD)_(FREQUENCY) where PREFIX is:
- * Indices: $COMPX $DJI, $SPX.X, INDEX_ALL
+ * Indices: $COMPX, $DJI, $SPX, INDEX_ALL
  * Exchanges: NYSE, NASDAQ, OTCBB, EQUITY_ALL
  * Option: OPTION_PUT, OPTION_CALL, OPTION_ALL
 
@@ -818,7 +818,33 @@ and sortField is:
  * VOLUME, TRADES, PERCENT_CHANGE_UP, PERCENT_CHANGE_DOWN, AVERAGE_PERCENT_VOLUME
 
 and frequency is:
- * 0, 1, 5, 10, 30 60 minutes (0 is for all day)
+ * 0, 1, 5, 10, 30, 60 minutes (0 is for all day)
+
+.. danger::
+
+  **Schwab does not reject a malformed key. It acknowledges success and then
+  sends nothing, indefinitely.** Measured 2026-09-08 against a live account:
+  ``NOT_A_PREFIX_VOLUME_5``, ``NASDAQ_NOT_A_SORT_5``, ``NASDAQ_VOLUME_7`` and
+  the bare ticker ``AAPL`` each returned ``code: 0, "SUBS command
+  succeeded"`` and delivered zero frames.
+
+  So there is no error to catch and no exception to see. A typo in a key is
+  indistinguishable, from inside your program, from a quiet market --- and a
+  screener that legitimately has nothing to report looks exactly the same.
+  Validate keys before subscribing rather than after.
+
+  This is why the prefix above matters. ``$SPX.X``, inherited from the
+  pre-Schwab API and carried on this page for a long time, is not a valid
+  prefix: over REST it is an HTTP 400, and on the stream it is accepted and
+  silent forever.
+
+.. note::
+
+  ``AVERAGE_PERCENT_VOLUME`` is documented by Schwab and accepted by the
+  stream, and delivers nothing --- ``SUBS command succeeded`` followed by
+  zero frames, the same signature as an invalid key. The other four sort
+  fields all return distinct populations. Treat it as unavailable rather
+  than as something you are using incorrectly.
 
 Both the equity and option screener streams use a common set of fields:
 

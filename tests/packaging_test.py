@@ -596,6 +596,76 @@ class DocsConfigTest(unittest.TestCase):
         self.assertIn('Alex Golec', namespace['copyright'])
 
 
+class ScreenerVocabularyTest(unittest.TestCase):
+    """The REST enum and the streaming prose describe the same vocabulary.
+
+    `Client.Movers.Index` and the prefix list in the screener section of
+    `docs/streaming.rst` are the same set of identifiers -- Schwab uses them
+    for the REST `symbol_id` and as the first component of a streaming
+    subscription key. They drifted: the enum said `$SPX` and the prose said
+    `$SPX.X`, inherited from the pre-Schwab API, for a long time with nothing
+    to notice.
+
+    That mattered more than a typo. Over REST `$SPX.X` is an HTTP 400, which
+    is at least loud. On the stream Schwab replies `code: 0, "SUBS command
+    succeeded"` and then sends nothing, forever -- measured 2026-09-08 -- so a
+    reader following the prose got a success acknowledgement and silence, with
+    no error anywhere to explain it.
+
+    **The tokens are compared exactly, against the bullet list alone.** The
+    first version of this test asked `value in section` and passed with the
+    bug reinstated, because `'$SPX' in '$SPX.X'` is true and because the
+    section also contains a paragraph naming the wrong spelling on purpose. A
+    substring test against prose that discusses its own counter-example cannot
+    fail.
+    """
+
+    def prefixes(self):
+        """The identifiers named in the screener section's bullet list."""
+        with in_repo_root():
+            with open('docs/streaming.rst', encoding='utf-8') as f:
+                doc = f.read()
+
+        start = doc.index('(PREFIX)_(SORTFIELD)_(FREQUENCY)')
+        end = doc.index('and sortField is:', start)
+
+        found = set()
+        for line in doc[start:end].split('\n'):
+            line = line.strip()
+            if not line.startswith('*') or ':' not in line:
+                continue
+            for token in line.split(':', 1)[1].split(','):
+                token = token.strip()
+                if token:
+                    found.add(token)
+        return found
+
+    @no_duplicates
+    def test_the_bullet_list_is_exactly_the_enum(self):
+        from schwab.client import Client
+
+        documented = self.prefixes()
+        known = {m.value for m in Client.Movers.Index}
+
+        self.assertEqual(
+                set(), known - documented,
+                'Movers.Index values missing from the screener bullet list')
+        self.assertEqual(
+                set(), documented - known,
+                'the screener bullet list names prefixes that are not '
+                'Movers.Index values -- `$SPX.X` was exactly this, and Schwab '
+                'accepts it on the stream without ever delivering a frame')
+
+    @no_duplicates
+    def test_the_comparison_is_exact_not_substring(self):
+        # The positive control this test needed and did not have. `$SPX.X`
+        # contains `$SPX`, so a membership test against the raw text passes
+        # with the defect present. Prove the comparison rejects it.
+        documented = self.prefixes()
+        self.assertIn('$SPX', documented)
+        self.assertNotIn('$SPX.X', documented)
+
+
 class DocReferenceTest(unittest.TestCase):
     """Every name the documentation points at, resolved against the code.
 
