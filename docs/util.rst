@@ -74,6 +74,60 @@ raises rather than returning a sentinel, so journalling or bookkeeping written
 after it is skipped on exactly the path where an order may be live and
 unrecorded. Put that work above the call, or inside the handlers.
 
+.. _reconciling:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Finding an order you have no ID for
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``reconcile_recent_orders`` above is a placeholder for the work this section
+describes. :class:`~schwab.utils.OrderIdNotFoundError` means Schwab took the
+order and did not hand back a handle, so the only way to find it is to ask what
+the account has done lately and recognise it:
+
+.. code-block:: python
+
+  import datetime
+
+  from schwab.client import Client
+
+  def find_recent(client, account_hash, symbol, quantity, placed_at):
+      '''Returns orders that plausibly match one just placed.'''
+      window = datetime.timedelta(minutes=10)
+      r = client.get_orders_for_account(
+              account_hash,
+              from_entered_datetime=placed_at - window,
+              to_entered_datetime=placed_at + window)
+      r.raise_for_status()
+
+      matches = []
+      for order in r.json():
+          for leg in order.get('orderLegCollection', []):
+              if (leg.get('instrument', {}).get('symbol') == symbol
+                      and leg.get('quantity') == quantity):
+                  matches.append(order)
+      return matches
+
+Capture ``placed_at`` **before** calling
+:meth:`~schwab.client.Client.place_order`, not after you have caught the
+exception --- by then you are guessing at a time you could have recorded.
+
+.. warning::
+
+  **This identifies orders; it does not identify *the* order.** Nothing in the
+  response distinguishes the order you just placed from an identical one placed
+  by a strategy running beside you, or by a human at a terminal. If
+  ``find_recent`` returns more than one, that is a situation for a person, not
+  for code that cancels the first match.
+
+  Give the datetimes a timezone. Naive ones are read as the wall clock of
+  whichever machine is running --- see :ref:`the note in the client
+  documentation <client>` --- which on a container set to UTC silently shifts
+  the window by hours and can return nothing at all.
+
+Every order carries ``orderId``, so once a match is confirmed you have the
+handle the failed call could not give you.
+
 .. automethod:: schwab.utils.Utils.extract_order_id
 
 

@@ -451,6 +451,47 @@ helper function <extract_order_id>`. Otherwise, see
 .. automethod:: schwab.client.Client.cancel_order
 .. automethod:: schwab.client.Client.replace_order
 
+.. warning::
+
+  **A replacement is a new order with a new ID.** Schwab cancels the original
+  and creates a fresh one, so anything tracking the old ID is now watching a
+  cancelled order --- and will conclude the position closed while the
+  replacement is still working.
+
+  Getting the new ID is less settled than it looks. Schwab documents the
+  ``Location`` header nowhere at all --- :meth:`Utils.extract_order_id
+  <schwab.utils.Utils.extract_order_id>` reads it because that is where a
+  placed order's ID is observed to arrive, not because it is specified. Whether
+  a replacement answers the same way has not been established here.
+
+  So do not assume the ID you hold is still the live one:
+
+  .. code-block:: python
+
+    r = client.replace_order(account_hash, order_id, new_order_spec)
+    r.raise_for_status()
+
+    # The ID in hand now refers to a cancelled order. Find the replacement
+    # rather than inferring it -- see the reconciliation recipe.
+    order_id = None
+
+  :ref:`reconciling` shows how to locate an order you have no ID for, which is
+  exactly the position a replacement leaves you in. If you find that
+  ``extract_order_id`` does read the new ID from a replacement response,
+  `that is worth reporting
+  <https://github.com/Hu1kSmash/schwaby/issues>`__ --- it would settle this.
+
+**Testing a replacement without sending it.** :meth:`preview_order
+<schwab.client.Client.preview_order>` takes the same order spec and reports
+what Schwab would do with it, which is worth a call the first time a
+replacement is constructed programmatically:
+
+.. code-block:: python
+
+  r = client.preview_order(account_hash, new_order_spec)
+  r.raise_for_status()
+  print(r.json())
+
 
 +++++++++++++++
 Other Endpoints
