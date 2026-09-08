@@ -671,7 +671,7 @@ the other, and it is useful to learn about the differences between them:
  * `"The NYSE and NASDAQ: How They Work" on Investopedia
    <https://www.investopedia.com/articles/basics/03/103103.asp>`__
  * `"Here's the difference between the NASDAQ and NYSE" on Business Insider
-     <https://www.businessinsider.com/heres-the-difference-between-the-nasdaq-and-nyse-2017-7>`__
+   <https://www.businessinsider.com/heres-the-difference-between-the-nasdaq-and-nyse-2017-7>`__
  * `"Can Stocks Be Traded on More Than One Exchange?" on Investopedia
    <https://www.investopedia.com/ask/answers/05/stockmultipleexchanges.asp>`__
 
