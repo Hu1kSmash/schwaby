@@ -833,10 +833,9 @@ and frequency is:
   screener that legitimately has nothing to report looks exactly the same.
   Validate keys before subscribing rather than after.
 
-  This is why the prefix above matters. ``$SPX.X``, inherited from the
-  pre-Schwab API and carried on this page for a long time, is not a valid
-  prefix: over REST it is an HTTP 400, and on the stream it is accepted and
-  silent forever.
+  This is why the prefix above matters. ``$SPX.X`` is not a valid prefix:
+  over REST it is an HTTP 400, and on the stream it is accepted and silent
+  forever.
 
 .. note::
 
@@ -927,8 +926,8 @@ Note ``CANCELED`` with one L.
 
 **``MESSAGE_TYPE`` tokens observed.** These are the tokens **as they appear on
 the wire**, and most of them are CamelCase. ``SUBSCRIBED`` is a genuine
-exception. The upper-case spellings this list used to carry were wrong: a
-consumer comparing against ``'ORDERCREATED'`` matched nothing.
+exception. A consumer comparing against an upper-case ``'ORDERCREATED'``
+matches nothing.
 
 **Match case-insensitively, and do not assume case is the only difference.**
 ``ORDERUROUT`` --- which this list also carried, and which at least one consumer
@@ -958,9 +957,9 @@ Both ``CANCELED`` and ``CANCELLED`` appear -- the spelling is not consistent
 within Schwab's own tokens, so match on both.
 
 ``OrderUROutCompleted`` says the order **came off the book**. It does not say
-why, and it is worth resisting the obvious gloss: this library used to call it
-"an unsolicited out", which asserts that nobody asked for the cancellation ---
-and the same token ends a cancel you issued yourself. Any name
+why, and it is worth resisting the obvious gloss. Calling it "an unsolicited
+out" asserts that nobody asked for the cancellation --- and the same token ends
+a cancel you issued yourself. Any name
 or operator-facing phrase built on it should describe what the venue did, not
 what caused it. The cause is carried by the token beside it, below.
 

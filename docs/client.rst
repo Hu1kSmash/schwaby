@@ -168,9 +168,9 @@ not all users can simply use the following pattern:
 
 .. warning::
 
-  **Catch** ``httpx2`` **exceptions, not** ``httpx`` **ones.** As of 2.0.0 this
-  library is built on ``httpx2``, and ``httpx`` is not a dependency at all. The
-  two share no exception hierarchy, so this stops catching anything:
+  **Catch** ``httpx2`` **exceptions, not** ``httpx`` **ones.** This library is
+  built on ``httpx2``, and ``httpx`` is not a dependency at all. The two share
+  no exception hierarchy, so this catches nothing:
 
   .. code-block:: python
 
@@ -183,12 +183,10 @@ not all users can simply use the following pattern:
         retry()
 
   It fails in the worst way available: nothing raises at import, nothing raises
-  at the ``try``, and the ``except`` simply never matches --- so a retry that
-  used to handle rate limiting silently stops handling it, and the exception
-  propagates to whatever is above. Import ``httpx2`` and catch
-  ``httpx2.HTTPStatusError`` instead. This really happened to a consumer of this
-  library on the 2.0.0 upgrade, and the symptom was an unhandled exception
-  during a burst of 429s.
+  at the ``try``, and the ``except`` simply never matches --- so the retry never
+  runs and the exception propagates to whatever is above. A handler written this
+  way around rate limiting presents as an unhandled exception during a burst of
+  429s. Import ``httpx2`` and catch ``httpx2.HTTPStatusError`` instead.
 
 The API indicates errors using the response status code, and this pattern will 
 raise the appropriate exception if the response is not a success. The data can 

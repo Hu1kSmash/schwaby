@@ -142,12 +142,11 @@ def _require_price_string(name, price):
     '''
     Prices are strings, or ``decimal.Decimal``. See :ref:`price_strings`.
 
-    A float used to be accepted and truncated here. That conversion is gone. It
-    was lossy in the direction that costs money -- truncating the binary value
-    sent a price a tick below the one asked for -- and even done correctly, how
-    to round a price is a decision belonging to the caller, who knows what the
-    order is for. There is no rounding this can pick which is right for
-    everyone.
+    A float is refused rather than converted. The conversion is lossy in the
+    direction that costs money -- truncating the binary value sends a price a
+    tick below the one asked for -- and even done correctly, how to round a
+    price is a decision belonging to the caller, who knows what the order is
+    for. There is no rounding this could pick which is right for everyone.
 
     ``Decimal`` is accepted because it is the type that avoids the problem
     rather than one that hides it: it carries the precision the caller chose,
@@ -343,11 +342,10 @@ class OrderBuilder(EnumEnforcer):
         **This is probably not the method you want.** To route an order to a
         particular venue, use
         :meth:`~schwab.orders.generic.OrderBuilder.set_requested_destination`.
-        Until 3.0.0 this method validated its argument against
-        :class:`~schwab.orders.common.Destination`, whose values are the ones
-        Schwab lists for ``requestedDestination`` -- so it both refused legal
-        values for this field and looked like the way to pick a venue. It now
-        takes the string Schwab's schema says it takes.
+        This field takes the string Schwab's schema says it takes. It is not
+        the venue selector, and :class:`~schwab.orders.common.Destination`
+        does not apply to it --- those values belong to
+        ``requestedDestination``.
         '''
         self._destinationLinkName = destination_link_name
         return self

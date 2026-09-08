@@ -392,10 +392,11 @@ class StreamClient(EnumEnforcer):
         failure and prints a "--- Logging error ---" block to stderr, so the
         stream survives either way. What it costs without this is the content
         of every debug line replaced by a traceback, for exactly the people who
-        customised the decoder and are most likely to be debugging it. Measured
-        rather than assumed -- an earlier version of this comment claimed the
-        exception ended the receive loop, which it does not; that reading came
-        from a test run, where pytest's capture handler re-raises.
+        customised the decoder and are most likely to be debugging it.
+
+        The exception does not end the receive loop. Note that a test run can
+        suggest otherwise, because pytest's capture handler re-raises where
+        logging would have swallowed it.
         """
         try:
             return json.dumps(obj, indent=4)

@@ -192,10 +192,6 @@ class OrderIdNotFoundError(SchwabError):
     happened" --- :meth:`Client.get_orders_for_account` over a recent time
     window will find it.
 
-    Until 3.0.0 both of the conditions below returned ``None``, which is the
-    same value a caller gets from plenty of harmless things, so the usual
-    handling was ``if order_id:`` and a live order went untracked.
-
     ``.response`` is the ``place_order`` response. ``.location`` is the raw
     ``Location`` header, or ``None`` when there was not one.
 
@@ -365,10 +361,6 @@ class Utils(EnumEnforcer):
           different account than this :class:`Utils` was built with. **The
           order is live**, on the account Schwab named; the exception carries
           its ID.
-
-        Until 3.0.0 the two middle cases returned ``None`` instead, and shared
-        that value with each other. A caller writing ``if order_id:`` therefore
-        skipped tracking an order that had very likely been placed.
 
         :param place_order_response: Response from
                                      :meth:`Client.place_order()
