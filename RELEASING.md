@@ -150,7 +150,46 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    Dates belong in `CHANGELOG.md`, which is a dated record by construction, and
    in `~/schwab/` working notes, which are not shipped.
 
-5. Verify, on **3.11, 3.12 and 3.14** — 3.14 is what the downstream consumer
+5. **For a documentation-only release, prove it rather than asserting it.**
+
+   ```shell
+   python - <<'EOF'
+   import ast, subprocess, pathlib
+   PREV = 'vPREV'
+   changed = subprocess.run(['git', 'diff', '--name-only', PREV + '..HEAD',
+                             '--', 'schwab/'],
+                            capture_output=True, text=True).stdout.split()
+   def strip(src):
+       t = ast.parse(src)
+       for n in ast.walk(t):
+           if isinstance(n, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+               b = n.body
+               if (b and isinstance(b[0], ast.Expr)
+                       and isinstance(b[0].value, ast.Constant)
+                       and isinstance(b[0].value.value, str)):
+                   b.pop(0)
+       return ast.dump(t)
+   for f in changed:
+       old = subprocess.run(['git', 'show', PREV + ':' + f],
+                            capture_output=True, text=True).stdout
+       new = pathlib.Path(f).read_text()
+       print(f, strip(old) == strip(new))
+   EOF
+   ```
+
+   A text diff cannot answer this. 3.0.3 changed 139 lines across six files,
+   including 66 in `client/base.py` and 41 in `streaming.py`, and a careful
+   reader looking at that diff would reasonably go hunting for a behaviour
+   change that is not there. Comparing the parsed trees with docstrings
+   stripped separates prose from behaviour, and leaves `version.py` as the
+   only executable difference --- which is the safest shape a bump can have.
+
+   Say which method established it in the release notes, not just the verdict.
+   A consumer pinning this against funded accounts should be able to re-run
+   the check rather than trust the claim.
+
+6. Verify, on **3.11, 3.12 and 3.14** — 3.14 is what the downstream consumer
    runs, and `asyncio` semantics differ below 3.12 as well as above it:
 
    ```shell
@@ -171,13 +210,13 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    `python -m build` earns its place: `setup.py` is not imported by the suite, so
    an edit leaving it unparseable is invisible to `pytest`.
 
-6. Commit, then `git tag -a vX.Y.Z`. Write the message from a file — backticks in
+7. Commit, then `git tag -a vX.Y.Z`. Write the message from a file — backticks in
    `git tag -m` are executed as command substitution, which silently swallowed a
    word from the v2.5.0 tag.
 
-7. `git push origin main && git push origin vX.Y.Z`
+8. `git push origin main && git push origin vX.Y.Z`
 
-8. `gh release create vX.Y.Z -R Hu1kSmash/schwaby --notes-file ...`
+9. `gh release create vX.Y.Z -R Hu1kSmash/schwaby --notes-file ...`
 
    **Creating the release is what publishes to PyPI.**
    `.github/workflows/publish.yml` runs on a published release, re-runs the suite
@@ -186,7 +225,7 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    publishes nothing, so a tag can be moved before the release is created. After
    it, the version is permanent: PyPI refuses a re-upload even after a delete.
 
-9. **If you move a tag, say so — a normal `git fetch` will not follow it.**
+10. **If you move a tag, say so — a normal `git fetch` will not follow it.**
 
    Deleting and re-creating a pushed tag is sometimes right; v3.0.0 was re-cut
    before publishing to fold in a documentation change. But git will not move a
@@ -206,7 +245,7 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    Tell anyone downstream when a tag moves. A stale ref plus a confident tool is
    worse than a wrong answer, because a wrong answer invites a second look.
 
-10. **Re-check any claim about the release against the tag, after tagging.**
+11. **Re-check any claim about the release against the tag, after tagging.**
 
    The range available while preparing a release is `vPREV..HEAD`, which excludes
    the commit that bumps `version.py` — so the convenient measurement is

@@ -3030,6 +3030,22 @@ class StreamClient(EnumEnforcer):
         #: Array of fields
         ITEMS = 4
 
+    # Deliberately not validated. Schwab accepts a malformed key, replies
+    # `code: 0, "SUBS command succeeded"` and then delivers nothing forever,
+    # so a client-side check would turn a permanent silence into an
+    # exception -- which is a real argument for adding one.
+    #
+    # It is not added because a validator that rejects what Schwab accepts is
+    # worse than none: it reads as a configuration error rather than as two
+    # documents disagreeing, and there is no way for the caller to get past
+    # it. The evidence that the documented vocabulary is incomplete is this
+    # library's own documentation, which carried `$SPX.X` -- not a valid
+    # prefix -- for years. Roughly eight prefixes have been tried against the
+    # live service, out of a set whose size nobody knows.
+    #
+    # Revisit when someone has run a validator against real traffic long
+    # enough to say whether the documented set is the actual set. Until then
+    # the key format is documented and the caller decides.
     async def screener_equity_subs(self, symbols):
         '''
         Subscribe to Screener Equity.
