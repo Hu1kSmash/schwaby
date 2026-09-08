@@ -34,7 +34,7 @@ yours:
 
   pytest tests/ -q
 
-Roughly 920 tests, about six seconds. If your virtualenv is not active in a new
+Around 950 tests, about six seconds. If your virtualenv is not active in a new
 terminal, run the ``activate`` line again; ``deactivate`` turns it off.
 
 -------------------------
@@ -60,8 +60,8 @@ Two of those are easy to get wrong locally:
   suite, so an edit that leaves it unparseable is invisible to ``pytest``. The
   build is what proves the package still assembles.
 
-CI runs the suite on CPython 3.10 through 3.14. Pull requests additionally run on
-Windows and macOS; pushes to a branch run Linux only.
+CI runs the suite on CPython 3.10 through 3.14. Pushes to a branch run Linux
+only; pull requests and tags run Windows and macOS as well.
 
 --------------------------
 A note about the testing
@@ -114,6 +114,9 @@ people, so it is worth knowing what is enforced:
 - every URL host must be on an allowlist, and links into this repository must
   point at a file that exists — including the ``#anchor``, which must match a
   real section heading
+- no link target may wrap across a line. Sphinx joins the halves and renders
+  it correctly, so the page looks right while everything reading the source,
+  the link checker included, sees a truncated URL
 
 If one of those fails, the test says which file and which line.
 
