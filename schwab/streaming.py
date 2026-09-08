@@ -3033,7 +3033,13 @@ class StreamClient(EnumEnforcer):
         '''
         Subscribe to Screener Equity.
 
-        :param symbols: Equity symbols to subscribe to.
+        The subscription key is **not** a stock symbol. It is
+        ``(PREFIX)_(SORTFIELD)_(FREQUENCY)``, for example ``NASDAQ_VOLUME_5``
+        or ``$SPX_PERCENT_CHANGE_UP_60``. Passing a ticker subscribes to
+        nothing and reports no error. See :ref:`screener` for the
+        full set of prefixes, sort fields and frequencies.
+
+        :param symbols: Screener keys to subscribe to.
         '''
         await self._service_op(symbols, 'SCREENER_EQUITY', 'SUBS', self.ScreenerFields)
 
@@ -3041,15 +3047,17 @@ class StreamClient(EnumEnforcer):
         '''
         Un-Subscribe to Screener Equity.
 
-        :param symbols: Equity symbols to unsubscribe from.
+        :param symbols: Screener keys to unsubscribe from, in the
+                        ``(PREFIX)_(SORTFIELD)_(FREQUENCY)`` form.
         '''
         await self._service_op(symbols, 'SCREENER_EQUITY', 'UNSUBS')
 
     async def screener_equity_add(self, symbols):
         '''
-        Add symbols to the Screener Equity list.
+        Add keys to the Screener Equity subscription.
 
-        :param symbols: Equity symbols to add to the subscription.
+        :param symbols: Screener keys to add, in the
+                        ``(PREFIX)_(SORTFIELD)_(FREQUENCY)`` form.
         '''
         await self._service_op(symbols, 'SCREENER_EQUITY', 'ADD', self.ScreenerFields)
 
@@ -3065,7 +3073,13 @@ class StreamClient(EnumEnforcer):
         '''
         Subscribe to Screener Option.
 
-        :param symbols: Option symbols to subscribe to.
+        The subscription key is **not** a stock symbol. It is
+        ``(PREFIX)_(SORTFIELD)_(FREQUENCY)``, for example ``OPTION_CALL_VOLUME_5``
+        or ``OPTION_ALL_TRADES_60``. Passing a ticker subscribes to
+        nothing and reports no error. See :ref:`screener` for the
+        full set of prefixes, sort fields and frequencies.
+
+        :param symbols: Screener keys to subscribe to.
         '''
         await self._service_op(symbols, 'SCREENER_OPTION', 'SUBS', self.ScreenerFields)
 
@@ -3073,15 +3087,17 @@ class StreamClient(EnumEnforcer):
         '''
         Un-Subscribe to Screener Option.
 
-        :param symbols: Option symbols to unsubscribe from.
+        :param symbols: Screener keys to unsubscribe from, in the
+                        ``(PREFIX)_(SORTFIELD)_(FREQUENCY)`` form.
         '''
         await self._service_op(symbols, 'SCREENER_OPTION', 'UNSUBS')
 
     async def screener_option_add(self, symbols):
         '''
-        Add symbols to the Screener Option list.
+        Add keys to the Screener Option subscription.
 
-        :param symbols: Option symbols to add to the subscription.
+        :param symbols: Screener keys to add, in the
+                        ``(PREFIX)_(SORTFIELD)_(FREQUENCY)`` form.
         '''
         await self._service_op(symbols, 'SCREENER_OPTION', 'ADD', self.ScreenerFields)
 

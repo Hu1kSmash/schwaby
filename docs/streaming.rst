@@ -50,6 +50,30 @@ run this outside regular trading hours you may not see anything):
 
   asyncio.run(read_stream())
 
+.. warning::
+
+  **One streaming session per account, and a second one does not fail
+  cleanly.** Schwab permits a single stream per set of credentials. Logging in
+  a second time does not raise and does not queue --- it takes the connection
+  away from the first. If both sides then reconnect, which any sensible
+  supervisor will, the two sessions bump each other indefinitely and each sees
+  a feed that keeps dying for no local reason.
+
+  This is easy to hit by accident: a research script, a notebook left open, a
+  second machine, or a supervised process that restarted while an older one
+  was still alive. Nothing in the protocol says which session is the intruder,
+  so the symptom appears identically on both.
+
+  If a stream disconnects repeatedly while REST calls on the same token keep
+  working, suspect a second subscriber before suspecting the network. Anything
+  depending on that feed should treat the condition as a stop rather than a
+  warning --- a stream that is being bumped still delivers *some* messages, so
+  partial delivery and a healthy quiet market look alike from inside.
+
+  REST is unaffected. ``Client`` calls do not contend with a stream or with
+  each other, and can run alongside a streaming session freely.
+
+
 
 ++++++++++++
 Use Overview
@@ -769,7 +793,21 @@ Screener
 Top 10 advances and decliners by volume, trades, percent change and average percent
 volume.
 
-Symbols in upper case and separated by commas.
+.. note::
+
+  **A screener push is the whole list, not a change to it.** Schwab classifies
+  ``SCREENER_EQUITY`` and ``SCREENER_OPTION`` as *Whole* services, unlike the
+  ``LEVELONE_*`` services which send only what changed. Every message carries
+  the complete ranked list as it stands, so a symbol missing from one push
+  means "not in this snapshot" rather than "removed" --- diffing consecutive
+  pushes into additions and removals invents events that Schwab never sent.
+
+  Each push is also self-describing: ``SORT_FIELD`` and ``FREQUENCY`` are
+  present in every message, so the active criteria never have to be inferred
+  from what was subscribed.
+
+**The key is not a stock symbol.** It is ``(PREFIX)_(SORTFIELD)_(FREQUENCY)``
+--- passing a ticker subscribes to nothing and reports no error.
 
 (PREFIX)_(SORTFIELD)_(FREQUENCY) where PREFIX is:
  * Indices: $COMPX $DJI, $SPX.X, INDEX_ALL
