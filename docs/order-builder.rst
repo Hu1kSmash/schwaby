@@ -7,26 +7,26 @@
 ``OrderBuilder`` Reference
 ==========================
 
-The :meth:`Client.place_order() <schwab.client.Client.place_order>` method 
-expects a rather complex JSON object that describes the desired order. Schwab 
-provides some `example order specs 
-<https://developer.schwab.com/products/trader-api--individual/details/documentation/Retail%20Trader%20API%20Production>`__ 
+The :meth:`Client.place_order() <schwab.client.Client.place_order>` method
+expects a rather complex JSON object that describes the desired order. Schwab
+provides some `example order specs
+<https://developer.schwab.com/products/trader-api--individual/details/documentation/Retail%20Trader%20API%20Production>`__
 to
-illustrate the process and provides a schema in the `place order documentation 
-<https://developer.schwab.com/products/trader-api--individual/details/specifications/Retail%20Trader%20API%20Production>`__, 
+illustrate the process and provides a schema in the `place order documentation
+<https://developer.schwab.com/products/trader-api--individual/details/specifications/Retail%20Trader%20API%20Production>`__,
 but beyond that we're on our own.  ``schwaby`` aims to be useful to everyone,
-from users who want to easily place common equities and options trades, to 
-advanced users who want to place complex multi-leg, multi-asset type trades. 
+from users who want to easily place common equities and options trades, to
+advanced users who want to place complex multi-leg, multi-asset type trades.
 
-For users interested in simple trades, ``schwaby`` supports pre-built 
-:ref:`order_templates` that allow fast construction of many common trades.  
-Advanced users can modify these trades however they like, and can even build 
+For users interested in simple trades, ``schwaby`` supports pre-built
+:ref:`order_templates` that allow fast construction of many common trades.
+Advanced users can modify these trades however they like, and can even build
 trades from scratch.
 
-This page describes the features of the complete order schema in all their 
-complexity. It is aimed at advanced users who want to create complex orders. 
-Less advanced users can use the :ref:`order templates <order_templates>` to 
-create orders. If they find themselves wanting to go beyond those templates, 
+This page describes the features of the complete order schema in all their
+complexity. It is aimed at advanced users who want to create complex orders.
+Less advanced users can use the :ref:`order templates <order_templates>` to
+create orders. If they find themselves wanting to go beyond those templates,
 they can return to this page to learn how.
 
 
@@ -34,13 +34,13 @@ they can return to this page to learn how.
 Optional: Order Specification Introduction
 ------------------------------------------
 
-Before we dive in to creating order specs, let's briefly introduce their 
-structure. This section is optional, although users wanting to use more advanced 
-featured like stop prices and complex options orders will likely want to read it.
+Before we dive in to creating order specs, let's briefly introduce their
+structure. This section is optional, although users wanting to use more advanced
+features like stop prices and complex options orders will likely want to read it.
 
-Here is an example of a spec that places a limit order to buy 13 shares of
-``MSFT`` for no more than $190. This is exactly the order that would be returned 
-by :func:`schwab.orders.equities.equity_buy_limit`:
+Here is an example of a spec that places a limit order to buy one share of
+``MSFT`` for no more than $190.90. It is exactly what
+``equity_buy_limit('MSFT', 1, '190.90')`` returns:
 
 .. code-block:: JSON
 
@@ -66,17 +66,17 @@ Some key points are:
 
  * The ``LIMIT`` order type notifies Schwab that you'd like to place a limit
    order.
- * The order strategy type is ``SINGLE``, meaning this order is not a composite 
+ * The order strategy type is ``SINGLE``, meaning this order is not a composite
    order.
  * The order leg collection contains a single leg to purchase the equity.
- * The price is specified *outside* the order leg. This may seem 
+ * The price is specified *outside* the order leg. This may seem
    counterintuitive, but it's important when placing composite options orders.
 
-If this seems like a lot of detail to specify a rather simple order, it is. The 
-thing about the order spec object is that it can express *every* order that can 
-be made through the Schwab API. For an advanced example, here is an order 
-spec for a standing order to enter a long position in ``GOOG`` at $1310 or less 
-that triggers a one-cancels-other order that exits the position if the price 
+If this seems like a lot of detail to specify a rather simple order, it is. The
+thing about the order spec object is that it can express *every* order that can
+be made through the Schwab API. For an advanced example, here is an order
+spec for a standing order to enter a long position in ``GOOG`` at $1310 or less
+that triggers a one-cancels-other order that exits the position if the price
 rises to $1400 or falls below $1250:
 
 .. code-block:: JSON
@@ -138,25 +138,25 @@ rises to $1400 or falls below $1250:
       ]
   }
 
-While this looks complex, it can be broken down into the same components as the 
+While this looks complex, it can be broken down into the same components as the
 simpler buy order:
 
  * This time, the ``LIMIT`` order type applies to the top-level order.
- * The order strategy type is ``TRIGGER``, which tells Schwab to hold off 
-   placing the the second order until the first one completes.
- * The order leg collection still contains a single leg, and the price is still 
+ * The order strategy type is ``TRIGGER``, which tells Schwab to hold off
+   placing the second order until the first one completes.
+ * The order leg collection still contains a single leg, and the price is still
    defined outside the order leg. This is typical for equities orders.
 
 There are also a few things that aren't there in the simple buy order:
 
- * The ``childOrderStrategies`` contains the ``OCO`` order that is triggered 
-   when the first ``LIMIT`` order is executed. 
- * If you look carefully, you'll notice that the inner ``OCO`` is a 
-   fully-featured suborder in itself. 
+ * The ``childOrderStrategies`` contains the ``OCO`` order that is triggered
+   when the first ``LIMIT`` order is executed.
+ * If you look carefully, you'll notice that the inner ``OCO`` is a
+   fully-featured suborder in itself.
 
-This order is large and complex, and it takes a lot of reading to understand 
-what's going on here. Fortunately for you, you don't have to; ``schwaby`` cuts 
-down on this complexity by providing templates and helpers to make building 
+This order is large and complex, and it takes a lot of reading to understand
+what's going on here. Fortunately for you, you don't have to; ``schwaby`` cuts
+down on this complexity by providing templates and helpers to make building
 orders easy:
 
 .. code-block:: python
@@ -175,39 +175,39 @@ orders easy:
               .set_stop_price('1250.00')
       ))
 
-You can find the full listing of order templates and utility functions 
+You can find the full listing of order templates and utility functions
 :ref:`here <order_templates>`.
 
-Now that you have some background on how orders are structured, let's dive into 
-the order builder itself. 
+Now that you have some background on how orders are structured, let's dive into
+the order builder itself.
 
 
 --------------------------
 ``OrderBuilder`` Reference
 --------------------------
 
-This section provides a detailed reference of the generic order builder. You can 
-use it to help build your own custom orders, or you can modify the pre-built 
+This section provides a detailed reference of the generic order builder. You can
+use it to help build your own custom orders, or you can modify the pre-built
 orders generated by ``schwaby``'s order templates.
 
-Unfortunately, this reference is largely reverse-engineered. It was initially 
+Unfortunately, this reference is largely reverse-engineered. It was initially
 generated from the schema provided in the `official API documents
 <https://developer.schwab.com/products/trader-api--individual/details/specifications/Retail%20Trader%20API%20Production>`__,
-but many of the finer points, such as which fields should be populated for which 
-order types, etc. are best guesses.  If you find something is inaccurate or 
+but many of the finer points, such as which fields should be populated for which
+order types, etc. are best guesses.  If you find something is inaccurate or
 missing, please `let us know <https://github.com/Hu1kSmash/schwaby/issues>`__.
 
-That being said, experienced traders who understand how various order types and 
-complex strategies work should find this builder easy to use, at least for the 
-order types with which they are familiar. Here are some resources you can use to 
+That being said, experienced traders who understand how various order types and
+complex strategies work should find this builder easy to use, at least for the
+order types with which they are familiar. Here are some resources you can use to
 learn more, courtesy of the Securites and Exchange Commission:
 
- * `Trading Basics: Understanding the Different Ways to Buy and Sell Stock 
+ * `Trading Basics: Understanding the Different Ways to Buy and Sell Stock
    <https://www.sec.gov/investor/alerts/trading101basics.pdf>`__
- * `Trade Execution: What Every Investor Should Know <https://www.sec.gov/
-   reportspubs/investor-publications/investorpubstradexechtm.html>`__
- * `Investor Bulletin: An Introduction to Options <https://www.sec.gov/oiea/
-   investor-alerts-bulletins/ib_introductionoptions.html>`__
+ * `Trade Execution: What Every Investor Should Know
+   <https://www.sec.gov/reportspubs/investor-publications/investorpubstradexechtm.html>`__
+ * `Investor Bulletin: An Introduction to Options
+   <https://www.sec.gov/oiea/investor-alerts-bulletins/ib_introductionoptions.html>`__
 
 
 +++++++++++
@@ -227,10 +227,10 @@ Here are the order types that can be used:
 Session and Duration
 ++++++++++++++++++++
 
-Together, these fields control when the order will be placed and how long it 
-will remain active. Note ``schwaby``'s :ref:`templates <order_templates>` 
-place orders that are active for the duration of the current normal trading 
-session.  If you want to modify the default session and duration, you can use 
+Together, these fields control when the order will be placed and how long it
+will remain active. Note ``schwaby``'s :ref:`templates <order_templates>`
+place orders that are active for the duration of the current normal trading
+session.  If you want to modify the default session and duration, you can use
 these methods to do so.
 
 .. autoclass:: schwab.orders.common::Session
@@ -250,20 +250,20 @@ these methods to do so.
 Price
 +++++
 
-Price is the amount you'd like to pay for each unit of the position you're 
+Price is the amount you'd like to pay for each unit of the position you're
 taking:
 
- * For equities and simple options limit orders, this is the price which you'd 
-   like to pay/receive. 
+ * For equities and simple options limit orders, this is the price which you'd
+   like to pay/receive.
  * For complex options limit orders (net debit/net credit), this is the total
    credit or debit you'd like to receive.
 
-In other words, the price is the sum of the prices of the :ref:`order_legs`. 
-This is particularly powerful for complex multi-leg options orders, which 
-support complex top and/or limit orders that trigger when the price of a 
-position reaches certain levels. In those cases, the price of an order can drop 
-below the specified price as a result of movements in multiple legs of the 
-trade. 
+In other words, the price is the sum of the prices of the :ref:`order_legs`.
+This is particularly powerful for complex multi-leg options orders, which
+support complex stop and/or limit orders that trigger when the price of a
+position reaches certain levels. In those cases, the price of an order can drop
+below the specified price as a result of movements in multiple legs of the
+trade.
 
 .. _price_strings:
 
@@ -311,25 +311,19 @@ refuses a valid computed limit at order-placement time. Rounding a computed
 price is your decision -- ``value.quantize(decimal.Decimal('0.01'))`` -- and
 this library does not make it for you.
 
-Passing a number raises ``ValueError`` -- integers included, so
-``set_price(1250)`` raises just as ``set_price(1250.0)`` does. Earlier versions accepted one and
-converted it here, truncating to two decimal places, or to four for values
-below one. That conversion has been removed.
-
-It was removed rather than repaired because the library was picking a rounding,
-for a value denominated in money, on behalf of a caller who knows better what
-the order is for. Whether a limit price should round up, down or to the nearest
-tick is a trading decision, not a formatting one. Formatting it yourself is how
-you keep that decision.
+**Passing a number raises** ``ValueError`` -- integers included, so
+``set_price(1250)`` raises exactly as ``set_price(1250.0)`` does. Nothing here
+converts a number to a price string for you, because whether a limit price
+should round up, down, or to the nearest tick is a trading decision and not a
+formatting one. Making it yourself is how you keep it.
 
 .. warning::
 
-   ``'{:.2f}'.format(value)`` is **not** what the old conversion did. It
-   rounds; the old code truncated toward zero. ``19.9999999`` became ``19.99``,
-   not ``20.00``, and ``12.129`` became ``12.12``, not ``12.13``. On a buy
-   limit the difference is a price one tick higher than the one you asked for.
+   If you are formatting a computed price, note that ``'{:.2f}'.format(value)``
+   **rounds**. Rounding a buy limit up gives you a price one tick higher than
+   the one you meant.
 
-   If you want the old behaviour exactly, it was:
+   To truncate toward zero instead, at two decimal places or four below one:
 
    .. code-block:: python
 
@@ -342,11 +336,9 @@ you keep that decision.
           return str(decimal.Decimal(str(value)).quantize(
               places, rounding=decimal.ROUND_DOWN))
 
-   Note the four decimal places below one: ``0.186992`` truncated to
-   ``0.1869``, where ``'{:.2f}'`` gives ``0.19``.
-
-   Copying that in is a reasonable way to migrate without changing any prices.
-   Deciding the rounding deliberately is the better one.
+   The difference is not cosmetic: ``19.9999999`` truncates to ``19.99`` and
+   rounds to ``20.00``; ``0.186992`` truncates to ``0.1869`` where ``'{:.2f}'``
+   gives ``0.19``.
 
 :meth:`~schwab.orders.generic.OrderBuilder.copy_price` still sets the field
 without the type check, so a float or an int passes through as given. The one
@@ -357,15 +349,6 @@ converting it would change the order. The prebuilt templates on the
 :ref:`order_templates` page are not an exception to any of this -- they call
 :meth:`~schwab.orders.generic.OrderBuilder.set_price` and take the same string
 it does.
-
-.. note::
-
-   The conversion was also wrong for a time, in a way worth knowing about if you
-   have orders in your history from before it was fixed. It scaled the float and
-   truncated the result, which truncated the representation error along with the
-   value: ``8.2 * 100`` is ``819.9999999999999``, so ``8.2`` became ``8.19``.
-   Roughly 4.6% of cent-granular prices were affected, always one tick low and
-   silently. See the changelog for detail.
 
 .. automethod:: schwab.orders.generic.OrderBuilder.set_price
 .. automethod:: schwab.orders.generic.OrderBuilder.copy_price
@@ -378,17 +361,17 @@ it does.
 Order Legs
 ++++++++++
 
-Order legs are where the actual assets being bought or sold are specified. For 
-simple equity or single-options orders, there is just one leg. However, for 
+Order legs are where the actual assets being bought or sold are specified. For
+simple equity or single-options orders, there is just one leg. However, for
 complex multi-leg options trades, there can be more than one leg.
 
-Note that order legs often do not execute all at once. Order legs can be 
-executed over the specified :class:`~schwab.orders.common.Duration` of the order. 
-What's more, if order legs request a large number of shares, legs themselves can 
-be partially filled. You can control this setting using the 
-:class:`~schwab.orders.common.SpecialInstruction` value ``ALL_OR_NONE``. 
+Note that order legs often do not execute all at once. Order legs can be
+executed over the specified :class:`~schwab.orders.common.Duration` of the order.
+What's more, if order legs request a large number of shares, legs themselves can
+be partially filled. You can control this setting using the
+:class:`~schwab.orders.common.SpecialInstruction` value ``ALL_OR_NONE``.
 
-With all that out of the way, order legs are relatively simple to specify.  
+With all that out of the way, order legs are relatively simple to specify.
 ``schwaby`` currently supports equity and option order legs:
 
 .. automethod:: schwab.orders.generic.OrderBuilder.add_equity_leg
@@ -409,13 +392,20 @@ With all that out of the way, order legs are relatively simple to specify.
 Requested Destination
 +++++++++++++++++++++
 
-By default, Schwab sends trades to whichever exchange provides the best price.  
-This field allows you to request a destination exchange for your trade, although 
-whether your order is actually executed there is up to Schwab.
+By default, Schwab routes an order to whichever venue offers the best price.
+To ask for a particular one, set ``requestedDestination``. Whether the order
+actually executes there remains Schwab's decision.
 
 .. autoclass:: schwab.orders.common::Destination
   :members:
   :undoc-members:
+.. automethod:: schwab.orders.generic.OrderBuilder.set_requested_destination
+.. automethod:: schwab.orders.generic.OrderBuilder.clear_requested_destination
+
+``destinationLinkName`` is a different field and is **not** how you choose a
+venue, despite the similar name. Schwab's schema types it as a free string and
+:class:`~schwab.orders.common.Destination` does not apply to it.
+
 .. automethod:: schwab.orders.generic.OrderBuilder.set_destination_link_name
 .. automethod:: schwab.orders.generic.OrderBuilder.clear_destination_link_name
 
@@ -437,25 +427,24 @@ Trades can contain special instructions which handle some edge cases:
 Complex Options Strategies
 ++++++++++++++++++++++++++
 
-Schwab supports a number of complex options strategies. These strategies are 
+Schwab supports a number of complex options strategies. These strategies are
 complex affairs, with each leg of the trade specified in the order legs. Schwab
-performs additional validation on these strategies, so they are somewhat 
-complicated to place. However, the benefit is more flexibility, as trades like 
+performs additional validation on these strategies, so they are somewhat
+complicated to place. However, the benefit is more flexibility, as trades like
 trailing stop orders based on net debit/credit can be specified.
 
-Unfortunately, due to the complexity of these orders and the lack of any real 
-documentation, we cannot definitively say how to structure these orders. A few 
+Unfortunately, due to the complexity of these orders and the lack of any real
+documentation, we cannot definitively say how to structure these orders. A few
 things have been observed, however:
 
  * The legs of the order can be placed by adding them as option order legs using
    :meth:`~schwab.orders.generic.OrderBuilder.add_option_leg`.
- * For spreads resulting in a new debit/credit, the price represents the overall 
+ * For spreads resulting in a new debit/credit, the price represents the overall
    debit or credit desired.
 
-If you successfully use these strategies, we want to know about it. Please let 
-us know `on the issue tracker <https://github.com/Hu1kSmash/schwaby/issues>`__ to 
-chat about it, or by `creating a feature request 
-<https://github.com/Hu1kSmash/schwaby/issues>`__.
+If you use these strategies successfully, please say so on the `issue tracker
+<https://github.com/Hu1kSmash/schwaby/issues>`__. What works is worth more here
+than what the schema permits.
 
 .. autoclass:: schwab.orders.common::ComplexOrderStrategyType
   :members:
@@ -468,18 +457,18 @@ chat about it, or by `creating a feature request
 Composite Orders
 ++++++++++++++++
 
-``schwaby`` supports composite order strategies, in which execution of one 
+``schwaby`` supports composite order strategies, in which execution of one
 order has an effect on another:
 
- * ``OCO``, or "one cancels other" orders, consist of a pair of orders where 
+ * ``OCO``, or "one cancels other" orders, consist of a pair of orders where
    execution of one immediately cancels the other.
- * ``TRIGGER`` orders consist of a pair of orders where execution of one 
+ * ``TRIGGER`` orders consist of a pair of orders where execution of one
    immediately results in placement of the other.
 
-``schwaby`` provides helpers to specify these easily: 
+``schwaby`` provides helpers to specify these easily:
 :func:`~schwab.orders.common.one_cancels_other` and
-:func:`~schwab.orders.common.first_triggers_second`. This is almost certainly 
-easier than specifying these orders manually. However, if you still want to 
+:func:`~schwab.orders.common.first_triggers_second`. This is almost certainly
+easier than specifying these orders manually. However, if you still want to
 create them yourself, you can specify these composite order strategies like so:
 
 .. autoclass:: schwab.orders.common::OrderStrategyType
@@ -493,11 +482,10 @@ create them yourself, you can specify these composite order strategies like so:
 Undocumented Fields
 +++++++++++++++++++
 
-Unfortunately, your humble author is not an expert in all things trading. The 
-order spec schema describes some things that are outside my ability to document, 
-so rather than make stuff up, I'm putting them here in the hopes that someone 
-will come along and shed some light on them. You can make suggestions by filing 
-an issue on our `GitHub issues page 
+Schwab's order schema contains fields whose behaviour is not documented and
+has not been established by experiment. They are collected here rather than
+described inaccurately elsewhere. If you know how one of them behaves, please
+say so on the `issue tracker
 <https://github.com/Hu1kSmash/schwaby/issues>`__.
 
 
@@ -507,10 +495,10 @@ an issue on our `GitHub issues page
 Quantity
 ~~~~~~~~
 
-This one seems obvious: doesn't the quantity mean the number of stock I want to 
-buy? The trouble is that the order legs also have a ``quantity`` field, which 
-suggests this field means something else. The leading hypothesis is that is 
-outlines the number of copies of the order to place, although we have yet to 
+This one seems obvious: doesn't the quantity mean the number of stock I want to
+buy? The trouble is that the order legs also have a ``quantity`` field, which
+suggests this field means something else. The leading hypothesis is that it
+outlines the number of copies of the order to place, although we have yet to
 verify that.
 
 .. automethod:: schwab.orders.generic.OrderBuilder.set_quantity
@@ -521,18 +509,18 @@ verify that.
 Stop Order Configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-Stop orders and their variants (stop limit, trailing stop, trailing stop limit) 
-support some rather complex configuration. Both stops prices and the limit 
-prices of the resulting order can be configured to follow the market in a 
-dynamic fashion. The market dimensions that they follow can also be configured 
-differently, and it appears that which dimensions are supported varies by order 
-type. 
+Stop orders and their variants (stop limit, trailing stop, trailing stop limit)
+support some rather complex configuration. Both stop prices and the limit
+prices of the resulting order can be configured to follow the market in a
+dynamic fashion. The market dimensions that they follow can also be configured
+differently, and it appears that which dimensions are supported varies by order
+type.
 
-We have unfortunately not yet done a thorough analysis of what's supported, nor 
-have we made the effort to make it simple and easy. While we're *pretty* sure we 
-understand how these fields work, they've been temporarily placed into the 
-"undocumented" section, pending a followup. Users are invited to experiment with 
-these fields at their own risk. 
+We have unfortunately not yet done a thorough analysis of what's supported, nor
+have we made the effort to make it simple and easy. While we're *pretty* sure we
+understand how these fields work, they've been temporarily placed into the
+"undocumented" section, pending a followup. Users are invited to experiment with
+these fields at their own risk.
 
 
 .. automethod:: schwab.orders.generic.OrderBuilder.set_stop_price
