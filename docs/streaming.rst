@@ -823,7 +823,7 @@ and frequency is:
 .. danger::
 
   **Schwab does not reject a malformed key. It acknowledges success and then
-  sends nothing, indefinitely.** Measured 2026-09-08 against a live account:
+  sends nothing, indefinitely.** Measured against a live account:
   ``NOT_A_PREFIX_VOLUME_5``, ``NASDAQ_NOT_A_SORT_5``, ``NASDAQ_VOLUME_7`` and
   the bare ticker ``AAPL`` each returned ``code: 0, "SUBS command
   succeeded"`` and delivered zero frames.
@@ -927,8 +927,8 @@ Note ``CANCELED`` with one L.
 
 **``MESSAGE_TYPE`` tokens observed.** These are the tokens **as they appear on
 the wire**, and most of them are CamelCase. ``SUBSCRIBED`` is a genuine
-exception. The upper-case spellings this list carried until 2026-09-05 were
-wrong: a consumer comparing against ``'ORDERCREATED'`` matched nothing.
+exception. The upper-case spellings this list used to carry were wrong: a
+consumer comparing against ``'ORDERCREATED'`` matched nothing.
 
 **Match case-insensitively, and do not assume case is the only difference.**
 ``ORDERUROUT`` --- which this list also carried, and which at least one consumer
@@ -937,7 +937,7 @@ does not rescue the truncated form; nothing matches it at all.
 
 .. code-block:: python
 
-  # Measured on a live feed 2026-09-05 by driving the states deliberately.
+  # Measured on a live feed by driving the states deliberately.
   ('SUBSCRIBED', 'OrderCreated', 'OrderAccepted',
    'CancelAccepted', 'ExecutionCreated', 'OrderUROutCompleted',
 
@@ -958,14 +958,14 @@ Both ``CANCELED`` and ``CANCELLED`` appear -- the spelling is not consistent
 within Schwab's own tokens, so match on both.
 
 ``OrderUROutCompleted`` says the order **came off the book**. It does not say
-why, and it is worth resisting the obvious gloss: this library called it "an
-unsolicited out" until 2026-09-05, which asserts that nobody asked for the
-cancellation --- and the same token ends a cancel you issued yourself. Any name
+why, and it is worth resisting the obvious gloss: this library used to call it
+"an unsolicited out", which asserts that nobody asked for the cancellation ---
+and the same token ends a cancel you issued yourself. Any name
 or operator-facing phrase built on it should describe what the venue did, not
 what caused it. The cause is carried by the token beside it, below.
 
-**A cancel you issue yourself looks like this**, measured on 2026-09-05 by
-placing a resting order and cancelling it::
+**A cancel you issue yourself looks like this**, measured by placing a
+resting order and cancelling it::
 
   place   -> OrderCreated, OrderAccepted
   cancel  -> CancelAccepted, ExecutionCreated, OrderUROutCompleted
@@ -989,7 +989,7 @@ presence of ``OrderUROutCompleted`` alone to tell a cancel from a rejection.
 stop order sitting on the book, and a program that places only market orders
 will never see them --- it will meet them the first time a human places an order
 by hand in the same account from Schwab's own interface. That is exactly how
-they were observed, on 2026-07-27. If you match ``MESSAGE_TYPE`` against an
+they were observed. If you match ``MESSAGE_TYPE`` against an
 allow-list, an ordinary hand trade will otherwise raise an unknown-shape alert.
 
 Their provenance is thinner than the rest of this list, and that is worth

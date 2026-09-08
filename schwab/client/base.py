@@ -93,7 +93,7 @@ class BaseClient(EnumEnforcer):
             unsupported_token_type: 400 Bad Request: {"error_description":
             "Refresh token is invalid, expired or revoked","error":"invalid_grant"}
 
-        Observed on a live account on 2026-08-02, by letting a refresh token
+        Observed on a live account by letting a refresh token
         reach its seven day expiry deliberately. Schwab does not document this
         response, so both spellings are accepted: the standard placement, in
         case it is ever corrected, and the nested one it actually uses.
@@ -1281,7 +1281,7 @@ class BaseClient(EnumEnforcer):
           endpoint.** Both are sent --- they appear in the request URL --- and
           the response is identical whichever values you pass: always the top
           ten by *share* volume, always for the whole session. Measured
-          2026-09-08 against a live account: ``PERCENT_CHANGE_DOWN`` does not
+          against a live account: ``PERCENT_CHANGE_DOWN`` does not
           invert the ranking, and rows come back monotonically descending in
           ``volume`` while ``netPercentChange`` is unordered.
 

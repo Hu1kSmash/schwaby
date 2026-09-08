@@ -134,7 +134,23 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    hits: read each one and keep only those describing something that already
    shipped and stays true. Say what changed, not which release changed it.
 
-4. Verify, on **3.11, 3.12 and 3.14** — 3.14 is what the downstream consumer
+4. **No dates in shipped documentation.**
+
+   ```shell
+   grep -rnE '\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b' README.md docs/*.rst schwab/
+   ```
+
+   Should be empty. A finding measured against a live account is worth
+   recording as a finding; the date it was measured is not. Documentation
+   describes how the API behaves in this version, and a reader hitting
+   "measured 2026-09-08" has to decide whether it still holds --- which is a
+   question they cannot answer and which the sentence invites. Say what the
+   behaviour is, and say it was measured rather than inferred if that matters.
+
+   Dates belong in `CHANGELOG.md`, which is a dated record by construction, and
+   in `~/schwab/` working notes, which are not shipped.
+
+5. Verify, on **3.11, 3.12 and 3.14** — 3.14 is what the downstream consumer
    runs, and `asyncio` semantics differ below 3.12 as well as above it:
 
    ```shell
@@ -155,13 +171,13 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    `python -m build` earns its place: `setup.py` is not imported by the suite, so
    an edit leaving it unparseable is invisible to `pytest`.
 
-5. Commit, then `git tag -a vX.Y.Z`. Write the message from a file — backticks in
+6. Commit, then `git tag -a vX.Y.Z`. Write the message from a file — backticks in
    `git tag -m` are executed as command substitution, which silently swallowed a
    word from the v2.5.0 tag.
 
-6. `git push origin main && git push origin vX.Y.Z`
+7. `git push origin main && git push origin vX.Y.Z`
 
-7. `gh release create vX.Y.Z -R Hu1kSmash/schwaby --notes-file ...`
+8. `gh release create vX.Y.Z -R Hu1kSmash/schwaby --notes-file ...`
 
    **Creating the release is what publishes to PyPI.**
    `.github/workflows/publish.yml` runs on a published release, re-runs the suite
@@ -170,7 +186,7 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    publishes nothing, so a tag can be moved before the release is created. After
    it, the version is permanent: PyPI refuses a re-upload even after a delete.
 
-8. **If you move a tag, say so — a normal `git fetch` will not follow it.**
+9. **If you move a tag, say so — a normal `git fetch` will not follow it.**
 
    Deleting and re-creating a pushed tag is sometimes right; v3.0.0 was re-cut
    before publishing to fold in a documentation change. But git will not move a
@@ -190,7 +206,7 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    Tell anyone downstream when a tag moves. A stale ref plus a confident tool is
    worse than a wrong answer, because a wrong answer invites a second look.
 
-9. **Re-check any claim about the release against the tag, after tagging.**
+10. **Re-check any claim about the release against the tag, after tagging.**
 
    The range available while preparing a release is `vPREV..HEAD`, which excludes
    the commit that bumps `version.py` — so the convenient measurement is

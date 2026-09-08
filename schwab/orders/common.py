@@ -34,7 +34,7 @@ class Duration(Enum):
 
     .. note::
         Not every value in this enum is accepted for every asset type. As of
-        2026-08-06, Schwab accepts only ``DAY``, ``GOOD_TILL_CANCEL`` and
+        Schwab accepts only ``DAY``, ``GOOD_TILL_CANCEL`` and
         ``FILL_OR_KILL`` for equity orders. The remaining values are rejected
         at order placement with ``HTTP 400``, and a message of the form
         ``Invalid value 'IMMEDIATE_OR_CANCEL'``. Individual values are marked

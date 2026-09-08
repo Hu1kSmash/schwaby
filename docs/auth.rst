@@ -309,7 +309,7 @@ have retried through is worse off than one which retried a little too long.
      unsupported_token_type: 400 Bad Request: {"error_description":"Refresh
      token is invalid, expired or revoked","error":"invalid_grant"}
 
-   Observed on a live account on 2026-08-02 by letting a refresh token reach
+   Observed on a live account by letting a refresh token reach
    its expiry deliberately. Schwab documents neither the response nor the
    nesting, so this is one account on one day rather than a specification.
    Both placements are accepted, in case it is ever corrected.
