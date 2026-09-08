@@ -9,9 +9,9 @@ HTTP Client
 ===========
 
 A naive, unopinionated wrapper around the
-`Schwab individual trader API 
+`Schwab individual trader API
 <https://developer.schwab.com/products/trader-api--individual>`_. This
-client provides access to all endpoints of the API in as easy and direct a way 
+client provides access to all endpoints of the API in as easy and direct a way
 as possible.
 
 
@@ -20,7 +20,9 @@ this will likely cause issues with the underlying OAuth2 session management**
 
 .. code-block:: python
 
-  from schwab.auth import client_from_manual_flow
+  import httpx2
+
+  from schwab.auth import easy_client
 
   # Follow the instructions on the screen to authenticate your client.
   c = easy_client(
@@ -33,7 +35,7 @@ this will likely cause issues with the underlying OAuth2 session management**
   assert resp.status_code == httpx2.codes.OK
   history = resp.json()
 
-Note we we create a new client using the ``auth`` package as described in
+Note that we create a new client using the ``auth`` package as described in
 :ref:`auth`. Creating a client directly is possible, but not recommended.
 
 +++++++++++++++++++
@@ -46,12 +48,15 @@ of slightly increased application complexity.
 
 .. code-block:: python
 
-  from schwab.auth import client_from_manual_flow
+  import httpx2
+
+  from schwab.auth import easy_client
 
   async def main():
       c = easy_client(
               api_key='APIKEY',
-              redirect_uri='https://127.0.0.1:8182',
+              app_secret='APP_SECRET',
+              callback_url='https://127.0.0.1:8182',
               token_path='/tmp/token.json',
               asyncio=True)
 
@@ -81,14 +86,14 @@ after being closed.
 Calling Conventions
 +++++++++++++++++++
 
-Function parameters are categorized as either required or optional.  Required 
-parameters are passed as positional arguments.  Optional parameters, are passed 
-as keyword arguments. 
+Function parameters are categorized as either required or optional.  Required
+parameters are passed as positional arguments.  Optional parameters are passed
+as keyword arguments.
 
-Parameters which have special values recognized by the API are 
-represented by `Python enums <https://docs.python.org/3/library/enum.html>`_. 
-This is because the API rejects requests which pass unrecognized values, and 
-this enum wrapping is provided as a convenient mechanism to avoid consternation 
+Parameters which have special values recognized by the API are
+represented by `Python enums <https://docs.python.org/3/library/enum.html>`_.
+This is because the API rejects requests which pass unrecognized values, and
+this enum wrapping is provided as a convenient mechanism to avoid consternation
 caused by accidentally passing an unrecognized value.
 
 By default, passing values other than the required enums will raise a
@@ -156,7 +161,7 @@ Return Values
 +++++++++++++
 
 All methods return a response object generated under the hood by the
-`HTTPX2 <https://github.com/pydantic/httpx2/blob/main/docs/quickstart.md>`__ module. 
+`HTTPX2 <https://github.com/pydantic/httpx2/blob/main/docs/quickstart.md>`__ module.
 For a full listing of what's possible, read that module's documentation. Most if
 not all users can simply use the following pattern:
 
@@ -188,24 +193,23 @@ not all users can simply use the following pattern:
   way around rate limiting presents as an unhandled exception during a burst of
   429s. Import ``httpx2`` and catch ``httpx2.HTTPStatusError`` instead.
 
-The API indicates errors using the response status code, and this pattern will 
-raise the appropriate exception if the response is not a success. The data can 
-be fetched by calling the ``.json()`` method. 
+The API indicates errors using the response status code, and this pattern will
+raise the appropriate exception if the response is not a success. The data can
+be fetched by calling the ``.json()`` method.
 
-This data will be pure python data structures which can be directly accessed. 
-You can also use your favorite data analysis library's dataframe format using 
+This data will be pure python data structures which can be directly accessed.
+You can also use your favorite data analysis library's dataframe format using
 the appropriate library. For instance you can create a `pandas
-<https://pandas.pydata.org/>`__ dataframe using `its conversion method 
-<https://pandas.pydata.org/pandas-docs/stable/reference/api/
-pandas.DataFrame.from_dict.html>`__.
+<https://pandas.pydata.org/>`__ dataframe using `its conversion method
+<https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.from_dict.html>`__.
 
-**Note:** Because the author has no relationship whatsoever with Charles Schwab,
-this document makes no effort to describe the structure of the returned JSON 
-objects. Schwab might change them at any time, at which point this document will 
-become silently out of date. Instead, each of the methods described below 
-contains a link to the official documentation. For endpoints that return 
-meaningful JSON objects, it includes a JSON schema which describes the return 
-value. Please use that documentation or your own experimentation when figuring 
+**Note:** Because this project has no relationship whatsoever with Charles Schwab,
+this document makes no effort to describe the structure of the returned JSON
+objects. Schwab might change them at any time, at which point this document will
+become silently out of date. Instead, each of the methods described below
+contains a link to the official documentation. For endpoints that return
+meaningful JSON objects, it includes a JSON schema which describes the return
+value. Please use that documentation or your own experimentation when figuring
 out how to use the data returned by this API.
 
 
@@ -215,11 +219,11 @@ out how to use the data returned by this API.
 Account Hashes
 ++++++++++++++
 
-Many methods of this API are parametrized by account. However, the API does not 
-accept raw account numbers, but rather account hashes. You can fetch these 
-hashes using the ``get_account_numbers`` method :ref:`(link) 
-<account_hashes_method>`.  This method provides a mapping from raw account 
-number to the account hash that must be passed when referring to that account in 
+Many methods of this API are parametrized by account. However, the API does not
+accept raw account numbers, but rather account hashes. You can fetch these
+hashes using the ``get_account_numbers`` method :ref:`(link)
+<account_hashes_method>`.  This method provides a mapping from raw account
+number to the account hash that must be passed when referring to that account in
 API calls.
 
 Here is an example of how to fetch an account hash and use it to place an order:
@@ -258,9 +262,9 @@ Here is an example of how to fetch an account hash and use it to place an order:
 Timeout Management
 ++++++++++++++++++
 
-Timeouts for HTTP calls are managed under the hood by the ``httpx2`` library.  
-``schwaby`` defaults to 30 seconds, which experience has shown should be more 
-than enough to allow even the slowest API calls to complete. A different timeout 
+Timeouts for HTTP calls are managed under the hood by the ``httpx2`` library.
+``schwaby`` defaults to 30 seconds, which experience has shown should be more
+than enough to allow even the slowest API calls to complete. A different timeout
 specification can be set using this method:
 
 .. automethod:: schwab.client.Client.set_timeout
@@ -277,7 +281,7 @@ Token Age
 Account Info
 ++++++++++++
 
-These methods provide access to useful information about accounts. An incomplete 
+These methods provide access to useful information about accounts. An incomplete
 list of the most interesting bits:
 
 * Account balances, including available trading balance
@@ -300,11 +304,11 @@ See the official documentation for each method for a complete response schema.
 Price History
 +++++++++++++
 
-Schwab provides price history for equities and ETFs. It does not provide price 
-history for options, futures, or any other instruments. 
+Schwab provides price history for equities and ETFs. It does not provide price
+history for options, futures, or any other instruments.
 
-In the raw API, fetching price history is somewhat complicated: the API offers a 
-single endpoint :meth:`Client.get_price_history` that accepts a complex variety 
+In the raw API, fetching price history is somewhat complicated: the API offers a
+single endpoint :meth:`Client.get_price_history` that accepts a complex variety
 of inputs, but fails to document them in any meaningful way.
 
 Thankfully, we've reverse engineered this endpoint and built some helpful
@@ -316,13 +320,11 @@ to read the documentation below to learn how much data is available.
 .. note::
 
    Give any of these a ``start_datetime`` or an ``end_datetime`` and you get
-   that range. Earlier versions also sent a ``period``, which
-   :meth:`Client.get_price_history` documents should not accompany a range.
-
-   What Schwab does with both is not consistent across accounts: it has been
-   reported disregarding the range, and measured honouring it. If your account
-   was in the first group you will now get the range you asked for; if it was in
-   the second, nothing changes.
+   that range. No ``period`` is sent alongside it:
+   :meth:`Client.get_price_history` documents that the two should not be
+   combined, and what Schwab does when they are is not consistent across
+   accounts --- it has been reported disregarding the range, and measured
+   honouring it.
 
 
 .. automethod:: schwab.client.Client.get_price_history_every_minute
@@ -333,7 +335,7 @@ to read the documentation below to learn how much data is available.
 .. automethod:: schwab.client.Client.get_price_history_every_day
 .. automethod:: schwab.client.Client.get_price_history_every_week
 
-For the sake of completeness, here is the documentation for the raw price 
+For the sake of completeness, here is the documentation for the raw price
 history endpoint, in all its complexity.
 
 .. automethod:: schwab.client.Client.get_price_history
@@ -341,8 +343,6 @@ history endpoint, in all its complexity.
   :members:
   :undoc-members:
   :member-order: bysource
-
-.. _orders-section:
 
 ++++++++++++++
 Current Quotes
@@ -357,11 +357,12 @@ Current Quotes
 Option Chains
 +++++++++++++
 
-Unfortunately, option chains are well beyond the ability of your humble author. 
-You are encouraged to read the official API documentation to learn more.
+This page does not attempt to explain options themselves. The method below
+covers every parameter Schwab's endpoint accepts; for what they mean, read
+Schwab's own documentation.
 
-If you *are* knowledgeable enough to write something more substantive here, 
-please follow the instructions in :ref:`contributing` to send in a patch.
+If you know the subject well enough to write something more substantive here,
+:ref:`contributing` has the instructions.
 
 .. automethod:: schwab.client.Client.get_option_chain
 .. autoclass:: schwab.client.Client.Options
@@ -383,6 +384,8 @@ Instrument Searching and Fundamentals
   :members:
   :undoc-members:
 
+.. _orders-section:
+
 ++++++
 Orders
 ++++++
@@ -394,17 +397,17 @@ Orders
 Placing New Orders
 ------------------
 
-Placing new orders can be a complicated task. The :meth:`Client.place_order` 
-method is used to create all orders, from equities to options. The precise order 
-type is defined by a complex order spec. Schwab provides some `example order 
-specs`_ to illustrate the process and provides a schema in the `place order 
-documentation 
-<https://developer.schwab.com/products/trader-api--individual/details/specifications/Retail%20Trader%20API%20Production>`__, 
+Placing new orders can be a complicated task. The :meth:`Client.place_order`
+method is used to create all orders, from equities to options. The precise order
+type is defined by a complex order spec. Schwab provides some `example order
+specs`_ to illustrate the process and provides a schema in the `place order
+documentation
+<https://developer.schwab.com/products/trader-api--individual/details/specifications/Retail%20Trader%20API%20Production>`__,
 but beyond that we're on our own.
 
-``schwaby`` includes some helpers, described in :ref:`order_templates`, which 
-provide an incomplete utility for creating various order types. While it only 
-scratches the surface of what's possible, we encourage you to use that module 
+``schwaby`` includes some helpers, described in :ref:`order_templates`, which
+provide an incomplete utility for creating various order types. While it only
+scratches the surface of what's possible, we encourage you to use that module
 instead of creating your own order specs.
 
 .. _`example order specs`: https://developer.schwab.com/products/trader-api--individual/details/documentation/Retail%20Trader%20API%20Production
@@ -438,12 +441,12 @@ Editing Existing Orders
 
 Endpoints for canceling and replacing existing orders.
 
-These endpoints require the order ID. Because the API does not return a JSON 
-response when creating an order, the workflow for extracting this order ID is a 
-little complicated.  You can fetch the order ID from the response to a 
-:meth:`place_order <schwab.client.Client.place_order>` request using :ref:`this 
-helper function <extract_order_id>`. Otherwise, see 
-:ref:`accessing_existing_orders` to finding historical orders.
+These endpoints require the order ID. Because the API does not return a JSON
+response when creating an order, the workflow for extracting this order ID is a
+little complicated.  You can fetch the order ID from the response to a
+:meth:`place_order <schwab.client.Client.place_order>` request using :ref:`this
+helper function <extract_order_id>`. Otherwise, see
+:ref:`accessing_existing_orders` for finding historical orders.
 
 .. automethod:: schwab.client.Client.cancel_order
 .. automethod:: schwab.client.Client.replace_order
@@ -453,8 +456,8 @@ helper function <extract_order_id>`. Otherwise, see
 Other Endpoints
 +++++++++++++++
 
-Note If your account limited to delayed quotes, these quotes will also be 
-delayed.
+Note: if your account is limited to delayed quotes, these quotes are
+delayed too.
 
 -------------------
 Transaction History
