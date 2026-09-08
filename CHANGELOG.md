@@ -14,6 +14,130 @@ current model.
 
 ---
 
+## 3.0.3
+
+Documentation only. No behaviour changed, and the library's code is
+byte-identical to 3.0.2 with docstrings stripped.
+
+Upgrade if you read the documentation. Nothing about a running program changes.
+
+### Three worked examples did not run
+
+The first code on the HTTP client page imported `client_from_manual_flow` and
+then called `easy_client`, which it never imported. Its asyncio counterpart did
+the same and added two more faults: `redirect_uri`, which is not a parameter of
+`easy_client`, and a missing `app_secret`, which is required. Copying either
+gave a `NameError` or a `TypeError` before reaching the part you came for. Two
+more examples used `httpx2` without importing it.
+
+The test that exists to catch this could not see it. `DocExampleTest` resolves a
+call only when the block imported that name from `schwab`, so the wrong import
+concealed the wrong argument. With the imports corrected it catches the argument
+error, verified by putting it back.
+
+### Two links sent readers to the wrong place
+
+`.. _orders-section:` labelled *Current Quotes*, and `util.rst` links to it when
+explaining how to get an order ID. `:ref:`enable_logging <help>`` had its label
+and target swapped, so it went to the top of the help page rather than to the
+section showing the incantation.
+
+### The logging instructions did not enable logging
+
+`help.rst` told you to add a handler to the root logger and stop there. The root
+logger defaults to `WARNING` and this library emits twelve debug calls and four
+info calls against three warnings, so that snippet dropped almost everything it
+existed to show. Anyone following the page to gather evidence for a bug report
+got a program that looked instrumented and emitted nothing.
+
+### The venue selector was documented nowhere
+
+`set_requested_destination` appeared in no page. The section titled "Requested
+Destination" documented `set_destination_link_name`, which is not how a venue is
+chosen — Schwab types `destinationLinkName` as a free string and `Destination`'s
+values belong to `requestedDestination`. Both are documented now, with the
+distinction stated.
+
+### What the movers and screener endpoints actually do
+
+Measured against a live account rather than read from Schwab's documentation,
+which is wrong or silent on all of it.
+
+`get_movers` **ignores `sort_order` and `frequency`**. Both reach the wire and
+the response is identical whichever values are passed: always the top ten by
+share volume, always whole-session. Two different sort values returned identical
+lists in all 495 index-cycles of a full session. `PERCENT_CHANGE_DOWN` does not
+invert the ranking.
+
+`totalVolume` **is the index total, not the instrument's** — identical on every
+row, in all 990 responses of that session. `marketShare` is `volume /
+totalVolume * 100` exactly, so it carries nothing the other two do not, and its
+value depends on which index was queried.
+
+**Membership barely moves.** Median zero changes between consecutive five-minute
+polls, maximum one, twelve or thirteen distinct symbols across four hours. That
+follows from ranking on cumulative session volume, which only grows.
+
+**`INDEX_ALL` does not return indices.** It returns equities, it is not
+`EQUITY_ALL`, and none of its members appeared in the `NYSE` list at any point
+while eight or nine of ten appeared in `NASDAQ`. What it selects is undocumented
+and is not established here, and the docstring says so.
+
+### The streaming screener
+
+**The subscription key is not a stock symbol.** It is
+`(PREFIX)_(SORTFIELD)_(FREQUENCY)`. `docs/streaming.rst` always had this right;
+the docstrings, which are what a reader sees at the call site, said "Equity
+symbols to subscribe to".
+
+**Schwab does not reject a malformed key.** `NOT_A_PREFIX_VOLUME_5`,
+`NASDAQ_NOT_A_SORT_5`, `NASDAQ_VOLUME_7` and a bare `AAPL` each returned
+`code: 0, "SUBS command succeeded"` and delivered nothing. There is no error to
+catch, so a typo is indistinguishable from a quiet market. `AVERAGE_PERCENT_VOLUME`
+behaves the same way despite being documented by Schwab.
+
+**A `subs` replaces, an `add` appends, and the two screener services are
+independent.** This page previously said the results "vary", were undocumented,
+"seem to" clear the old subscription, and that the interpretation "may be
+incorrect". The rules now come from grouping a capture's frames by subscription
+key, and they account for every frame. The consequence worth knowing: a `subs`
+carrying a key Schwab silently ignores still replaces a working subscription.
+
+**A screener push is the whole list, not a change to it.** Both screener
+services are *Whole* in Schwab's classification, so a symbol missing from a push
+means "not in this snapshot" rather than "removed".
+
+**One streaming session per account, and a second does not fail cleanly.** It
+takes the connection from the first, and if both reconnect they bump each other
+indefinitely. Nothing in the protocol names the intruder. A bumped stream still
+delivers some messages, so it has to be treated as a stop rather than a warning.
+
+Push cadence, the immediate frame on subscribe, and the equivalence between
+stream frequency 0 and the REST endpoint are recorded with their sample size —
+one nine-minute window — because that is what they rest on.
+
+`$SPX.X` is corrected to `$SPX`. Over REST it is an HTTP 400; on the stream it
+is accepted and silent forever.
+
+### Everywhere
+
+Dates and version history are out of the shipped documentation. A finding
+measured against a live account still says so, because Schwab's documentation
+has been wrong about several of these, but the date it was measured only asks a
+reader a question they cannot answer. What changed belongs in this file.
+
+Five hyperlink targets were split across a line. Sphinx joins them and the pages
+render correctly; everything reading the source, `LinkTest` included, was seeing
+`https://www.sec.gov/` and `https://www.investopedia.com/articles/active-trading/032614/`.
+Now guarded by a test.
+
+All ten documentation pages were read line by line. Roughly 250 lines of
+trailing whitespace, a section that hyperlinked to itself, prose contradicting
+its own JSON, an exception list naming four of five, and a composite-order
+section that showed only the mistake and never the correct call.
+
+---
+
 ## 3.0.2
 
 One fix, to the collision warning 3.0.1 added, and the defects found while
