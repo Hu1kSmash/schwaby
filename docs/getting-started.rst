@@ -4,8 +4,8 @@
 Getting Started
 ===============
 
-Welcome to ``schwaby``! Read this page to learn how to install and configure 
-your first Schwab Python application.
+Welcome to ``schwaby``. This page takes you from nothing to a working install:
+a registered Schwab application, its credentials, and the library itself.
 
 .. warning::
 
@@ -18,123 +18,116 @@ your first Schwab Python application.
 Schwab API Access
 +++++++++++++++++
 
-Before we do anything with ``schwaby``, you'll need to create a developer 
-account with Schwab and register an application. By the end of this section, 
-you'll have accomplished the three prerequisites for using ``schwaby``:
+Before ``schwaby`` can do anything, you need a developer account with Schwab
+and a registered application. This section gets you the three things the
+library requires:
 
-1. Create an application.
-#. Choose and save the callback URL (important for authenticating).
-#. Receive an app key and a secret.
+1. An application, approved and ready for use.
+#. A callback URL, saved exactly as you entered it.
+#. An app key and an app secret.
 
-**Create a Developer Account**
+**Create a developer account**
 
-You can create a developer account `here 
-<https://developer.schwab.com/>`__.  The instructions from here on out 
-assume you're logged in, so make sure you log into the developer site after 
-you've created your account.
+Sign up at the `Schwab developer site <https://developer.schwab.com/>`__.
+Everything below assumes you are logged in.
 
-**Create an Application**
+**Create an application**
 
 .. figure:: _static/setting-up-create-app.png
 
-Next, from your dashboard on the `developer site
-<https://developer.schwab.com/>`__, create an application and populate the
-required fields.
+From your dashboard, create an application and fill in the required fields.
+The next few headings walk through them.
 
-**API Product**
+**API product**
 
 .. figure:: _static/setting-up-api-product.png
 
-The first thing you'll select is the API Product. Schwab does not document the
-difference between "Accounts and Trading Production" and "Market Data" in a way
-that settles the question, but the former grants access to every endpoint
-``schwaby`` supports, including quotes and price history. Choose that one unless
-you have a specific reason not to.
+Schwab does not document the difference between "Accounts and Trading
+Production" and "Market Data" in a way that settles the question. The former
+grants access to every endpoint ``schwaby`` supports, quotes and price history
+included, so choose that one unless you have a specific reason not to.
 
-**Order Limit**
+**Order limit**
 
 .. figure:: _static/setting-up-order-limit.png
 
-The order limit is the number of order-related requests your app will be 
-permitted to place each minute. If you make, cancel, or replace more than this 
-many orders each minute, you'll be throttled and your orders will be rejected.  
-Most users have no reason to restrict this, so we recommend setting this to 120.
+This caps how many order-placing requests your app may make per minute, per
+account. Exceed it and the requests are rejected.
 
-**App Name and Description**
+Schwab allows anything from 0 to 120, so **120 is the maximum** and there is
+rarely a reason to ask for less. Only ``POST``, ``PUT`` and ``DELETE`` order
+requests count against it; reading orders is unthrottled.
+
+**App name and description**
 
 .. figure:: _static/setting-up-name-and-description.png
 
-Next are the app name and description. ``schwaby`` does not use these values, 
-but the folks at at Schwab might. We recommend being descriptive here, if only 
-so that users and app approvers know what your app will do.
+``schwaby`` never reads these, but people at Schwab may. Be descriptive: the
+approver deciding whether to enable your app has little else to go on.
 
-**App Name and Description**
+**Callback URL**
 
 .. figure:: _static/setting-up-callback-url.png
 
-Finally, we have the callback URL. This one is important.  In a nutshell, the 
-`OAuth login flow
-<https://requests-oauthlib.readthedocs.io/en/
-latest/oauth2_workflow.html#web-application-flow>`__ that Schwab uses works by 
-opening a login page, securely collecting credentials on their domain, and then 
-sending an HTTP request to the callback URL with ingredients for the token in 
-the URL query.
+This one matters, and it is the field most likely to cost you an afternoon.
 
-The vast majority of users should set their callback URL to 
-``https://127.0.0.1:8182`` (note the lack of a trailing slash). This means that 
-once the login flow is completed, the generated credentials are sent back to 
-your machine at port ``8182``, rather than any external server. Setting a port 
-number is not require to use ``schwaby``, but it is required to use 
-:ref:`certain convenient features <login_flow>`.  Advanced users may be able to 
-use a non-local callback URL, but this documentation assumes they are advanced 
-enough not to need our help creating such a setup.
+The `OAuth login flow
+<https://requests-oauthlib.readthedocs.io/en/latest/oauth2_workflow.html#web-application-flow>`__
+Schwab uses opens a login page, collects your credentials on Schwab's own
+domain, and then sends an HTTP request to your callback URL carrying the
+ingredients for a token.
+
+**Most users should enter** ``https://127.0.0.1:8182`` --- note the absence of
+a trailing slash. The credentials then come back to your own machine on port
+``8182`` rather than to any external server. A port number is not required to
+use ``schwaby`` at all, but it is required for :ref:`certain convenient
+features <login_flow>`. A non-local callback URL is possible; this
+documentation assumes anyone attempting one does not need our help to do it.
+
+Whatever you choose, pass it to ``schwaby`` **character for character** as you
+entered it here. Any difference at all --- an added or removed trailing slash
+is the usual one --- produces failures that are hard to trace back to their
+cause.
 
 If Schwab refuses to create an app with a ``127.0.0.1`` callback URL, please
-`open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__ --- it has
-happened intermittently in the past and it is worth knowing if it is still
-happening.
-
-Note that whatever callback URL you choose, you must pass it to 
-``schwaby`` *exactly* in the same way as you specified it while creating your 
-app.  Any deviation (including adding or removing a trailing slash!) can cause 
-difficult-to-debug issues. Be careful not to mis-copy this value.
+`open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__. It happens
+intermittently and it is worth knowing whether it still does.
 
 .. _approved_pending:
 
-**Waiting for Approval**
+**Waiting for approval**
 
 .. figure:: _static/setting-up-approved-pending.png
 
 .. figure:: _static/setting-up-ready-for-use.png
 
-After your app is created, you will likely see it in an ``Approved - Pending`` 
-state when you view it in your dashboard. Don't be fooled by the word 
-``Approved``: your app is not yet ready for use. You must wait for Schwab to 
-*actually* approve it, at which point its status will be ``Ready For Use.`` This 
-can take up to a few days. Only then can you proceed to using ``schwaby``.
+A newly created app usually shows as ``Approved - Pending``. Do not be misled
+by the word ``Approved``: the app is not usable yet. You are waiting for the
+status to become ``Ready For Use``, which can take a few days. Nothing in
+``schwaby`` will work until it does.
 
-**Client Secrets**
+**App key and secret**
 
 .. figure:: _static/setting-up-secrets.png
 
-Once your app is created and approved, you will be able to access your app key
-and app secret by clicking through to your approved application in the 
-dashobard. Neither  of these are meant to be shared by anyone, so keep them safe 
-(the ones displayed here are fake). You will also be required to pass these into 
-``schwaby``.  This library does not share these values with anyone except 
-official Schwab endpoints, not even its authors. Don't share them with anyone.
+Once the app is approved, open it from the dashboard to find your app key and
+app secret. You will pass both to ``schwaby``.
 
-++++++++++++++++++++++++
+Treat them as you would a password. This library sends them to official Schwab
+endpoints and nowhere else --- not to its authors, not anywhere. The values
+shown in the screenshot are fake.
+
+
+++++++++++++++++++++++
 Installing ``schwaby``
-++++++++++++++++++++++++
+++++++++++++++++++++++
 
-This section outlines the installation process for client users. For developers, 
-check out :ref:`contributing`.
+This section covers installing ``schwaby`` to use it. To work on the library
+itself, see :ref:`contributing`.
 
-The recommended method of installing ``schwaby`` is using ``pip`` from
-`PyPi <https://pypi.org/project/schwaby/>`__ in a `virtualenv <https://
-virtualenv.pypa.io/en/latest/>`__. First create a virtualenv in your project 
-directory. Here we assume your virtualenv is called ``my-venv``:
+Install with ``pip`` from `PyPI <https://pypi.org/project/schwaby/>`__, into a
+`virtualenv <https://virtualenv.pypa.io/en/latest/>`__. Creating one first,
+called ``my-venv`` here:
 
 .. code-block:: shell
 
@@ -142,9 +135,8 @@ directory. Here we assume your virtualenv is called ``my-venv``:
   virtualenv -v my-venv
   source my-venv/bin/activate
 
-You are now ready to install ``schwaby``. The distribution is ``schwaby`` and
-the importable package is ``schwab`` --- ``pip install schwab-py`` would fetch
-the *original* project, which is a different and much older codebase:
+Then install the library. The distribution is called ``schwaby`` and the
+package you import is called ``schwab``:
 
 .. code-block:: shell
 
@@ -162,13 +154,12 @@ the *original* project, which is a different and much older codebase:
   the install --- ``pip`` still lists ``schwaby``, but ``import schwab`` raises
   ``ModuleNotFoundError``.
 
-  ``pip`` never warns about this --- it does not implement
-  ``Conflicts-Dist``, and a wheel runs no code when it is installed.
-  ``import schwab`` does warn, but **only if** ``schwaby`` was installed
-  last: both projects ship a ``schwab/__init__.py``, whichever is installed
-  second overwrites the other's, and installing ``schwab-py`` over
-  ``schwaby`` removes the file that carries the check. Silence is not
-  evidence that the install is clean.
+  ``pip`` never warns about this --- it does not implement ``Conflicts-Dist``,
+  and a wheel runs no code when it is installed. ``import schwab`` does warn,
+  but **only if** ``schwaby`` was installed last: both projects ship a
+  ``schwab/__init__.py``, whichever is installed second overwrites the other's,
+  and installing ``schwab-py`` over ``schwaby`` removes the file that carries
+  the check. Silence is not evidence that the install is clean.
 
   Migrating from ``schwab-py``? Uninstall it **first**:
 
@@ -176,28 +167,26 @@ the *original* project, which is a different and much older codebase:
 
     pip uninstall -y schwab-py && pip install schwaby
 
-That's it! You're done! You can verify the install succeeded by importing the
-package:
+Check that it worked:
 
 .. code-block:: python
 
   import schwab
 
-If this succeeded, you're ready to move on to :ref:`auth`.
-
-Note that if you are using a virtual environment and switch to a new terminal
-your virtual environment will not be active in the new terminal, and you need to
-run the activate command again. If you want to disable the loaded virtual
-environment in the same terminal window, use the command:
+A virtualenv is per-terminal. Open a new one and you will need to activate it
+again; to leave it in the current terminal, run:
 
 .. code-block:: shell
 
   deactivate
 
+That is the whole install. Next is :ref:`auth`, which turns your app key and
+secret into a token the client can use.
+
+
 ++++++++++++
 Getting Help
 ++++++++++++
 
-If you are ever stuck, you can `open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__ to ask a 
-question. If you feel you've found a bug, you can :ref:`fill out a bug report 
-<help>`.
+Stuck? `Open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__ and ask.
+If you think you have found a bug, :ref:`fill out a bug report <help>`.
