@@ -160,26 +160,49 @@ is reading the socket hands the response to whoever is waiting for it, so a
 subscription made against a quiet stream is sent immediately rather than waiting
 for a message to arrive first.
 
-When subscriptions are called multiple times on the same stream, the results
-vary. What's more, these results aren't documented in the official
-documentation. As a result, it's recommended not to call a subscription function
-more than once for any given stream.
+.. _subs_vs_add:
 
-Some services, notably :ref:`equity_charts` and :ref:`futures_charts`,
-offer ``SERVICE_NAME_add`` functions which can be used to add symbols to the
-stream after the subscription has been created. For others, calling the
-subscription methods again seems to clear the old subscription and create a new
-one. Note this behavior is not officially documented, so this interpretation may
-be incorrect.
+Schwab documents nothing about what a second ``subs`` does to the first. Three
+rules account for every frame in a capture made by subscribing repeatedly and
+grouping the results by subscription key:
+
+**A** ``subs`` **replaces the subscription for its service.** The keys named in
+the previous call stop delivering. There is no acknowledgement of the
+replacement and no error --- the old data simply ceases.
+
+**An** ``add`` **appends to it.** Both the earlier keys and the added ones
+deliver afterwards.
+
+**Services are independent.** A ``subs`` on ``SCREENER_EQUITY`` does not touch
+a live ``SCREENER_OPTION`` subscription, and the two go on pushing at their own
+rates side by side.
+
+The first rule has a consequence worth stating on its own: **a** ``subs``
+**with a key Schwab silently ignores still replaces a working subscription.**
+Schwab acknowledges the new key, delivers nothing for it, and the data you
+were receiving is gone. Nothing in the protocol distinguishes that from a
+market with nothing to report.
+
+.. note::
+
+  Those three rules are structural and held for every frame in the capture.
+  Anything quantitative from the same session --- push rates, how much
+  membership moves --- is one nine-minute window and is flagged as such where
+  it appears; see :ref:`screener_cadence`.
+
+  A frame count is not a liveness signal, incidentally. The key with by far
+  the most frames in that capture had them only because it was subscribed
+  longest.
 
 
 -------------------------
 Adding Symbols to Streams
 -------------------------
 
-These functions have names that follow the pattern ``SERVICE_NAME_add``.
-These functions send a request to add to the list of subscribed symbols for a
-particular data stream.
+These functions have names that follow the pattern ``SERVICE_NAME_add``, and
+they append to the current subscription rather than replacing it --- see
+:ref:`the subs and add rules <subs_vs_add>` above. Not every service offers
+one; :ref:`equity_charts` and :ref:`futures_charts` do.
 
 
 -------------------------
