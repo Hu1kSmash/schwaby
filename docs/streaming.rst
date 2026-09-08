@@ -846,6 +846,40 @@ and frequency is:
   fields all return distinct populations. Treat it as unavailable rather
   than as something you are using incorrectly.
 
+.. _screener_cadence:
+
+-------------------------------
+What was measured, and how much
+-------------------------------
+
+Schwab documents none of the following. It comes from a single capture ---
+one nine-minute window, midday on a normal trading session, one account ---
+so treat the numbers as an order of magnitude rather than a specification,
+and re-measure if you are going to depend on them.
+
+**The frequency selects a time bucket, not a push rate.** Subscribing at
+``_0``, ``_1``, ``_5`` and ``_60`` gave four different rankings and the same
+push interval. The bucket changes *what* is ranked; it does not change how
+often you hear about it.
+
+**Push interval is a property of the service.** ``SCREENER_EQUITY`` pushed
+about every 10 seconds and ``SCREENER_OPTION`` about every 5, at every
+frequency tried. If you subscribe to both, expect the two rates interleaved
+--- a stall detector that assumes one rate will misjudge the other.
+
+**A subscription answers immediately, then falls onto the server's clock.**
+The first frame arrived within 0.03 seconds of the ``SUBS`` acknowledgement
+in eleven of fourteen subscriptions. The interval that follows it is a
+partial cycle, so discard it before averaging anything.
+
+**Frequency ``0`` is what the REST endpoint returns.** A stream subscription
+at ``NASDAQ_VOLUME_0`` and a
+:meth:`~schwab.client.Client.get_movers` call 70 seconds apart produced the
+same ten symbols in the same order. The other buckets shared only four to six
+of those ten. So :meth:`~schwab.client.Client.get_movers` is not a different
+view of the data --- it is this service's whole-session bucket, and it is the
+only one of the six that REST exposes.
+
 Both the equity and option screener streams use a common set of fields:
 
 .. autoclass:: schwab.streaming::StreamClient.ScreenerFields
