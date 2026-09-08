@@ -4,8 +4,7 @@
 Utilities
 =========
 
-This section describes miscellaneous utility methods provided by ``schwaby``.  
-All utilities are presented under the ``Utils`` class:
+Miscellaneous helpers, all presented under the ``Utils`` class:
 
 .. autoclass:: schwab.utils.Utils
 
@@ -19,14 +18,15 @@ All utilities are presented under the ``Utils`` class:
 Extract an order ID from a placed order
 ---------------------------------------
 
-For successfully placed orders, :meth:`place_order 
-<schwab.client.Client.place_order>` returns the ID of the newly created order, 
-encoded in the ``r.headers['Location']`` header.  This method inspects the 
-response and extracts the order ID from the contents, if it's there. This order 
-ID can then be used to monitor or modify the order as described in the 
-:ref:`Client documentation <orders-section>`. Example usage:
+For successfully placed orders, :meth:`place_order
+<schwab.client.Client.place_order>` returns the ID of the newly created order,
+encoded in the ``r.headers['Location']`` header. This method reads it out of
+the response. The ID is what you then use to monitor or modify the order, as
+described in the :ref:`Client documentation <orders-section>`.
 
 .. code-block:: python
+
+  from schwab.utils import Utils
 
   # Assume client and order already exist and are valid
   account_hash = client.get_account_numbers().json()[0]['hashValue']
@@ -69,11 +69,10 @@ Note ``order_id = None`` before the ``try``. Two of those branches handle rather
 than re-raise, so without it the name is unbound afterwards and using it raises
 ``NameError`` --- in the middle of deciding what happened to an order.
 
-Note also what sits *between* the call and whatever you return. On 2.x this
-method returned ``None`` and execution carried on, so any journalling or
-bookkeeping after it still ran. It raises now, so that code is skipped on
-exactly the path where an order may be live and unrecorded. Move anything of
-that kind above the call, or into the handlers.
+Note also what sits *between* the call and whatever you return. This method
+raises rather than returning a sentinel, so journalling or bookkeeping written
+after it is skipped on exactly the path where an order may be live and
+unrecorded. Put that work above the call, or inside the handlers.
 
 .. automethod:: schwab.utils.Utils.extract_order_id
 
@@ -85,6 +84,7 @@ Exceptions
 ++++++++++
 
 The exceptions this library raises that a caller might reasonably catch.
+:class:`~schwab.streaming.ResponseTimeoutError`,
 :class:`~schwab.streaming.UnexpectedResponse`,
 :class:`~schwab.streaming.UnexpectedResponseCode`,
 :class:`~schwab.streaming.UnparsableMessage` and
