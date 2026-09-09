@@ -367,9 +367,10 @@ quietly stop being true.
   perfectly good quantity by the time it arrives.
 
   If you normalise numeric input before it reaches a setter, exclude ``bool``
-  first. Reported by the consumer it happened to. Everything a setter refuses raises immediately and
-names the field, rather than being serialized as the wrong JSON type or
-dropped.
+  first. Reported by the consumer it happened to.
+
+Everything a setter refuses raises immediately and names the field, rather than
+being serialized as the wrong JSON type or dropped.
 
 **The split is not Schwab's schema.** Schwab types ``price`` and ``stopPrice``
 as ``number($double)`` as well, and this library sends those as strings anyway

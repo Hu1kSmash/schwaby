@@ -104,7 +104,7 @@ wrong order; `replace_order` returning a new ID, where anything tracking the
 old one concludes the position closed while the replacement is still working;
 and `'{:.2f}'.format(value)` rounding a buy limit up, which is a fill one tick
 worse than intended. All three can cost money, which is the line `danger` is
-for. Six `danger`, eight `warning`, nine `note` across the docs now.
+for. The docs carry more of these than they did; the levels are what changed.
 
 **A removed date left a sentence broken.** That same docstring read "for every
 asset type. As of / Schwab accepts only" — release step 4 strips dates from

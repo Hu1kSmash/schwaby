@@ -1121,8 +1121,7 @@ cancel, one capture. Any model declaring these ``str``, or ``int``, breaks on
 the sibling frame.
 
 **Numbers are** ``{"lo": "<mantissa>", "signScale": N}``, **and an odd**
-``signScale`` **means the value is negative.** The rule that reproduces every
-captured payload:
+``signScale`` **means the value is negative.**
 
 **This library ships one**, because every consumer was writing it and the
 first attempt is reliably wrong in at least one of the ways below:
@@ -1136,7 +1135,7 @@ first attempt is reliably wrong in at least one of the ways below:
   decode_decimal({"signScale": 12})                    # Decimal('0')
 
 .. autofunction:: schwaby.contrib.util.decode_decimal
-.. autoclass:: schwaby.contrib.util.UnknownDecimalScale
+.. autoclass:: schwaby.contrib.util.UnusableDecimalScale
 
 .. danger::
 

@@ -29,13 +29,23 @@ class HeuristicJsonDecoder(StreamJsonDecoder):
         return json.loads(raw)  # pragma: no cover
 
 
-class UnknownDecimalScale(SchwabError, ValueError):
-    '''Raised by :func:`decode_decimal` for an object with a mantissa and no
-    ``signScale``.
+#: The largest ``signScale`` :func:`decode_decimal` will compute with. A .NET
+#: ``Decimal`` scale is 0 to 28, which is a ``signScale`` of at most 57.
+MAX_SIGN_SCALE = 64
+
+
+class UnusableDecimalScale(SchwabError, ValueError):
+    '''Raised by :func:`decode_decimal` when the ``signScale`` cannot be used:
+    absent on an object that has a mantissa, or too large to be real.
 
     The scale is what turns the mantissa into a number, so guessing one is a
     silent wrong answer by construction --- and the guess that suggests itself,
     six decimal places, is only the value that happens to be common.
+
+    A real .NET ``Decimal`` scale is 0 to 28, so ``signScale`` does not exceed
+    about 57. Anything larger is refused rather than computed: past roughly two
+    million the value underflows to a zero that compares equal to zero, and a
+    corrupt ``LeavesQuantity`` reading as zero is a complete fill.
 
     A :class:`~schwaby.utils.SchwabError` so ``except SchwabError`` covers it
     like everything else this library defines, and a :class:`ValueError` so it
@@ -80,11 +90,19 @@ def decode_decimal(value):
     :param value: A decimal object, or a number or string, which is returned
                   as a :class:`~decimal.Decimal` unchanged --- the same field
                   does not always arrive in the same shape.
-    :raises UnknownDecimalScale: if the object carries a mantissa but no
-                                 ``signScale``. Never observed; refused rather
-                                 than guessed, because a guessed scale is
-                                 wrong by a factor of a million and says
-                                 nothing.
+    :raises UnusableDecimalScale: if the object carries a mantissa and no
+                                  ``signScale``, or a ``signScale`` too large
+                                  to be a real one. Neither observed; refused
+                                  rather than computed, because both produce a
+                                  plausible wrong number rather than an error.
+    :raises UnusableDecimalScale: if a non-object value is not a number ---
+                                  the empty string reaches this function from
+                                  the ``SUBSCRIBED`` ack.
+
+    Every failure is a :class:`~schwaby.utils.SchwabError` and a
+    :class:`ValueError`, so a caller wrapping each field in one ``except``
+    keeps the rest of the message. That is the point of the bound above: a
+    hang is not catchable, so it must not be reachable.
     '''
     if value is None:
         return None
@@ -93,27 +111,60 @@ def decode_decimal(value):
         # The same field has been seen arriving as a bare number, and as a
         # string. Decimal(str(...)) rather than Decimal(float) so a float does
         # not bring its binary expansion along.
-        return decimal.Decimal(str(value))
+        try:
+            return decimal.Decimal(str(value))
+        except decimal.InvalidOperation:
+            # `decimal.InvalidOperation` is an ArithmeticError, so it is
+            # neither a SchwabError nor a ValueError and escapes both of the
+            # handlers a caller would reasonably write. The empty string
+            # reaches here from the SUBSCRIBED ack.
+            raise UnusableDecimalScale(
+                    'not a number: {!r}'.format(value)) from None
 
-    if value.get('lo') is None:
+    if all(value.get(k) is None for k in ('lo', 'mid', 'hi')):
         # Measured on three fields of one payload: a $0 commission, a market
         # order's absent limit price, and LeavesQuantity on a final fill.
+        #
+        # All three parts, not `lo` alone: the serializer omits zero members,
+        # so a value whose low 32 bits happen to be zero arrives as
+        # `{"mid": 1, ...}` and keying on `lo` would decode it as zero -- the
+        # same slice-reading defect this function exists to fix, in the guard
+        # that precedes it.
         return decimal.Decimal(0)
 
     if value.get('signScale') is None:
-        raise UnknownDecimalScale(
+        raise UnusableDecimalScale(
                 'decimal object has a mantissa and no signScale, so its scale '
                 'is unknown: {!r}'.format(value))
 
-    mantissa = (int(value['lo'])
+    # `.get` on all three, not `value['lo']`. The guard above accepts an
+    # object with only `mid` set, so requiring `lo` here would KeyError on
+    # exactly the shape that guard was widened to allow -- the two have to
+    # read the mantissa the same way or one of them is answering a different
+    # question.
+    mantissa = (int(value.get('lo') or 0)
                 + (int(value.get('mid') or 0) << 32)
                 + (int(value.get('hi') or 0) << 64))
     scale = int(value['signScale'])
 
-    # scaleb, not `10 ** (scale // 2)`. The exponent comes from an untrusted
-    # field, and the power builds an astronomical integer on a hostile value
-    # and hangs the thread -- which a per-item try/except cannot rescue, so one
-    # bad field would take a stream down rather than one message. scaleb
-    # raises InvalidOperation immediately instead.
-    result = decimal.Decimal(mantissa).scaleb(-(scale // 2))
+    # Bounded explicitly rather than left to the arithmetic to refuse.
+    # `10 ** (scale // 2)` on a hostile exponent builds an astronomical integer
+    # and hangs the thread, which a per-item try/except cannot rescue -- but
+    # `scaleb` is not the answer on its own either: its operand limit only
+    # trips far out, and every scale between roughly two million and four
+    # million underflows to a zero that compares equal to zero instead of
+    # raising. Zero is the worst wrong answer available on this feed.
+    if not 0 <= scale <= MAX_SIGN_SCALE:
+        raise UnusableDecimalScale(
+                'signScale {} is outside 0..{}, so it is not a real one: '
+                '{!r}'.format(scale, MAX_SIGN_SCALE, value))
+
+    # Built from a string rather than scaled with `scaleb`, because scaleb
+    # applies the *caller's* decimal context. A consumer who sets
+    # `decimal.getcontext().prec = 6` somewhere else in their process -- an
+    # ordinary thing to do when formatting money -- would otherwise get
+    # 1234.57 for a price of 1234.5678, silently, from a function whose whole
+    # purpose is that its result can be fed back into `set_price`. String
+    # construction is context-free and does not round.
+    result = decimal.Decimal('{}E-{}'.format(mantissa, scale // 2))
     return -result if scale % 2 else result

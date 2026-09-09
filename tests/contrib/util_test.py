@@ -2,7 +2,9 @@ import decimal
 import unittest
 
 from schwaby.contrib.util import (
-    decode_decimal, HeuristicJsonDecoder, UnknownDecimalScale)
+    MAX_SIGN_SCALE, decode_decimal, HeuristicJsonDecoder,
+    UnusableDecimalScale)
+from schwaby.utils import SchwabError
 from ..utils import no_duplicates
 
 
@@ -51,7 +53,7 @@ class DecodeDecimalTest(unittest.TestCase):
         # Never observed. Refused because the guess that suggests itself --
         # six places, the common value -- is wrong by a factor of a million
         # when it is wrong, and says nothing when it is right.
-        with self.assertRaises(UnknownDecimalScale):
+        with self.assertRaises(UnusableDecimalScale):
             decode_decimal({'lo': '6860000'})
 
     @no_duplicates
@@ -96,7 +98,7 @@ class DecodeDecimalTest(unittest.TestCase):
         # make this test *fail*, it makes the run stop responding until it is
         # killed. The harness cannot express that, and it is a more convincing
         # result than a red would have been.
-        with self.assertRaises(decimal.InvalidOperation):
+        with self.assertRaises(UnusableDecimalScale):
             decode_decimal({'lo': '1', 'signScale': 10 ** 9})
 
     @no_duplicates
@@ -105,3 +107,78 @@ class DecodeDecimalTest(unittest.TestCase):
         self.assertEqual(decimal.Decimal('6.86'), decode_decimal('6.86'))
         self.assertEqual(decimal.Decimal('6.86'), decode_decimal(6.86))
         self.assertIsNone(decode_decimal(None))
+
+    @no_duplicates
+    def test_the_callers_decimal_context_cannot_change_the_answer(self):
+        # `scaleb` applies the *caller's* context. A consumer setting
+        # `getcontext().prec = 6` somewhere else in their process -- an
+        # ordinary thing to do when formatting money -- got 1234.57 for a
+        # price of 1234.5678, silently, from a function whose whole purpose is
+        # that its result feeds back into set_price.
+        field = {'lo': '1234567800', 'signScale': 12}
+        expected = decimal.Decimal('1234.5678')
+        original = decimal.getcontext().prec
+        try:
+            for prec in (1, 3, 6, 28, 60):
+                with self.subTest(prec=prec):
+                    decimal.getcontext().prec = prec
+                    self.assertEqual(expected, decode_decimal(field))
+        finally:
+            decimal.getcontext().prec = original
+
+    @no_duplicates
+    def test_a_full_width_mantissa_does_not_round(self):
+        # 96 bits is the widest a .NET Decimal carries, and it rounds under
+        # the default precision of 28 if the value goes through the context.
+        mantissa = 2 ** 96 - 1
+        field = {'lo': str(mantissa & 0xFFFFFFFF),
+                 'mid': (mantissa >> 32) & 0xFFFFFFFF,
+                 'hi': mantissa >> 64,
+                 'signScale': 12}
+        self.assertEqual(decimal.Decimal('{}E-6'.format(mantissa)),
+                         decode_decimal(field))
+
+    @no_duplicates
+    def test_an_implausible_scale_raises_rather_than_underflowing_to_zero(self):
+        # Relying on the arithmetic to refuse is not enough: `scaleb`'s operand
+        # limit only trips far out, so every scale from roughly two million to
+        # four million underflowed to a zero that compares equal to zero. On
+        # this feed that is the worst wrong answer available -- a corrupt
+        # LeavesQuantity reading as zero is a complete fill.
+        for scale in (MAX_SIGN_SCALE + 1, 2000100, 4000000, 10 ** 9, -1):
+            with self.subTest(signScale=scale):
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal({'lo': '1', 'signScale': scale})
+
+        # The bound itself is usable, so the assertions above are about
+        # implausible scales rather than about the check refusing everything.
+        self.assertEqual(decimal.Decimal(1),
+                         decode_decimal({'lo': '1', 'signScale': 0}))
+        self.assertIsNotNone(
+                decode_decimal({'lo': '1', 'signScale': MAX_SIGN_SCALE}))
+
+    @no_duplicates
+    def test_a_mantissa_carried_only_in_mid_is_not_read_as_zero(self):
+        # The serializer omits zero members, so a value whose low 32 bits are
+        # zero arrives without `lo`. Keying the mantissa-less guard on `lo`
+        # alone decoded that as zero -- the slice-reading defect this function
+        # exists to fix, in the guard immediately before it.
+        self.assertEqual(decimal.Decimal('4294.967296'),
+                         decode_decimal({'mid': 1, 'signScale': 12}))
+        self.assertEqual(decimal.Decimal('4294.967296'),
+                         decode_decimal({'lo': '0', 'mid': 1, 'signScale': 12}))
+
+    @no_duplicates
+    def test_every_failure_is_catchable_by_one_except(self):
+        # `decimal.InvalidOperation` is an ArithmeticError, so it is neither a
+        # SchwabError nor a ValueError and escapes both handlers a caller
+        # would reasonably write -- while the prose tells them to wrap each
+        # field so one odd value does not cost the message. The empty string
+        # reaches here from the SUBSCRIBED ack.
+        for bad in ('', 'not a number', {'lo': '1'},
+                    {'lo': '1', 'signScale': 10 ** 9}):
+            with self.subTest(value=bad):
+                with self.assertRaises(SchwabError):
+                    decode_decimal(bad)
+                with self.assertRaises(ValueError):
+                    decode_decimal(bad)
