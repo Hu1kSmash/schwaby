@@ -171,28 +171,6 @@ not all users can simply use the following pattern:
   assert r.status_code == httpx2.codes.OK, r.raise_for_status()
   data = r.json()
 
-.. warning::
-
-  **Catch** ``httpx2`` **exceptions, not** ``httpx`` **ones.** This library is
-  built on ``httpx2``, and ``httpx`` is not a dependency at all. The two share
-  no exception hierarchy, so this catches nothing:
-
-  .. code-block:: python
-
-    import httpx           # the wrong module
-
-    try:
-        r = client.get_quote('AAPL')
-        r.raise_for_status()
-    except httpx.HTTPStatusError:      # never fires
-        retry()
-
-  It fails in the worst way available: nothing raises at import, nothing raises
-  at the ``try``, and the ``except`` simply never matches --- so the retry never
-  runs and the exception propagates to whatever is above. A handler written this
-  way around rate limiting presents as an unhandled exception during a burst of
-  429s. Import ``httpx2`` and catch ``httpx2.HTTPStatusError`` instead.
-
 The API indicates errors using the response status code, and this pattern will
 raise the appropriate exception if the response is not a success. The data can
 be fetched by calling the ``.json()`` method.

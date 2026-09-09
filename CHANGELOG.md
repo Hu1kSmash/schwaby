@@ -22,6 +22,22 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## Unreleased
+
+Documentation only.
+
+**Removed the `httpx` warning from the HTTP client page.** It showed the wrong
+code — `import httpx`, `except httpx.HTTPStatusError` — inside a `warning`
+block, which is the most visually prominent thing on the page. Someone skimming
+for a retry pattern could reasonably have copied it, which is the opposite of
+what it was for.
+
+It was written for readers arriving from `schwab-py`, and this has not been a
+fork since 2.2.0. The section already says responses come from HTTPX2 and links
+it, and every example on every page imports `httpx2`, so the fact is carried by
+the code rather than by a caution about a package this library does not depend
+on.
+
 ## 4.1.0
 
 ### An order field that is not a number is refused, and says which field
