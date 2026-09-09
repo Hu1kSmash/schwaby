@@ -28,6 +28,27 @@ from .utils import no_duplicates
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 
+def cls_own_body(func):
+    """Every node inside `func` except those inside a nested function.
+
+    `ast.walk` has no notion of scope, so a test whose local helper returns a
+    value looks identical to a test that returns one itself.
+    """
+    nested = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+    stack, out = list(func.body), []
+    while stack:
+        node = stack.pop()
+        # Skipping the node itself, not just its children. The first version
+        # dropped nested `def`s from the *stack* but still appended the one it
+        # was looking at and then walked its body, so a local helper's return
+        # was reported as the test's own.
+        if isinstance(node, nested):
+            continue
+        out.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
 def display_path(path):
     '''Path relative to the repository, or absolute if it is not under one.
 
@@ -874,6 +895,7 @@ class DocExampleTest(unittest.TestCase):
     """
 
     CODE_BLOCK = re.compile(r'^([ \t]*)\.\.\s+code-block::\s*python\s*$')
+    DIRECTIVE_OPTION = re.compile(r'^[ \t]+:[a-zA-Z-]+:.*$')
 
     @staticmethod
     def dedent(block):
@@ -940,6 +962,14 @@ class DocExampleTest(unittest.TestCase):
                 i += 1
                 continue
             base, j, body = len(m.group(1)), i + 1, []
+            # A directive may carry options -- `:caption:`,
+            # `:emphasize-lines:` -- on the lines right after it, indented
+            # like the body. They are not Python, and appending them makes the
+            # block a SyntaxError, so an ordinary docs edit would fail the
+            # parse check. Nothing here uses one today, which is why it needs
+            # handling now rather than the first time somebody adds one.
+            while j < len(lines) and cls.DIRECTIVE_OPTION.match(lines[j]):
+                j += 1
             while j < len(lines):
                 stripped = lines[j].strip()
                 if not stripped:
@@ -1158,6 +1188,47 @@ class DocExampleTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             templates['equity_buy_market']('AAPL', '10').build()
         templates['equity_buy_market']('AAPL', 10).build()
+
+    @no_duplicates
+    def test_no_collected_test_returns_a_value(self):
+        """A helper named `test_*` is collected, called, and passes.
+
+        It tests nothing, reports green, and raises the count -- which is how
+        `test_files()` slipped in as a static helper on this very class. The
+        `filterwarnings` rule in `setup.cfg` turns unittest's warning about it
+        into a failure, but that warning only exists from CPython 3.11, and CI
+        runs 3.10 as well: on that leg the trap is still silent.
+
+        So this asks the question structurally instead, which no interpreter
+        version can opt out of. Read from source, since a decorated test does
+        not always expose a usable `__code__` at runtime.
+        """
+        offenders = []
+        for path in self.python_files_under_tests():
+            with open(path, encoding='utf-8') as f:
+                tree = ast.parse(f.read())
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ClassDef):
+                    continue
+                for item in node.body:
+                    if not isinstance(item, (ast.FunctionDef,
+                                             ast.AsyncFunctionDef)):
+                        continue
+                    if not item.name.startswith('test'):
+                        continue
+                    # Only this function's own body. `ast.walk` descends
+                    # into nested `def`s, and a test defining a local helper
+                    # that returns something -- a `side_effect`, typically --
+                    # is not what this is about. `test_running_on_collab_
+                    # environment` is exactly that shape and was the first
+                    # thing this flagged.
+                    if any(isinstance(inner, ast.Return)
+                           and inner.value is not None
+                           for inner in cls_own_body(item)):
+                        offenders.append(
+                                '%s: %s.%s returns a value'
+                                % (display_path(path), node.name, item.name))
+        self.assertEqual([], offenders)
 
     @no_duplicates
     def test_no_test_module_defines_a_class_name_twice(self):

@@ -189,7 +189,19 @@ def _assert_finite(name, price, *, price_field=False):
         if isinstance(price, bool) or not isinstance(price, (int, float)):
             raise ValueError(
                     '{} must be a number, got {!r}'.format(name, price))
-        value = float(price)
+
+        try:
+            value = float(price)
+        except OverflowError:
+            # An int too large for a double. `json.dumps` serializes one
+            # happily, so this is not the unsendable case -- but `float()`
+            # raises `OverflowError: int too large to convert to float`,
+            # naming neither the field nor the value, which is the ending
+            # every other branch here exists to replace. Absurd as a
+            # quantity and cheap to name.
+            raise ValueError(
+                    '{} is too large to be a price or a size, got a {}-digit '
+                    'integer'.format(name, len(str(abs(price))))) from None
 
     if math.isnan(value) or math.isinf(value):
         raise ValueError(

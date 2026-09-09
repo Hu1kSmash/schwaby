@@ -77,6 +77,7 @@ class ConvertEnumIterableTest(unittest.TestCase):
         VALUE_1 = 1
         VALUE_2 = 2
 
+    @no_duplicates
     def test_a_wrong_element_is_refused_and_the_message_suggests_the_member(
             self):
         t = self.TestClass(enforce_enums=True)
@@ -84,11 +85,13 @@ class ConvertEnumIterableTest(unittest.TestCase):
                 ValueError, 'tests.utils_test.TestEnum.VALUE_1'):
             t.convert([self.TestEnum.VALUE_2, 'VALUE_1'])
 
+    @no_duplicates
     def test_a_wrong_element_is_refused_even_without_a_suggestion(self):
         t = self.TestClass(enforce_enums=True)
         with self.assertRaises(ValueError):
             t.convert([123])
 
+    @no_duplicates
     def test_a_string_matching_no_member_gets_no_did_you_mean(self):
         # `type_error` only offers a suggestion when the string appears in
         # some member's full name. Every existing test passed a string that
@@ -104,6 +107,7 @@ class ConvertEnumIterableTest(unittest.TestCase):
         self.assertIn('TestEnum', str(ctx.exception))
         self.assertIn('str', str(ctx.exception))
 
+    @no_duplicates
     def test_the_same_element_passes_through_when_enforcement_is_off(self):
         # The control that makes the two above mean something: they must fail
         # because enforcement rejected the value, not because the value could
@@ -112,6 +116,7 @@ class ConvertEnumIterableTest(unittest.TestCase):
         self.assertEqual([2, 'VALUE_1'],
                          t.convert([self.TestEnum.VALUE_2, 'VALUE_1']))
 
+    @no_duplicates
     def test_correct_elements_are_converted(self):
         t = self.TestClass(enforce_enums=True)
         self.assertEqual([1, 2],
@@ -129,12 +134,14 @@ class DescribeErrorTest(unittest.TestCase):
     for and which nothing sent it.
     """
 
+    @no_duplicates
     def test_a_body_that_is_not_an_object_yields_no_suffix(self):
         for payload in ([1, 2, 3], 'a string', None, 42, True):
             with self.subTest(payload=payload):
                 self.assertEqual(
                         '', _describe_error(MockResponse(payload, 400)))
 
+    @no_duplicates
     def test_an_object_body_still_yields_its_message(self):
         # Positive control. Every assertion above is satisfied by a function
         # that returns '' unconditionally.
@@ -150,6 +157,7 @@ class SetAccountHashTest(unittest.TestCase):
     nothing -- so whether it takes effect on the next call was unverified.
     """
 
+    @no_duplicates
     def test_the_new_hash_is_the_one_used_afterwards(self):
         client = MagicMock()
         u = Utils(client, '0xf1rsth45h')
@@ -158,6 +166,7 @@ class SetAccountHashTest(unittest.TestCase):
         u.set_account_hash('0x53c0ndh45h')
         self.assertEqual('0x53c0ndh45h', u.account_hash)
 
+    @no_duplicates
     def test_it_is_the_hash_a_later_call_actually_sends(self):
         # The assertion above only checks the attribute. This checks that the
         # value is the one that leaves the process, which is the thing a

@@ -4384,7 +4384,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             self.client.add_nyse_book_handler(async_handler)
             return handler, async_handler
 
-        return await self.__test_book_handler(
+        await self.__test_book_handler(
             ws_connect, 'NYSE_BOOK', subs, register_handler)
 
     @no_duplicates
@@ -4400,7 +4400,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             self.client.add_nasdaq_book_handler(async_handler)
             return handler, async_handler
 
-        return await self.__test_book_handler(
+        await self.__test_book_handler(
             ws_connect, 'NASDAQ_BOOK', subs, register_handler)
 
     @no_duplicates
@@ -4416,7 +4416,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             self.client.add_options_book_handler(async_handler)
             return handler, async_handler
 
-        return await self.__test_book_handler(
+        await self.__test_book_handler(
             ws_connect, 'OPTIONS_BOOK', subs, register_handler)
 
     @no_duplicates

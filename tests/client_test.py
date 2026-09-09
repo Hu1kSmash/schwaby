@@ -2402,9 +2402,9 @@ class _TestClient:
         stops resolving under the package root.
 
         Nothing reached the line. Under pytest the stack always contains
-        frames outside the package, so the loop always returns early. A root
-        Every filename is made to look internal instead, which is the same
-        shape as every frame being unresolvable, and takes the walk to the end.
+        frames outside the package, so the loop always returns early. Every
+        filename is made to look internal instead, which is the same shape as
+        every frame being unresolvable, and takes the walk to the end.
         """
         # Two earlier attempts at this made every frame look internal by
         # choosing a clever `_PACKAGE_ROOT`, and both were wrong on Windows:
