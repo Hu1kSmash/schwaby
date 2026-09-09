@@ -35,6 +35,15 @@ the order without complaint and it fails on the live path. Two consumers have
 built a time-in-force table from this enum and been wrong; it was documented on
 the enum's own docstring, which is not where either of them looked.
 
+**Three hazards were re-graded from `warning` to `danger`**, by consequence
+rather than by feel: the asymmetric argument order on `cancel_order` and
+`get_order`, which sends a well-formed request naming the wrong account or the
+wrong order; `replace_order` returning a new ID, where anything tracking the
+old one concludes the position closed while the replacement is still working;
+and `'{:.2f}'.format(value)` rounding a buy limit up, which is a fill one tick
+worse than intended. All three can cost money, which is the line `danger` is
+for. Six `danger`, eight `warning`, nine `note` across the docs now.
+
 **A removed date left a sentence broken.** That same docstring read "for every
 asset type. As of / Schwab accepts only" — release step 4 strips dates from
 shipped documentation and greps for dates, not for the wreckage removing one

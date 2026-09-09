@@ -384,7 +384,7 @@ converts a number to a price string for you, because whether a limit price
 should round up, down, or to the nearest tick is a trading decision and not a
 formatting one. Making it yourself is how you keep it.
 
-.. warning::
+.. danger::
 
    If you are formatting a computed price, note that ``'{:.2f}'.format(value)``
    **rounds**. Rounding a buy limit up gives you a price one tick higher than

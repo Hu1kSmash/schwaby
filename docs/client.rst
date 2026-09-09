@@ -368,7 +368,7 @@ Instrument Searching and Fundamentals
 Orders
 ++++++
 
-.. warning::
+.. danger::
 
   **The order methods do not take their arguments in the same order.**
 
@@ -449,7 +449,7 @@ helper function <extract_order_id>`. Otherwise, see
 .. automethod:: schwaby.client.Client.cancel_order
 .. automethod:: schwaby.client.Client.replace_order
 
-.. warning::
+.. danger::
 
   **A replacement is a new order with a new ID.** Schwab cancels the original
   and creates a fresh one, so anything tracking the old ID is now watching a
