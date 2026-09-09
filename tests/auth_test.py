@@ -1004,6 +1004,57 @@ class ClientFromReceivedUrl(unittest.TestCase):
     @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
     @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    def test_async_update_token_still_writes_the_token(
+            self, async_session, sync_session, async_client, client):
+        """The second copy of the async token writer.
+
+        `client_from_access_functions` had one of these, unreached and marked
+        `# pragma: no cover`; this is the same shape 140 lines away, and
+        fixing the first one without looking for the second is how the
+        identical `int(float(x) * 1000)` sat in two places here for a release.
+
+        `test_success_async` below covers the *construction* -- that
+        `AsyncClient` is built and `Client` is not. What nothing covered is
+        awaiting the `async def` that gets handed to the session as
+        `update_token`, which is the only thing on this path that writes a
+        token at all.
+        """
+        sync_session.return_value = sync_session
+        sync_session.create_authorization_url.return_value = \
+                'https://auth.url.com', 'oauth state'
+        sync_session.fetch_token.return_value = self.raw_token
+
+        auth_context = auth.get_auth_context(API_KEY, CALLBACK_URL)
+
+        token_capture = []
+        auth.client_from_received_url(
+                API_KEY, APP_SECRET, auth_context,
+                'http://redirect.url.com/?data',
+                lambda token: token_capture.append(token),
+                asyncio=True)
+
+        # The initial write happens during construction.
+        self.assertEqual(1, len(token_capture))
+
+        update_token = async_session.mock_calls[0][2]['update_token']
+        self.assertTrue(inspect.iscoroutinefunction(update_token))
+
+        refreshed = {'token': 'refreshed'}
+        asyncio.new_event_loop().run_until_complete(update_token(refreshed))
+
+        # Written through the metadata wrapper, so the creation timestamp is
+        # the original one rather than now -- which is the whole reason the
+        # wrapper is between the session and the caller's function.
+        self.assertEqual(2, len(token_capture))
+        self.assertEqual({'creation_timestamp': MOCK_NOW,
+                          'token': refreshed}, token_capture[-1])
+
+    @no_duplicates
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.AsyncClient')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_success_async(
             self, async_session, sync_session, async_client, client):
         AUTH_URL = 'https://auth.url.com'

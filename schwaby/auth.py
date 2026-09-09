@@ -947,8 +947,12 @@ def client_from_received_url(
     # synchronous one, the asynchronous requires an async one. The
     # oauth_client_update_token variable will contain the appropriate one.
     if asyncio:
+        # Not excluded from coverage, for the reason the sibling in
+        # client_from_access_functions gives: this is the line that writes
+        # the token on the async path, and a `no cover` on it hides the one
+        # thing worth measuring here.
         async def oauth_client_update_token(t, *args, **kwargs):
-            token_write_func(t, *args, **kwargs)  # pragma: no cover
+            token_write_func(t, *args, **kwargs)
         session_class = AsyncOAuth2Client
         client_class = AsyncClient
     else:
