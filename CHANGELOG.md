@@ -35,6 +35,34 @@ the order without complaint and it fails on the live path. Two consumers have
 built a time-in-force table from this enum and been wrong; it was documented on
 the enum's own docstring, which is not where either of them looked.
 
+**The `{lo, signScale}` decoder published in 4.1.0 was wrong for large
+numbers.** It read only `lo`. The encoding is a serialized .NET
+`System.Decimal` whose 96-bit mantissa spans `lo`, `mid` and `hi`, so at
+`signScale` 12 anything above **4294.967295** overflows into `mid` and a
+`lo`-only decoder returns a plausible smaller number with no exception —
+`{"lo": "705032704", "mid": 1, "signScale": 12}` is $5,000.00 and decoded as
+$705.03. A principal, a total or a share price reaches that easily. Reasoned
+from the .NET layout rather than observed: no captured payload has carried a
+non-zero `mid`, but a value that does not fit in 32 bits cannot be sent in `lo`
+alone.
+
+Three more facts about the same encoding, from the consumer who took it to
+Schwab: the conversion was **confirmed in writing by Schwab Trader API
+support** on 2026-06-24, who stated it while confirming it remains publicly
+undocumented; a decimal object with a `signScale` and no `lo` is **zero, not
+unknown**, measured on a `LeavesQuantity` arriving on the final fill event of a
+completed order, where reading it as unknown makes a complete fill report as
+outstanding; and the sign is not the side — direction comes from `BuySellCode`,
+and the odd-`signScale` branch exists so a genuinely negative field does not
+decode positive.
+
+**A normalizer in front of the setters defeats the `bool` rejection.** A
+consumer adapting to 4.1.0 wrote a helper to turn a `numpy.int64` quantity into
+a plain `int`; `float(True)` is `1.0` and `(1.0).is_integer()` is `True`, so it
+turned `True` into `1` and rebuilt the silent one-share order 4.1.0 was released
+to close — in code written to accommodate that very fix. Documented next to the
+accepted-types table.
+
 **Three hazards were re-graded from `warning` to `danger`**, by consequence
 rather than by feel: the asymmetric argument order on `cancel_order` and
 `get_order`, which sends a well-formed request naming the wrong account or the

@@ -1113,11 +1113,39 @@ captured payload:
       # Not a dict on every frame: the paragraph above has Schwab sending a
       # bare int where a sibling frame two milliseconds earlier sent a label,
       # so `'lo' not in field` on its own raises TypeError on the odd one.
-      if not isinstance(field, dict) or 'lo' not in field:
-          return decimal.Decimal(0)       # absent mantissa means zero
+      if not isinstance(field, dict):
+          return decimal.Decimal(0)
+      # The mantissa spans three fields. Reading only `lo` decodes a slice of
+      # anything that overflows 32 bits -- see below.
+      mantissa = (int(field.get('lo', 0))
+                  + (int(field.get('mid', 0)) << 32)
+                  + (int(field.get('hi', 0)) << 64))
       scale = field.get('signScale', 0)
-      value = decimal.Decimal(field['lo']).scaleb(-(scale // 2))
+      value = decimal.Decimal(mantissa).scaleb(-(scale // 2))
       return -value if scale % 2 else value
+
+.. danger::
+
+  **Read** ``lo`` **alone and a large enough number decodes to a smaller one,
+  silently.** The encoding is a serialized .NET ``System.Decimal``: a 96-bit
+  mantissa split across ``lo``, ``mid`` and ``hi``, where the true value is
+  ``lo + (mid << 32) + (hi << 64)``. At ``signScale`` 12 --- six decimal
+  places --- ``lo`` alone tops out at **4294.967295**. A principal amount, a
+  total, or a share price above roughly $4,295 needs ``mid``, and a decoder
+  ignoring it returns a plausible wrong number with no exception:
+
+  .. code-block:: python
+
+    {"lo": "705032704", "mid": 1, "signScale": 12}
+    # lo alone       ->    705.032704
+    # lo + mid<<32   ->   5000.000000      <- the actual value
+
+  Provenance, because it differs from the rest of this section: this one is
+  **reasoned from the .NET layout, not observed.** No captured payload has
+  carried a non-zero ``mid`` or ``hi``, on either feed anyone here has watched.
+  It is included because a value that does not fit in 32 bits cannot be sent
+  in ``lo`` alone, so the alternative to reading all three is waiting for a
+  large enough number to find out.
 
 ``Decimal`` rather than a float, deliberately: these are money, and
 :meth:`set_price <schwaby.orders.generic.OrderBuilder.set_price>` has refused a
@@ -1125,13 +1153,45 @@ float since 2.1.0 for the reason :ref:`price_strings` gives. A value decoded
 into a binary float cannot be fed back into a reprice without going through the
 conversion this library exists to avoid, and accumulating one over a day's
 principal reintroduces exactly the error class that made limit prices a cent
-low. ``scaleb`` shifts the decimal point rather than dividing, so it is exact.
+low. ``scaleb`` shifts the decimal point rather than dividing, so it is exact
+--- and it is also why the scale is applied that way rather than as
+``10 ** (signScale // 2)``, which on a garbage or hostile ``signScale`` builds
+an astronomical integer and hangs the thread. A hang is not catchable by a
+per-item ``try``/``except``, so one bad field would take the stream down rather
+than one message; ``scaleb`` raises ``InvalidOperation`` immediately instead.
+No such payload has been observed --- that is a property of the two spellings
+rather than an incident.
 
 Confirmed against known truth on a 1-share order at a $6.86 limit:
 ``LimitPrice`` ``{"lo": "6860000", "signScale": 12}`` is ``6.86``, and
 ``EstimatedPrincipalAmount`` ``{"lo": "6860000", "signScale": 13}`` is
 ``-6.86`` --- principal on a *buy*, so cash out. **A decoder that handles only
 the even case flips the sign on every cash-direction field, silently.**
+
+The rule itself is not guesswork. **Schwab's Trader API support confirmed the
+conversion in writing**, while stating that it remains undocumented publicly.
+That is the strongest attestation any part of this section has, and it exists
+nowhere official.
+
+.. danger::
+
+  **A decimal object carrying a** ``signScale`` **and no** ``lo`` **is zero,
+  not unknown.** Measured on three fields of one payload:
+  ``ActualChargedCommissionAmount {}`` was a genuine $0 commission,
+  ``RoutedPrice {}`` was a market order with no limit price, and
+  ``LeavesQuantity {"signScale": 12}`` arrived on the **final fill event** of a
+  completed order.
+
+  Reading that third one as "unknown" makes a *complete* fill report as
+  "remaining outstanding, quantity unknown". Silent, wrong, and on the fill
+  path --- which is the worst combination available on this feed.
+
+**The sign is not the side.** Fill quantities and prices arrive positive, with
+an even ``signScale``; buy versus sell comes from ``BuySellCode``. The odd
+branch exists so a genuinely negative field does not decode positive, and the
+one it has been observed on is ``EstimatedPrincipalAmount``, negative on a buy
+because the cash goes out. A consumer inferring direction from the sign is
+wrong in a way that looks entirely plausible.
 
 **Timestamp and container fields arrive as** ``{}``, not ``null`` and not
 absent, where the populated form is ``{"DateTimeString": "..."}``. Seen on

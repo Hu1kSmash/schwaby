@@ -328,7 +328,26 @@ price field takes a string or a ``decimal.Decimal``. A numeric field takes an
    ========================= ======= ======= ========= =========== ======== ========
 
 That table is checked against the validators by the test suite, so it cannot
-quietly stop being true. Everything a setter refuses raises immediately and
+quietly stop being true.
+
+.. warning::
+
+  **A normalizer in front of these setters will defeat the** ``bool``
+  **rejection.** ``bool`` is refused because ``True`` is an ``int`` subclass
+  and used to build ``{"quantity": true}`` --- a value Schwab's schema does not
+  call a number, accepted in silence.
+
+  It is easy to re-open by accident while trying to be *compatible* with that
+  fix. A consumer taking this release wrote a helper to turn a
+  ``numpy.int64`` quantity into a plain ``int``, since those are refused too.
+  ``float(True)`` is ``1.0`` and ``(1.0).is_integer()`` is ``True``, so the
+  helper turned ``True`` into ``1`` and handed it over laundered --- rebuilding
+  the one-share order this rejection exists to prevent, in code written to
+  accommodate the rejection. Nothing on either side could see it: ``1`` is a
+  perfectly good quantity by the time it arrives.
+
+  If you normalise numeric input before it reaches a setter, exclude ``bool``
+  first. Reported by the consumer it happened to. Everything a setter refuses raises immediately and
 names the field, rather than being serialized as the wrong JSON type or
 dropped.
 
