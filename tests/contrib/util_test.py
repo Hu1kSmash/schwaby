@@ -196,9 +196,54 @@ class DecodeDecimalTest(unittest.TestCase):
                     {'lo': [1], 'signScale': 12},        # non-scalar: TypeError
                     {'lo': '', 'signScale': 12},         # present but falsy
                     {'lo': False, 'signScale': 12},      # int(False) is 0
+                    {'lo': float('inf'), 'signScale': 12},  # OverflowError
+                    {'lo': '-1', 'signScale': 12},       # negative mantissa
+                    {'lo': '-1', 'signScale': 13},       # negative, odd scale
+                    {'lo': '1', 'signScale': True},      # int(True) is 1
+                    {'lo': '1', 'signScale': 1.9},       # int() truncates
+                    {'lo': 1.9, 'signScale': 12},        # int() truncates
+                    {'lo': '1_0', 'signScale': 12},      # PEP 515 underscore
+                    {'lo': '\u00b2', 'signScale': 12},   # isdigit, int refuses
+                    {'lo': '\u0663', 'signScale': 12},   # isdigit, int accepts
+                    {'lo': str(2 ** 32), 'signScale': 12},  # wider than a member
                     'NaN', 'Infinity', float('nan'), float('inf')):
             with self.subTest(value=bad):
                 with self.assertRaises(SchwabError):
                     decode_decimal(bad)
                 with self.assertRaises(ValueError):
                     decode_decimal(bad)
+
+    def test_a_corrupt_member_is_refused_rather_than_coerced(self):
+        # The failure mode this guards is not an escaping exception -- it is
+        # the corruption that decodes. `int(1.9)` is 1, `int('1_0')` is 10 and
+        # `int('\u0663')` is 3, so each of these produced a plausible wrong
+        # number on a money field, silently, in an earlier version.
+        #
+        # Every case carries its own positive control: the same object with a
+        # sound member in the same slot must decode to a known value. Without
+        # it an assertRaises passes just as well when the fixture never
+        # reached the member at all.
+        for name in ('lo', 'mid', 'hi'):
+            for corrupt in (1.9, float('inf'), True, False, '-1', '1_0',
+                            ' 1', '1 ', '', '0x10', '\u00b2', '\u0663',
+                            [1], {'a': 1}, 2 ** 32, -1):
+                with self.subTest(member=name, value=corrupt):
+                    with self.assertRaises(UnusableDecimalScale):
+                        decode_decimal({name: corrupt, 'signScale': 12})
+            self.assertEqual(
+                    {'lo': decimal.Decimal('0.000001'),
+                     'mid': decimal.Decimal('4294.967296'),
+                     'hi': decimal.Decimal('18446744073709.551616')}[name],
+                    decode_decimal({name: '1', 'signScale': 12}))
+
+    def test_a_corrupt_scale_is_refused_rather_than_coerced(self):
+        for corrupt in (1.9, float('inf'), True, False, '-1', '1_0', ' 1',
+                        '', '0x10', '\u00b2', '\u0663', [1], 2 ** 32, -1):
+            with self.subTest(value=corrupt):
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal({'lo': '1', 'signScale': corrupt})
+        # Positive control in the same slot.
+        self.assertEqual(decimal.Decimal('0.000001'),
+                         decode_decimal({'lo': '1', 'signScale': 12}))
+        self.assertEqual(decimal.Decimal('-0.000001'),
+                         decode_decimal({'lo': '1', 'signScale': 13}))

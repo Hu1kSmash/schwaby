@@ -53,6 +53,32 @@ class UnusableDecimalScale(SchwabError, ValueError):
     '''
 
 
+def _unsigned_32(member, name, value):
+    """One place that decides what a decimal member is.
+
+    An `int` that is not a `bool`, or a string of ASCII digits, and in either
+    case inside an unsigned 32-bit range. `bool` is excluded because `int(True)`
+    is 1 and `int(False)` is 0, so a JSON `true` in a mantissa would decode as a
+    number rather than as the corruption it is -- the same reason the order
+    setters refuse one.
+    """
+    if isinstance(member, bool) or not isinstance(member, (int, str)):
+        ok = False
+    elif isinstance(member, str):
+        # `isdigit` alone is not ASCII: '\u00b2'.isdigit() is True and
+        # `int` refuses it, while '\u0663'.isdigit() is True and `int`
+        # decodes it as 3. Both are corruption, and only one raises.
+        ok = member.isascii() and member.isdigit()
+        member = int(member) if ok else 0
+    else:
+        ok = True
+    if not ok or not 0 <= member < 2 ** 32:
+        raise UnusableDecimalScale(
+                '{} is not an unsigned 32-bit integer: {!r}'.format(
+                    name, value))
+    return member
+
+
 def decode_decimal(value):
     '''Decodes the scaled-integer decimal objects Schwab streams on
     ``ACCT_ACTIVITY``.
@@ -146,35 +172,25 @@ def decode_decimal(value):
                 'decimal object has a mantissa and no signScale, so its scale '
                 'is unknown: {!r}'.format(value))
 
-    # `.get` on all three, not `value['lo']`. The guard above accepts an
-    # object with only `mid` set, so requiring `lo` here would KeyError on
-    # exactly the shape that guard was widened to allow.
+    # Validated by shape rather than coerced and caught. Three rounds of
+    # review found the same class here: `int()` raises a bare `ValueError` on
+    # a non-numeric string, a `TypeError` on a non-scalar and an
+    # `OverflowError` on an infinite float -- and where it does *not* raise it
+    # is worse, because `int(1.9)` is 1 and `int('1_0')` is 10, so corruption
+    # becomes a confident wrong number. Each fix enumerated one more exception
+    # type and the next round found another shape.
     #
-    # `is None` rather than `or 0`, to match that guard exactly: a
-    # present-but-falsy member -- `""`, `{}`, `false` -- passes the guard as
-    # "has a mantissa" and `or 0` would then decode it as zero, which this
-    # file argues at length is the worst answer available on a fill feed.
-    #
-    # And `int()` wrapped, because it raises a bare ValueError on a
-    # non-numeric string and a TypeError on a non-scalar -- neither a
-    # SchwabError, and the TypeError not even a ValueError, so both escape the
-    # handlers the docstring tells a caller to write.
-    try:
-        mantissa = 0
-        for name, shift in (('lo', 0), ('mid', 32), ('hi', 64)):
-            member = value.get(name)
-            if isinstance(member, bool):
-                # `int(False)` is 0, so a JSON `false` in a mantissa member
-                # would decode as zero rather than as the corruption it is --
-                # the same reason `bool` is refused by the order setters.
-                raise ValueError(name)
-            if member is not None:
-                mantissa += int(member) << shift
-        scale = int(value['signScale'])
-    except (TypeError, ValueError):
-        raise UnusableDecimalScale(
-                'decimal object has a member that is not an integer: '
-                '{!r}'.format(value)) from None
+    # So this asks what a member *is* instead. A .NET Decimal carries three
+    # unsigned 32-bit mantissa members and a scale; anything that is not one
+    # of those is refused, once, here.
+    mantissa = 0
+    for name, shift in (('lo', 0), ('mid', 32), ('hi', 64)):
+        member = value.get(name)
+        if member is None:
+            continue
+        mantissa += _unsigned_32(member, name, value) << shift
+    scale = _unsigned_32(value['signScale'], 'signScale', value)
+
     # Bounded explicitly rather than left to the arithmetic to refuse.
     # `10 ** (scale // 2)` on a hostile exponent builds an astronomical integer
     # and hangs the thread, which a per-item try/except cannot rescue -- but
