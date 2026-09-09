@@ -873,8 +873,7 @@ class DocExampleTest(unittest.TestCase):
     exist and does not any more, which is the one that rots.
     """
 
-    CODE_BLOCK = re.compile(
-            r'\.\.\s+code-block::\s*python\s*\n\n((?:(?:[ \t]+[^\n]*)?\n)+)')
+    CODE_BLOCK = re.compile(r'^([ \t]*)\.\.\s+code-block::\s*python\s*$')
 
     @staticmethod
     def dedent(block):
@@ -899,11 +898,59 @@ class DocExampleTest(unittest.TestCase):
                 # stopped meaning anything.
                 blocks.append((display_path(path), 1, contents))
                 continue
-            for m in cls.CODE_BLOCK.finditer(contents):
-                line = contents[:m.start()].count('\n') + 1
-                blocks.append((os.path.basename(path), line,
-                               cls.dedent(m.group(1))))
+            extract = (cls.fenced_blocks if path.endswith('.md')
+                       else cls.python_blocks)
+            blocks.extend((os.path.basename(path), line, code)
+                          for line, code in extract(contents))
         return blocks
+
+    FENCE = re.compile(r'^```python\s*\n(.*?)^```', re.S | re.M)
+
+    @classmethod
+    def fenced_blocks(cls, contents):
+        """Yields (line, source) for every ```python fence in a markdown file.
+
+        `doc_files()` has always included README.md and nothing has ever looked
+        inside it: the extractor understood the reStructuredText directive
+        only, so seven blocks in the file PyPI renders as the project's front
+        page were silently contributing nothing to any of these checks.
+        """
+        for m in cls.FENCE.finditer(contents):
+            yield contents[:m.start()].count('\n') + 1, m.group(1)
+
+    @classmethod
+    def python_blocks(cls, contents):
+        """Yields (line, source) for every ``code-block:: python`` in an rst file.
+
+        A directive's body is every line indented further than the directive
+        itself, blank lines included; it ends at the first non-blank line that
+        is not. Written that way rather than as one regex because the regex
+        this replaces ran to the first *unindented* line, so a block nested
+        inside an admonition swallowed the paragraph after it -- which dedents
+        to a shallower margin than the code and makes the whole thing an
+        `unexpected indent` SyntaxError. `bad_keywords_in` then skipped it,
+        silently. Three of the forty-four blocks it found were being dropped
+        that way and seven more were never extracted at all.
+        """
+        lines = contents.split('\n')
+        i = 0
+        while i < len(lines):
+            m = cls.CODE_BLOCK.match(lines[i])
+            if not m:
+                i += 1
+                continue
+            base, j, body = len(m.group(1)), i + 1, []
+            while j < len(lines):
+                stripped = lines[j].strip()
+                if not stripped:
+                    body.append('')
+                elif len(lines[j]) - len(lines[j].lstrip()) > base:
+                    body.append(lines[j])
+                else:
+                    break
+                j += 1
+            yield i + 1, cls.dedent('\n'.join(body))
+            i = j
 
     @staticmethod
     def example_files():
@@ -985,6 +1032,95 @@ class DocExampleTest(unittest.TestCase):
                         problems.append(
                                 ('%s:%d' % (where, line), name, kw.arg))
         return sorted(set(problems))
+
+    # The one block that names a module this project does not depend on, and
+    # names it deliberately: `docs/client.rst` shows `import httpx` as the
+    # mistake to avoid, because authlib resolves `httpx2` and the two share no
+    # exception hierarchy. Keyed by the module, not by file and line, so
+    # editing around it does not need this list updated.
+    IMPORTS_NOT_INSTALLED = {'httpx': 'client.rst names it as the wrong module'}
+
+    @no_duplicates
+    def test_every_documentation_code_block_parses(self):
+        """No block may be skipped for being unparseable.
+
+        `bad_keywords_in` swallows a SyntaxError and moves on, which is right
+        for a genuine fragment and wrong for a block the extractor mangled.
+        Three of these were being dropped that way -- a code block nested
+        inside an admonition ran on into the paragraph after it, which dedents
+        to a shallower margin than the code and makes the whole thing an
+        `unexpected indent`. Nothing counted them, so the check reported a
+        clean run over a smaller set than it claimed.
+        """
+        blocks = self.code_blocks_in(
+                DocReferenceTest.doc_files() + self.example_files())
+        self.assertGreaterEqual(len(blocks), 54)
+
+        unparsed = []
+        for where, line, code in blocks:
+            if not code.strip():
+                continue
+            try:
+                ast.parse(code)
+            except SyntaxError as e:
+                unparsed.append('%s:%d: %s' % (where, line, e))
+        self.assertEqual([], unparsed)
+
+    @no_duplicates
+    def test_every_import_in_the_documentation_resolves(self):
+        """Every module a documented example imports has to exist.
+
+        `bad_keywords_in` cannot answer this. It resolves a call only when the
+        name was imported from `schwaby`, so a block still importing `schwab`
+        is skipped rather than failed -- which is how 3.0.3 shipped three
+        examples whose wrong import concealed a wrong argument, and it is
+        exactly what a package rename leaves behind. This one imports what the
+        documentation says to import and fails if it is not there.
+        """
+        blocks = self.code_blocks_in(
+                DocReferenceTest.doc_files() + self.example_files())
+        missing, seen = [], set()
+        for where, line, code in blocks:
+            try:
+                tree = ast.parse(code)
+            except SyntaxError:                            # pragma: no cover
+                continue                # test_every_..._parses owns this case
+            for node in ast.walk(tree):
+                names = []
+                if isinstance(node, ast.Import):
+                    names = [a.name for a in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module \
+                        and not node.level:
+                    names = [node.module]
+                for name in names:
+                    seen.add(name)
+                    if name in self.IMPORTS_NOT_INSTALLED:
+                        continue
+                    try:
+                        importlib.import_module(name)
+                    except ImportError as e:
+                        missing.append('%s:%d: import %s -- %s'
+                                       % (where, line, name, e))
+        self.assertEqual([], missing)
+
+        # Positive control. The assertion above passes just as well over an
+        # empty set, and an extractor that silently stopped finding blocks is
+        # the failure this whole class exists to notice.
+        self.assertIn('schwaby.auth', seen)
+        self.assertIn('schwaby.streaming', seen)
+        self.assertIn('schwaby.orders.equities', seen)
+
+    @no_duplicates
+    def test_the_documentation_imports_nothing_by_the_old_package_name(self):
+        """`import schwab` in a snippet would resolve for anyone who also has
+        `schwab-py` installed, and quietly demonstrate the wrong library."""
+        blocks = self.code_blocks_in(
+                DocReferenceTest.doc_files() + self.example_files())
+        offenders = [
+                '%s:%d' % (where, line)
+                for where, line, code in blocks
+                if re.search(r'(?<![\w.-])schwab(?![y\w-])', code)]
+        self.assertEqual([], offenders)
 
     @no_duplicates
     def test_the_examples_directory_is_covered(self):

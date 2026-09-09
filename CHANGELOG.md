@@ -7,13 +7,18 @@ to upgrade.
 and has been a separate project since 2.2.0; the
 [README](README.md#where-this-came-from) has that story, and Alex Golec's
 copyright and MIT licence are retained unchanged. The only trace of it in this
-file is the numbering: **versions below 1.6.0 are that project's releases**, not
-this one's, and their notes live in its repository.
+file is the numbering: **1.6.0 is the first release of this project, and
+everything at or below 1.5.0 is `schwab-py`'s.** Those notes live in its
+repository. 1.5.0 is still `schwab-py`'s latest release.
 
 Entries are left as they were written on the day they shipped. The older ones
 describe a project that still tracked upstream and still called itself a fork,
-because at the time it did. Nothing has been rewritten to agree with how things
-work now — a changelog edited to match the present is not a record of anything.
+because at the time it did; none of that has been rewritten to agree with how
+things work now, because a changelog edited to match the present is not a
+record of anything.
+
+Getting a fact wrong is the exception. Where an entry says something that was
+untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
@@ -2317,7 +2322,11 @@ Full suite passes on CPython 3.12 and 3.14.
 
 ## 1.6.0
 
-First release of the fork, branching from upstream 1.6.0's predecessor, 1.5.1.
+First release of this project. Branched from `alexgolec/schwab-py`'s `main`
+a few commits past their v1.5.0 release — far enough to pick up an
+in-development version string reading `1.5.1`, which was never tagged and never
+released. **v1.5.0 is that project's last release**, so 1.5.0 is the highest
+version number in this file that belongs to anyone else.
 
 ### Fixed
 
