@@ -26,6 +26,21 @@ untrue when it was written, it gets corrected and the correction says so.
 
 Documentation only.
 
+**The `Duration` enum lists four values Schwab rejects for equity orders**, and
+now says so where someone setting a duration will see it. `IMMEDIATE_OR_CANCEL`,
+`END_OF_WEEK`, `END_OF_MONTH` and `NEXT_END_OF_MONTH` come back `HTTP 400`. The
+enum mirrors Schwab's schema rather than what the equity endpoint takes, and the
+rejection happens at *placement* rather than at build — so `OrderBuilder` builds
+the order without complaint and it fails on the live path. Two consumers have
+built a time-in-force table from this enum and been wrong; it was documented on
+the enum's own docstring, which is not where either of them looked.
+
+**A removed date left a sentence broken.** That same docstring read "for every
+asset type. As of / Schwab accepts only" — release step 4 strips dates from
+shipped documentation and greps for dates, not for the wreckage removing one
+leaves. It shipped that way through 4.1.0. Fixed, and there is now a check that
+no line ends with `As of`, since nothing but a date follows it.
+
 **Removed the `httpx` warning from the HTTP client page.** It showed the wrong
 code — `import httpx`, `except httpx.HTTPStatusError` — inside a `warning`
 block, which is the most visually prominent thing on the page. Someone skimming

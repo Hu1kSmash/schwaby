@@ -233,6 +233,26 @@ place orders that are active for the duration of the current normal trading
 session.  If you want to modify the default session and duration, you can use
 these methods to do so.
 
+.. warning::
+
+  **The** ``Duration`` **enum lists more values than Schwab accepts, and
+  nothing here will tell you which.** Probed against a live account, an equity
+  order takes ``DAY``, ``GOOD_TILL_CANCEL`` and ``FILL_OR_KILL``.
+  ``IMMEDIATE_OR_CANCEL``, ``END_OF_WEEK``, ``END_OF_MONTH`` and
+  ``NEXT_END_OF_MONTH`` come back ``HTTP 400``, ``Invalid value
+  'IMMEDIATE_OR_CANCEL'``.
+
+  The enum mirrors Schwab's schema rather than what the equity endpoint takes,
+  and **the rejection happens when the order is placed, not when it is built**
+  --- so :class:`~schwaby.orders.generic.OrderBuilder` builds an
+  ``IMMEDIATE_OR_CANCEL`` order without complaint and it fails on the live
+  path, at the moment you least want to find out.
+
+  Two consumers have built a time-in-force table from this enum and been wrong.
+  Probe a value against your own account before relying on it, and note these
+  results are equities only --- they may well be valid for options, which has
+  not been tested.
+
 .. autoclass:: schwaby.orders.common::Session
   :members:
   :undoc-members:

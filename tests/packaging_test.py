@@ -1190,6 +1190,41 @@ class DocExampleTest(unittest.TestCase):
         templates['equity_buy_market']('AAPL', 10).build()
 
     @no_duplicates
+    def test_no_sentence_is_left_dangling_by_a_removed_date(self):
+        """`As of` is only ever followed by a date, so it must not end a line.
+
+        Release step 4 strips dates from shipped documentation, and it greps
+        for dates -- not for what removing one leaves behind. `Duration`'s
+        docstring read "for every asset type. As of\n Schwab accepts only",
+        and shipped that way through 4.1.0: the check that made the edit could
+        not see its own wreckage.
+
+        Deliberately narrow. Lower-case `since` and `on` end wrapped lines all
+        over this tree and are fine; `As of` is not, because nothing but a date
+        follows it.
+        """
+        offenders = []
+        roots = ['schwaby', 'docs', 'README.md', 'CHANGELOG.md', 'RELEASING.md']
+        files = []
+        for r in roots:
+            path = os.path.join(REPO_ROOT, r)
+            if os.path.isfile(path):
+                files.append(path)
+                continue
+            for dp, _, fns in os.walk(path):
+                if '__pycache__' in dp:
+                    continue
+                files += [os.path.join(dp, f) for f in fns
+                          if f.endswith(('.py', '.rst', '.md'))]
+        for path in files:
+            with open(path, encoding='utf-8') as f:
+                for n, line in enumerate(f, 1):
+                    if re.search(r'\bAs of\s*$', line.rstrip('\n')):
+                        offenders.append('%s:%d: %s'
+                                         % (display_path(path), n, line.strip()))
+        self.assertEqual([], offenders)
+
+    @no_duplicates
     def test_no_collected_test_returns_a_value(self):
         """A helper named `test_*` is collected, called, and passes.
 

@@ -33,10 +33,10 @@ class Duration(Enum):
     Length of time over which the trade will be active.
 
     .. note::
-        Not every value in this enum is accepted for every asset type. As of
-        Schwab accepts only ``DAY``, ``GOOD_TILL_CANCEL`` and
-        ``FILL_OR_KILL`` for equity orders. The remaining values are rejected
-        at order placement with ``HTTP 400``, and a message of the form
+        Not every value in this enum is accepted for every asset type. Schwab
+        accepts only ``DAY``, ``GOOD_TILL_CANCEL`` and ``FILL_OR_KILL`` for
+        equity orders. The remaining values are rejected at order placement
+        with ``HTTP 400``, and a message of the form
         ``Invalid value 'IMMEDIATE_OR_CANCEL'``. Individual values are marked
         below. Note this validation happens when the order is placed, not when
         it is built, so an unsupported value will not be caught by
