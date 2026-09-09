@@ -1040,6 +1040,104 @@ class DocExampleTest(unittest.TestCase):
     # editing around it does not need this list updated.
     IMPORTS_NOT_INSTALLED = {'httpx': 'client.rst names it as the wrong module'}
 
+    #: Order templates are called positionally in the documentation, and
+    #: `bad_keywords_in` only inspects keyword arguments -- so the shape this
+    #: release actually broke, `equity_buy_market('AAPL', '10')`, is invisible
+    #: to every other check here.
+    ORDER_TEMPLATE_MODULES = ('schwaby.orders.equities', 'schwaby.orders.options')
+
+    @classmethod
+    def order_templates(cls):
+        templates = {}
+        for name in cls.ORDER_TEMPLATE_MODULES:
+            module = importlib.import_module(name)
+            for attr in dir(module):
+                obj = getattr(module, attr)
+                if callable(obj) and not attr.startswith('_') \
+                        and getattr(obj, '__module__', None) == name:
+                    templates[attr] = obj
+        return templates
+
+    @no_duplicates
+    def test_every_documented_order_template_call_still_builds(self):
+        """Documented template calls, executed rather than inspected.
+
+        Building an order touches nothing outside the process, so the calls
+        can simply be run -- and running them is the only way to catch a
+        positional argument of the wrong type. 4.1.0 made
+        `equity_buy_market('AAPL', '10')` raise where it used to build
+        `{"quantity": "10"}`, and every existing check here would have let a
+        documentation example doing that go on shipping.
+
+        Only calls whose arguments are all literals are run. A call written
+        with names or an ellipsis is prose about the shape rather than
+        something a reader can copy, and inventing values for it would test
+        the invention.
+        """
+        templates = self.order_templates()
+        self.assertGreater(len(templates), 5, 'no templates found to check')
+
+        blocks = self.code_blocks_in(
+                DocReferenceTest.doc_files() + self.example_files())
+
+        checked, failures = [], []
+        for where, line, code in blocks:
+            try:
+                tree = ast.parse(code)
+            except SyntaxError:                            # pragma: no cover
+                continue
+            source_lines = code.split('\n')
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = getattr(node.func, 'id', None)
+                if name not in templates or node.keywords:
+                    continue
+                try:
+                    args = [ast.literal_eval(a) for a in node.args]
+                except ValueError:
+                    continue                 # a name, not something to run
+
+                # `equity_buy_limit(...)` is prose about the shape rather
+                # than a call, and `...` is a literal, so literal_eval is
+                # happy with it and the filter above is not enough.
+                if any(a is Ellipsis for a in args):
+                    continue
+
+                # A block may deliberately show what does *not* work.
+                # Marked in the documentation the reader can see, rather
+                # than by an allowlist of file and line here, which would
+                # go stale on the next edit above it.
+                own_line = source_lines[node.lineno - 1]
+                if 'raises' in own_line.partition('#')[2]:
+                    continue
+
+                where_line = '%s:%d %s' % (where, line, name)
+                checked.append(where_line)
+                try:
+                    templates[name](*args).build()
+                except Exception as e:
+                    failures.append('%s -> %s: %s'
+                                    % (where_line, type(e).__name__, e))
+
+        self.assertEqual([], failures)
+
+        # Positive control. The assertion above is satisfied by finding
+        # nothing at all, which is precisely what a broken extractor produces.
+        self.assertGreater(len(checked), 4,
+                           'expected to have executed several documented '
+                           'template calls, found {}'.format(checked))
+
+    @no_duplicates
+    def test_the_template_call_check_would_catch_a_string_quantity(self):
+        # The control for the control: prove the thing being executed is
+        # actually rejected, so the test above is not green because building
+        # never fails.
+        templates = self.order_templates()
+        with self.assertRaises(ValueError):
+            templates['equity_buy_market']('AAPL', '10').build()
+        templates['equity_buy_market']('AAPL', 10).build()
+
     @no_duplicates
     def test_every_documentation_code_block_parses(self):
         """No block may be skipped for being unparseable.
