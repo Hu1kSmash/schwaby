@@ -8139,6 +8139,15 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         # path had a test. The check exists because the alternative is an
         # AttributeError from deep inside the read loop the first time a frame
         # arrives, long after the mistake was made.
+        # Install a real one first, so the assertion after the loop is about
+        # the refusal leaving it alone rather than about the default.
+        class Decoder(streaming.StreamJsonDecoder):
+            def decode_json_string(self, raw):
+                return json.loads(raw)
+
+        good = Decoder()
+        self.client.set_json_decoder(good)
+
         for not_a_decoder in (None, object(), json, lambda raw: raw,
                               json.JSONDecoder()):
             with self.subTest(value=not_a_decoder):
@@ -8146,8 +8155,10 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                     self.client.set_json_decoder(not_a_decoder)
                 self.assertIn('StreamJsonDecoder', str(ctx.exception))
 
-        # And the decoder that was there before is still the one in use.
-        self.assertNotIn(None, [self.client.json_decoder])
+        # A refused decoder must not have replaced the working one on its way
+        # out. `assertIsNot(None, ...)` would pass here whatever happened,
+        # since the attribute is never None.
+        self.assertIs(good, self.client.json_decoder)
 
     @no_duplicates
     async def test_receiving_before_login_says_so(self):
