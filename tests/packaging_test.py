@@ -1174,7 +1174,7 @@ class DocExampleTest(unittest.TestCase):
         import time the first definition is already gone.
         """
         offenders = []
-        for path in self.test_files():
+        for path in self.python_files_under_tests():
             with open(path, encoding='utf-8') as f:
                 tree = ast.parse(f.read())
             seen = collections.Counter(
@@ -1185,7 +1185,10 @@ class DocExampleTest(unittest.TestCase):
         self.assertEqual([], offenders)
 
     @staticmethod
-    def test_files():
+    def python_files_under_tests():
+        # Not `test_files`. pytest collects anything named `test_*`, so a
+        # helper spelled that way is picked up, called, and passes -- a test
+        # that tests nothing, inflating the count and reporting green.
         root = os.path.join(REPO_ROOT, 'tests')
         found = []
         for dirpath, _, filenames in os.walk(root):
