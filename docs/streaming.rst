@@ -1169,14 +1169,21 @@ float since 2.1.0 for the reason :ref:`price_strings` gives. A value decoded
 into a binary float cannot be fed back into a reprice without going through the
 conversion this library exists to avoid, and accumulating one over a day's
 principal reintroduces exactly the error class that made limit prices a cent
-low. ``scaleb`` shifts the decimal point rather than dividing, so it is exact
---- and it is also why the scale is applied that way rather than as
-``10 ** (signScale // 2)``, which on a garbage or hostile ``signScale`` builds
-an astronomical integer and hangs the thread. A hang is not catchable by a
-per-item ``try``/``except``, so one bad field would take the stream down rather
-than one message; ``scaleb`` raises ``InvalidOperation`` immediately instead.
-No such payload has been observed --- that is a property of the two spellings
-rather than an incident.
+low. The value is built from a string, sign included, because **every
+operation** on a ``Decimal`` applies the caller's context and only construction
+does not: a consumer who sets ``decimal.getcontext().prec = 6`` elsewhere in
+their process would otherwise get ``1234.57`` for a price of ``1234.5678``, and
+negating a positive result is such an operation, so the sign has to go into the
+string too.
+
+The scale is also bounded rather than computed with. ``10 ** (signScale // 2)``
+on a garbage or hostile ``signScale`` builds an astronomical integer and hangs
+the thread, and a hang is not catchable by a per-item ``try``/``except``, so one
+bad field would take the stream down rather than one message. Leaving the
+arithmetic to refuse is not enough either --- a scale of a few million
+underflows to a zero that compares equal to zero, which on a fill feed is the
+worst answer available. No such payload has been observed; the bound is there
+because the failure would be silent.
 
 Confirmed against known truth on a 1-share order at a $6.86 limit:
 ``LimitPrice`` ``{"lo": "6860000", "signScale": 12}`` is ``6.86``, and
@@ -1191,8 +1198,8 @@ nowhere official.
 
 .. danger::
 
-  **A decimal object carrying a** ``signScale`` **and no** ``lo`` **is zero,
-  not unknown.** Measured on three fields of one payload:
+  **A decimal object carrying no mantissa at all is zero, not unknown.**
+  Measured on three fields of one payload:
   ``ActualChargedCommissionAmount {}`` was a genuine $0 commission,
   ``RoutedPrice {}`` was a market order with no limit price, and
   ``LeavesQuantity {"signScale": 12}`` arrived on the **final fill event** of a
@@ -1201,6 +1208,13 @@ nowhere official.
   Reading that third one as "unknown" makes a *complete* fill report as
   "remaining outstanding, quantity unknown". Silent, wrong, and on the fill
   path --- which is the worst combination available on this feed.
+
+  **"No mantissa" means none of** ``lo``, ``mid`` **or** ``hi``, not an absent
+  ``lo``. The serializer omits zero members, so a value whose low 32 bits
+  happen to be zero arrives as ``{"mid": 1, "signScale": 12}`` --- which is
+  ``4294.967296``, and which a guard keyed on ``lo`` alone reads as zero. That
+  is the same slice-reading defect as reading ``lo`` for the mantissa, in the
+  guard that runs immediately before it.
 
 **The sign is not the side.** Fill quantities and prices arrive positive, with
 an even ``signScale``; buy versus sell comes from ``BuySellCode``. The odd

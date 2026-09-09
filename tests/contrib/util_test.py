@@ -93,11 +93,10 @@ class DecodeDecimalTest(unittest.TestCase):
         # hangs the thread, which a per-item try/except cannot rescue -- one
         # bad field would take a stream down rather than one message.
         #
-        # Demonstrated rather than argued, and it is the one guarantee here
-        # with no `redproof.py` case: swapping `scaleb` for the power does not
-        # make this test *fail*, it makes the run stop responding until it is
-        # killed. The harness cannot express that, and it is a more convincing
-        # result than a red would have been.
+        # `contrib/decimal-scale-is-bounded` red-proofs this. An earlier
+        # version relied on `scaleb`'s own operand limit rather than an
+        # explicit bound, and that could not be red-proofed at all: mutating
+        # it did not fail the test, it hung the run until killed.
         with self.assertRaises(UnusableDecimalScale):
             decode_decimal({'lo': '1', 'signScale': 10 ** 9})
 
@@ -115,14 +114,23 @@ class DecodeDecimalTest(unittest.TestCase):
         # ordinary thing to do when formatting money -- got 1234.57 for a
         # price of 1234.5678, silently, from a function whose whole purpose is
         # that its result feeds back into set_price.
-        field = {'lo': '1234567800', 'signScale': 12}
-        expected = decimal.Decimal('1234.5678')
+        # Both branches. An earlier fix built the value from a string and
+        # then negated it -- and `Decimal.__neg__` is itself a context-aware
+        # operation, so it was exact for positive values and rounded negative
+        # ones. Every test then in the file used an even signScale, so nothing
+        # could see it: the fix stopped at the first branch and so did the
+        # fixture.
+        cases = ((12, '1234.5678'), (13, '-1234.5678'))
         original = decimal.getcontext().prec
         try:
-            for prec in (1, 3, 6, 28, 60):
-                with self.subTest(prec=prec):
-                    decimal.getcontext().prec = prec
-                    self.assertEqual(expected, decode_decimal(field))
+            for scale, expected in cases:
+                for prec in (1, 3, 6, 28, 60):
+                    with self.subTest(signScale=scale, prec=prec):
+                        decimal.getcontext().prec = prec
+                        self.assertEqual(
+                                decimal.Decimal(expected),
+                                decode_decimal({'lo': '1234567800',
+                                                'signScale': scale}))
         finally:
             decimal.getcontext().prec = original
 
@@ -131,12 +139,15 @@ class DecodeDecimalTest(unittest.TestCase):
         # 96 bits is the widest a .NET Decimal carries, and it rounds under
         # the default precision of 28 if the value goes through the context.
         mantissa = 2 ** 96 - 1
-        field = {'lo': str(mantissa & 0xFFFFFFFF),
-                 'mid': (mantissa >> 32) & 0xFFFFFFFF,
-                 'hi': mantissa >> 64,
-                 'signScale': 12}
-        self.assertEqual(decimal.Decimal('{}E-6'.format(mantissa)),
-                         decode_decimal(field))
+        for scale, sign in ((12, ''), (13, '-')):
+            with self.subTest(signScale=scale):
+                field = {'lo': str(mantissa & 0xFFFFFFFF),
+                         'mid': (mantissa >> 32) & 0xFFFFFFFF,
+                         'hi': mantissa >> 64,
+                         'signScale': scale}
+                self.assertEqual(
+                        decimal.Decimal('{}{}E-6'.format(sign, mantissa)),
+                        decode_decimal(field))
 
     @no_duplicates
     def test_an_implausible_scale_raises_rather_than_underflowing_to_zero(self):
@@ -175,8 +186,17 @@ class DecodeDecimalTest(unittest.TestCase):
         # would reasonably write -- while the prose tells them to wrap each
         # field so one odd value does not cost the message. The empty string
         # reaches here from the SUBSCRIBED ack.
+        # Enumerated from the ways a *member* can be wrong rather than from
+        # the inputs the code already converts -- a list of the latter agrees
+        # with the implementation by construction and cannot find a hole.
         for bad in ('', 'not a number', {'lo': '1'},
-                    {'lo': '1', 'signScale': 10 ** 9}):
+                    {'lo': '1', 'signScale': 10 ** 9},
+                    {'lo': 'x', 'signScale': 12},        # non-numeric string
+                    {'lo': '1', 'signScale': 'x'},       # non-numeric scale
+                    {'lo': [1], 'signScale': 12},        # non-scalar: TypeError
+                    {'lo': '', 'signScale': 12},         # present but falsy
+                    {'lo': False, 'signScale': 12},      # int(False) is 0
+                    'NaN', 'Infinity', float('nan'), float('inf')):
             with self.subTest(value=bad):
                 with self.assertRaises(SchwabError):
                     decode_decimal(bad)

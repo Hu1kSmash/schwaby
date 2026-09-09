@@ -112,7 +112,16 @@ def decode_decimal(value):
         # string. Decimal(str(...)) rather than Decimal(float) so a float does
         # not bring its binary expansion along.
         try:
-            return decimal.Decimal(str(value))
+            result = decimal.Decimal(str(value))
+            if not result.is_finite():
+                # `json.loads` accepts bare NaN and Infinity, and Decimal
+                # accepts both those and the strings. A NaN quantity is not
+                # caught downstream either: `leaves <= 0` is False for NaN, so
+                # a corrupt field reads as still outstanding forever -- the
+                # mirror of the zero-is-a-complete-fill hazard the bound below
+                # exists for.
+                raise decimal.InvalidOperation()
+            return result
         except decimal.InvalidOperation:
             # `decimal.InvalidOperation` is an ArithmeticError, so it is
             # neither a SchwabError nor a ValueError and escapes both of the
@@ -139,14 +148,33 @@ def decode_decimal(value):
 
     # `.get` on all three, not `value['lo']`. The guard above accepts an
     # object with only `mid` set, so requiring `lo` here would KeyError on
-    # exactly the shape that guard was widened to allow -- the two have to
-    # read the mantissa the same way or one of them is answering a different
-    # question.
-    mantissa = (int(value.get('lo') or 0)
-                + (int(value.get('mid') or 0) << 32)
-                + (int(value.get('hi') or 0) << 64))
-    scale = int(value['signScale'])
-
+    # exactly the shape that guard was widened to allow.
+    #
+    # `is None` rather than `or 0`, to match that guard exactly: a
+    # present-but-falsy member -- `""`, `{}`, `false` -- passes the guard as
+    # "has a mantissa" and `or 0` would then decode it as zero, which this
+    # file argues at length is the worst answer available on a fill feed.
+    #
+    # And `int()` wrapped, because it raises a bare ValueError on a
+    # non-numeric string and a TypeError on a non-scalar -- neither a
+    # SchwabError, and the TypeError not even a ValueError, so both escape the
+    # handlers the docstring tells a caller to write.
+    try:
+        mantissa = 0
+        for name, shift in (('lo', 0), ('mid', 32), ('hi', 64)):
+            member = value.get(name)
+            if isinstance(member, bool):
+                # `int(False)` is 0, so a JSON `false` in a mantissa member
+                # would decode as zero rather than as the corruption it is --
+                # the same reason `bool` is refused by the order setters.
+                raise ValueError(name)
+            if member is not None:
+                mantissa += int(member) << shift
+        scale = int(value['signScale'])
+    except (TypeError, ValueError):
+        raise UnusableDecimalScale(
+                'decimal object has a member that is not an integer: '
+                '{!r}'.format(value)) from None
     # Bounded explicitly rather than left to the arithmetic to refuse.
     # `10 ** (scale // 2)` on a hostile exponent builds an astronomical integer
     # and hangs the thread, which a per-item try/except cannot rescue -- but
@@ -159,12 +187,17 @@ def decode_decimal(value):
                 'signScale {} is outside 0..{}, so it is not a real one: '
                 '{!r}'.format(scale, MAX_SIGN_SCALE, value))
 
-    # Built from a string rather than scaled with `scaleb`, because scaleb
-    # applies the *caller's* decimal context. A consumer who sets
-    # `decimal.getcontext().prec = 6` somewhere else in their process -- an
-    # ordinary thing to do when formatting money -- would otherwise get
-    # 1234.57 for a price of 1234.5678, silently, from a function whose whole
-    # purpose is that its result can be fed back into `set_price`. String
-    # construction is context-free and does not round.
-    result = decimal.Decimal('{}E-{}'.format(mantissa, scale // 2))
-    return -result if scale % 2 else result
+    # Built from a string, sign included, because every *operation* on a
+    # Decimal applies the caller's context and only construction does not.
+    # A consumer who sets `decimal.getcontext().prec = 6` somewhere else in
+    # their process -- an ordinary thing to do when formatting money -- would
+    # otherwise get 1234.57 for a price of 1234.5678, silently, from a
+    # function whose whole purpose is that its result can be fed back into
+    # `set_price`.
+    #
+    # The sign is part of that. `-result` is `Decimal.__neg__`, which is a
+    # context-aware operation and rounds -- so an earlier version of this was
+    # exact for positive values and rounded negative ones, which is the branch
+    # `EstimatedPrincipalAmount` arrives on.
+    return decimal.Decimal('{}{}E-{}'.format(
+            '-' if scale % 2 else '', mantissa, scale // 2))

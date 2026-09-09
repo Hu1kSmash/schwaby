@@ -47,7 +47,7 @@ attempt is reliably wrong in at least one of four ways, each of which is a
 
 It returns a `decimal.Decimal`, never a float, so a decoded price can be fed
 straight back into `set_price`. A mantissa with no scale raises
-`UnknownDecimalScale` rather than guessing, because the guess that suggests
+`UnusableDecimalScale` rather than guessing, because the guess that suggests
 itself is wrong by a factor of a million when it is wrong and says nothing when
 it is right.
 
