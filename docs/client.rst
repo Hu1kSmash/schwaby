@@ -451,6 +451,14 @@ helper function <extract_order_id>`. Otherwise, see
 
 .. danger::
 
+  **Replacing an order that is already gone returns HTTP 400 --- and so does a
+  malformed order spec.** The status alone cannot tell "the order you are
+  replacing has already filled or cancelled" from "your request is wrong", and
+  those want opposite responses: the first means stop, the second means fix and
+  retry. A caller that cannot separate them has to treat every refusal as a
+  fault, which strands a leg that merely filled. Re-read the target order to
+  tell them apart. Venue-observed.
+
   **A replacement is a new order with a new ID.** Schwab cancels the original
   and creates a fresh one, so anything tracking the old ID is now watching a
   cancelled order --- and will conclude the position closed while the

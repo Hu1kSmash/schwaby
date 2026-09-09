@@ -253,6 +253,26 @@ these methods to do so.
   results are equities only --- they may well be valid for options, which has
   not been tested.
 
+.. note::
+
+  **What a trading interface shows as one "time in force" dropdown is two
+  fields here.** ``duration`` alone does not reproduce it --- the extended
+  hours part lives in ``session``:
+
+  ===================================  ==========================  ============
+  what the interface calls it          ``duration``                ``session``
+  ===================================  ==========================  ============
+  Day                                  ``DAY``                     ``NORMAL``
+  Day + extended hours                 ``DAY``                     ``SEAMLESS``
+  Pre-market only                      ``DAY``                     ``AM``
+  Post-market only                     ``DAY``                     ``PM``
+  GTC + extended hours                 ``GOOD_TILL_CANCEL``        ``SEAMLESS``
+  ===================================  ==========================  ============
+
+  Set only ``duration`` and you get a different order from the one the
+  interface would have placed under the same label. Venue-observed by a
+  consumer running against funded accounts.
+
 .. autoclass:: schwaby.orders.common::Session
   :members:
   :undoc-members:
@@ -408,6 +428,11 @@ formatting one. Making it yourself is how you keep it.
    If you are formatting a computed price, note that ``'{:.2f}'.format(value)``
    **rounds**. Rounding a buy limit up gives you a price one tick higher than
    the one you meant.
+
+   Those are the two places that matter, and they are not arbitrary: under
+   Reg NMS Rule 612 a US equity or ETF quoting at or above $1.00 is priced in
+   pennies, and below $1.00 in hundredths of a cent. So two decimals above a
+   dollar and four below it is the venue's grid, not a convention.
 
    To truncate toward zero instead, at two decimal places or four below one:
 

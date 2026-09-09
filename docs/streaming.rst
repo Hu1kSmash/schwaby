@@ -1200,9 +1200,18 @@ absent, where the populated form is ``{"DateTimeString": "..."}``. Seen on
 capture. A truthiness check handles it; ``d['ExecutionTime']['DateTimeString']``
 does not.
 
-**``MESSAGE_DATA`` is a JSON string, not an object** --- it has to be parsed a
-second time --- and it is the empty string on the ``SUBSCRIBED`` ack, which is
-not a malformed message and should not be reported as one.
+**``MESSAGE_DATA`` is a string, not an object** --- it has to be parsed a
+second time. It is the empty string on the ``SUBSCRIBED`` ack, which is not a
+malformed message and should not be reported as one.
+
+.. warning::
+
+  **And it is not always JSON.** Schwab sends notices through the same field
+  as plain prose --- ``"Feature not supported"`` has been observed --- so a
+  consumer calling ``json.loads`` unconditionally raises on a message that is
+  merely informational, on the account feed, at whatever moment Schwab decides
+  to tell you something. Parse it defensively and treat a failure as "this one
+  is a notice", not as a broken frame.
 
 **Content items within one message are not necessarily in lifecycle order.** A
 ``CancelAccepted`` naming no symbol was seen arriving ahead of the
