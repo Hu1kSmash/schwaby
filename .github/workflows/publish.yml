@@ -31,7 +31,7 @@ jobs:
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - run: pip install ".[dev]"
@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       # readme_renderer[md] is not optional. Measured: with a markdown
@@ -72,7 +72,13 @@ jobs:
           echo "tag=$tag built=$built"
           test "$tag" = "$built"
 
-      - uses: actions/upload-artifact@v4
+      # upload-artifact and download-artifact are versioned separately and
+      # their majors are offset by one from v5 onward -- download picked up an
+      # extra breaking change that upload did not. The pair that goes together
+      # is the one released on the same day: upload v7 with download v8. Bump
+      # both or neither. Dependabot opens a pull request per action and will
+      # happily offer you half of this.
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -84,7 +90,7 @@ jobs:
     permissions:
       id-token: write        # required for trusted publishing; nothing else
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8   # pairs with upload v7 above
         with:
           name: dist
           path: dist/

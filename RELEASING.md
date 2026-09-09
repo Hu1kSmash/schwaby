@@ -96,6 +96,16 @@ opens a pull request when one goes stale. They had drifted five major versions
 behind before anyone noticed, and the only symptom was a deprecation warning
 inside a job annotation nobody reads.
 
+**Dependabot offers one action per pull request, and two of these only work
+in pairs.** `upload-artifact` and `download-artifact` are versioned separately
+and their majors are offset by one from v5 onward, because download took a
+breaking change upload did not. The versions that go together are the ones
+released on the same day --- upload v7 with download v8. Dependabot opened a
+pull request bumping upload to v7 and none for download, which would have left
+`publish.yml` handing an artifact between mismatched majors on the one path
+that only runs during a release. Merge both or neither, and prove the pair
+round-trips a file before believing it.
+
 It deliberately does not watch the Python dependencies. Those are floors rather
 than pins, this library places trades, and upgrading one is a decision that wants
 the verification below — not a bot's pull request merged on a quiet afternoon.
