@@ -121,10 +121,23 @@ def _assert_finite(name, price, *, price_field=False):
         # which is why they took it silently where `set_quantity` at least
         # raised something.
         if not price_field:
+            # Deliberately not justified as "Schwab's schema types this a
+            # number". It does -- and it types `price` and `stopPrice` as
+            # `number($double)` too, which this library sends as strings
+            # anyway because that is what the venue takes. The schema does not
+            # separate the two groups and nothing here establishes that a
+            # string quantity is refused by Schwab.
+            #
+            # The reason is internal consistency, which is checkable. Of the
+            # four numeric setters, `set_quantity` and `set_activation_price`
+            # already refused a string -- their `<= 0` comparison raised
+            # TypeError on one. The two offsets took it only because nothing
+            # downstream happens to compare them, so `set_price_offset('abc')`
+            # built `{"priceOffset": "abc"}`. That is an accident of which
+            # setters have a range check, not a decision anyone made.
             raise ValueError(
-                    '{} is a number in Schwab\'s schema, not a price string, '
-                    'so it does not take a str. Pass an int or a float. '
-                    'Got: {!r}'.format(name, price))
+                    '{} does not take a str; the numeric order fields take an '
+                    'int or a float. Got: {!r}'.format(name, price))
 
         try:
             value = float(price)

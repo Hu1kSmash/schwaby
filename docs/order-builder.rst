@@ -288,24 +288,21 @@ chose, and rendering it here decides nothing:
    order.set_price(decimal.Decimal('199.99'))
 
 ``Decimal`` is for prices specifically. The other numeric fields --
-``quantity``, ``activationPrice``, ``stopPriceOffset``, ``priceOffset`` -- are
-numbers in Schwab's schema rather than strings, so pass an ``int`` or a
-``float`` there, and nothing else. A ``Decimal``, a ``str``, ``None``, or any
-other type raises immediately and names the field, rather than being
-serialized as the wrong JSON type or dropped.
+``quantity``, ``activationPrice``, ``stopPriceOffset`` and the offset that
+pairs with the price link -- take an ``int`` or a ``float``, and nothing else.
+A ``Decimal``, a ``str``, ``None``, a ``bool`` or any other type raises
+immediately and names the field, rather than being serialized as the wrong
+JSON type or dropped.
 
-.. warning::
+That includes the quantity argument of every prebuilt template, which builds
+its order leg through the same check:
 
-   **This includes the quantity argument of every prebuilt template.** The
-   templates build their order leg through the same check, so
+.. code-block:: python
 
-   .. code-block:: python
+   equity_buy_market('AAPL', '10')     # raises: quantity does not take a str
 
-      equity_buy_market('AAPL', '10')     # raises: quantity is a number
-
-   now raises where it previously built ``{"quantity": "10"}`` and sent a
-   string. Pass ``10``. The price arguments are unaffected --- those are
-   price fields, and they still take a string or a ``Decimal``.
+The price arguments are unaffected --- those are price fields, and they still
+take a string or a ``Decimal``.
 
 **Build it from a string, not from a float.** ``decimal.Decimal(0.1)`` is not
 ``0.1``; it is that float's binary expansion, ``0.1000000000000000055511...``,

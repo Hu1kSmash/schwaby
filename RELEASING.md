@@ -142,8 +142,8 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
 3. **Anything naming a version**, which goes stale silently:
 
    ```shell
-   grep -rn 'schwaby@v\|schwaby==' README.md docs/ schwaby/
-   grep -rnE '\b[0-9]+\.[0-9]+\.[0-9]+' README.md docs/*.rst schwaby/ \
+   grep -rn 'schwaby@v\|schwaby==' README.md docs/ schwaby/ tests/
+   grep -rnE '\b[0-9]+\.[0-9]+\.[0-9]+' README.md docs/*.rst schwaby/ tests/ \
        | grep -vE '127\.0\.0\.1|https?://'
    ```
 
@@ -154,6 +154,11 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    `docs/getting-started.rst` while preparing 3.0.2 and survived a review
    round, because this step only looked for pins. It was caught before the
    tag, which is luck rather than process.
+
+   `tests/` is in the walk because a test docstring named the release before
+   the tag existed --- "4.1.0 made this raise", written while the number was
+   still a proposal. It is prose about a version like any other, and the
+   original walk covered only the three published paths.
 
    Hence the second grep, and note what it is *not*: an allowlist of lead-ins
    like `Since|As of|New in` catches the sentence that was found and misses

@@ -1064,10 +1064,15 @@ class DocExampleTest(unittest.TestCase):
 
         Building an order touches nothing outside the process, so the calls
         can simply be run -- and running them is the only way to catch a
-        positional argument of the wrong type. 4.1.0 made
-        `equity_buy_market('AAPL', '10')` raise where it used to build
-        `{"quantity": "10"}`, and every existing check here would have let a
+        positional argument of the wrong type. `equity_buy_market('AAPL',
+        '10')` raises now, and every existing check here would have let a
         documentation example doing that go on shipping.
+
+        No release number here on purpose. `RELEASING.md` step 3 exists
+        because prose naming a version goes stale silently and the release may
+        land under a different number than the one written -- and its greps
+        cover `README.md`, `docs/` and `schwaby/`, not `tests/`, so nothing
+        here would have caught it.
 
         Only calls whose arguments are all literals are run. A call written
         with names or an ellipsis is prose about the shape rather than
@@ -1153,6 +1158,42 @@ class DocExampleTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             templates['equity_buy_market']('AAPL', '10').build()
         templates['equity_buy_market']('AAPL', 10).build()
+
+    @no_duplicates
+    def test_no_test_module_defines_a_class_name_twice(self):
+        """A shadowed test class takes its tests with it, silently.
+
+        `tests/orders/generic_test.py` had two classes called
+        `OrderBuilderExamplesTest`. The second shadowed the first, so two of
+        its tests never ran -- and one of them asserted a contract the library
+        had already stopped honouring, so it would have failed had anything
+        executed it. `no_duplicates` cannot catch this: it keys on
+        `__qualname__`, and duplicate classes have the same one.
+
+        Read from the source rather than from the imported module, because by
+        import time the first definition is already gone.
+        """
+        offenders = []
+        for path in self.test_files():
+            with open(path, encoding='utf-8') as f:
+                tree = ast.parse(f.read())
+            seen = collections.Counter(
+                    n.name for n in tree.body if isinstance(n, ast.ClassDef))
+            offenders.extend(
+                    '%s: %s defined %d times' % (display_path(path), name, n)
+                    for name, n in sorted(seen.items()) if n > 1)
+        self.assertEqual([], offenders)
+
+    @staticmethod
+    def test_files():
+        root = os.path.join(REPO_ROOT, 'tests')
+        found = []
+        for dirpath, _, filenames in os.walk(root):
+            if '__pycache__' in dirpath:
+                continue
+            found.extend(os.path.join(dirpath, n)
+                         for n in filenames if n.endswith('.py'))
+        return found
 
     @no_duplicates
     def test_every_documentation_code_block_parses(self):

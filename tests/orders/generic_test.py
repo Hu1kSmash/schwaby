@@ -782,26 +782,54 @@ class OrderBuilderTest(unittest.TestCase):
                 OptionInstruction.BUY_TO_OPEN, 'GOOG31433C1342', 0)
 
 
-class OrderBuilderExamplesTest(unittest.TestCase):
+class QuantityValidationTest(unittest.TestCase):
+    """Two tests that were dead, and wrong, for at least a release.
+
+    This class was called `OrderBuilderExamplesTest`, the same name as the one
+    below it, which shadowed it -- so neither of these ran. `no_duplicates`
+    could not see it: it keys on `__qualname__`, and the two qualnames were
+    identical.
+
+    Neither survived being woken up as written. `test_quantity_negative` used
+    `self.order_builder`, which this class's `setUp` never created, so it
+    raised AttributeError rather than exercising anything. And
+    `test_quantity_wrong_type_no_check` asserted that
+    `OrderBuilder(enforce_enums=False).set_quantity('')` builds
+    `{'quantity': ''}` -- measured against the released v4.0.0, that already
+    raised TypeError, so the test documented a contract the library had
+    stopped honouring before anyone renamed the package.
+
+    That is the shape worth keeping: a test can be dead *and* stale, and the
+    duplicate name hid a check that would otherwise have failed during the
+    change it was relevant to.
+    """
 
     def setUp(self):
         self.maxDiff = None
+        self.order_builder = OrderBuilder()
 
-    ##########################################################################
-    # Functional tests from here:
-    # Adapted from the order samples in the retired TDAmeritrade docs.
     @no_duplicates
     def test_quantity_negative(self):
         with self.assertRaises(ValueError):
             self.order_builder.set_quantity(-12)
 
     @no_duplicates
-    def test_quantity_wrong_type_no_check(self):
-        self.order_builder = OrderBuilder(enforce_enums=False)
-        self.order_builder.set_quantity('')
-        self.assertFalse(has_diff({
-            'quantity': ''
-        }, self.order_builder.build()))
+    def test_enforce_enums_false_does_not_disable_the_numeric_checks(self):
+        # Replaces `test_quantity_wrong_type_no_check`, which asserted the
+        # opposite. `enforce_enums` governs enum arguments; `_assert_finite`
+        # never consulted it, so a builder with enforcement off still refuses
+        # a quantity that is not a number.
+        builder = OrderBuilder(enforce_enums=False)
+
+        with self.assertRaises(ValueError):
+            builder.set_quantity('')
+        with self.assertRaises(ValueError):
+            builder.set_quantity(None)
+
+        # And still accepts one that is, so the assertions above are about
+        # the value rather than about enforcement being off.
+        builder.set_quantity(7)
+        self.assertEqual({'quantity': 7}, builder.build())
 
 
 class OrderBuilderExamplesTest(unittest.TestCase):
@@ -1612,7 +1640,7 @@ class NonNumericOrderFieldTest(unittest.TestCase):
                     builder = OrderBuilder()
                     with self.assertRaises(ValueError) as ctx:
                         getattr(builder, setter)(value)
-                    self.assertIn('not a price string', str(ctx.exception))
+                    self.assertIn('does not take a str', str(ctx.exception))
                     self.assertEqual({}, builder.build())
 
     @no_duplicates

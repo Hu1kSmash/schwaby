@@ -2403,27 +2403,30 @@ class _TestClient:
 
         Nothing reached the line. Under pytest the stack always contains
         frames outside the package, so the loop always returns early. A root
-        of '' makes every absolute path look internal, which is the same shape
-        as every frame being unresolvable, and takes the walk to the end.
+        Every filename is made to look internal instead, which is the same
+        shape as every frame being unresolvable, and takes the walk to the end.
         """
-        # Not `''`. The prefix under test is `_PACKAGE_ROOT + os.sep`, so an
-        # empty root gives `/` on POSIX -- which every absolute path starts
-        # with, as intended -- and `\` on Windows, which none do. The walk
-        # would then return at the very first frame, still 1, and the two
-        # paths stay indistinguishable by return value while the frame count
-        # collapses to 1. That is a green assertion on Linux and a red one on
-        # the `windows-latest` leg, which runs on pull requests and on tags:
-        # the runs used to clear a release.
+        # Two earlier attempts at this made every frame look internal by
+        # choosing a clever `_PACKAGE_ROOT`, and both were wrong on Windows:
         #
-        # The drive of a real path plus the separator is a prefix every
-        # absolute path on this platform shares, on both.
-        root = os.path.splitdrive(os.path.abspath(__file__))[0]
-
+        #  * `''` gives a prefix of `\`, which no absolute path starts with,
+        #    so the walk returned at the first frame instead of the last.
+        #  * the drive of this file gives `D:\` on a GitHub runner, where the
+        #    checkout is on D: and the interpreter is under
+        #    C:\hostedtoolcache -- so the stdlib frames are foreign and the
+        #    walk stops in the middle.
+        #
+        # Both are green on Linux and red on `windows-latest`, which runs on
+        # pull requests and on tags: the runs used to clear a release. So do
+        # not construct a root at all. Make the *filenames* internal instead,
+        # which is what the branch under test actually reacts to, and is a
+        # claim about no filesystem.
+        internal = self.client._PACKAGE_ROOT + os.sep + 'somewhere.py'
         real = os.path.abspath
-        with patch.object(type(self.client), '_PACKAGE_ROOT', root):
-            with patch('schwaby.client.base.os.path.abspath',
-                       side_effect=real) as exhausted:
-                self.assertEqual(1, self.client._caller_stacklevel())
+
+        with patch('schwaby.client.base.os.path.abspath',
+                   return_value=internal) as exhausted:
+            self.assertEqual(1, self.client._caller_stacklevel())
 
         # The return value alone cannot tell the two paths apart: called
         # straight from a test, the early return is `max(0, 1)`, which is also

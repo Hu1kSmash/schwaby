@@ -62,18 +62,35 @@ The price fields are unchanged: they still take a string or a
 `decimal.Decimal`, and an unparseable price string is still left between the
 caller and Schwab.
 
-**This reaches every prebuilt template, which is the breaking part.** The
-templates build their order leg through the same check, so:
+### What actually changes, measured against 4.0.0
 
-```python
-equity_buy_market('AAPL', '10')     # was: {"quantity": "10"}, now raises
-equity_buy_market('AAPL', 10)       # unchanged
-```
+Most of this replaces a bare `TypeError` with a `ValueError` that names the
+field. Only the rows marked below change a call that *worked* into one that
+raises:
 
-A string quantity was serialized as a JSON string where Schwab's schema says
-number. If you pass quantities as strings --- and `'10'` is an easy thing to
-have come out of a config file or a CSV --- this is the line that will move.
-The price arguments to those templates are unaffected.
+| call | 4.0.0 | now |
+| --- | --- | --- |
+| `set_quantity('10')`, `set_activation_price('10')` | `TypeError` | `ValueError` |
+| `equity_buy_market('AAPL', '10')` | `TypeError` | `ValueError` |
+| `set_quantity(None)`, `…(b'1')`, `…(Fraction(3,2))` | `TypeError` | `ValueError` |
+| **`set_stop_price_offset('10')`, `set_price_offset('10')`** | **built `{"stopPriceOffset": "10"}`** | **`ValueError`** |
+| **`set_stop_price_offset(None)`, `set_price_offset(None)`** | **built the order with no offset** | **`ValueError`** |
+| **`set_quantity(True)` and every other setter given a `bool`** | **built `{"quantity": true}`** | **`ValueError`** |
+
+So the breaking surface is narrow: the two offset setters, and `bool`
+anywhere. A string quantity never worked --- `set_quantity('10')` reached
+`quantity <= 0` and raised `TypeError` --- which is why the two offsets are the
+odd ones out here. They accepted a string only because nothing downstream
+happens to compare them to zero, so `set_price_offset('abc')` built
+`{"priceOffset": "abc"}`. That is an accident of which setters have a range
+check, not a decision anyone made, and making the four agree is the whole of
+this change.
+
+Note what is *not* claimed: that Schwab refuses a string there. Schwab's schema
+types `price` and `stopPrice` as `number($double)` too, and this library sends
+those as strings because that is what the venue takes --- so the schema does
+not separate the two groups and nothing here has been measured against a live
+account. The reason is that the four setters disagreed with each other.
 
 ### Tests for eighteen statements that had none
 
