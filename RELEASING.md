@@ -96,6 +96,16 @@ opens a pull request when one goes stale. They had drifted five major versions
 behind before anyone noticed, and the only symptom was a deprecation warning
 inside a job annotation nobody reads.
 
+**A `dependabot.yml` in the repository is not the mechanism, only half of it.**
+This file was committed the day the repository was created and produced nothing
+for a month --- the first Dependabot run of any kind was 2026-09-09, twelve
+seconds after the dependency graph was switched on in the repository's own
+settings. So the file sat there saying it watched the CI actions while
+`upload-artifact` stayed three majors behind, and what actually surfaced that
+was a deprecation annotation. Same shape as every other guard here that looked
+present and did nothing: check that the thing has run, not that the config
+exists.
+
 **Dependabot offers one action per pull request, and two of these only work
 in pairs.** `upload-artifact` and `download-artifact` are versioned separately
 and their majors are offset by one from v5 onward, because download took a
