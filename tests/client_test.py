@@ -4,6 +4,7 @@ import httpx2
 import inspect
 import logging
 import os
+from types import SimpleNamespace
 import pytest
 import pytz
 import sys
@@ -2406,49 +2407,51 @@ class _TestClient:
         filename is made to look internal instead, which is the same shape as
         every frame being unresolvable, and takes the walk to the end.
         """
-        # Two earlier attempts at this made every frame look internal by
-        # choosing a clever `_PACKAGE_ROOT`, and both were wrong on Windows:
+        # Three earlier attempts made every frame look internal by choosing
+        # a clever `_PACKAGE_ROOT` or by patching `os.path.abspath`, and each
+        # was wrong in its own way:
         #
-        #  * `''` gives a prefix of `\`, which no absolute path starts with,
-        #    so the walk returned at the first frame instead of the last.
-        #  * the drive of this file gives `D:\` on a GitHub runner, where the
-        #    checkout is on D: and the interpreter is under
-        #    C:\hostedtoolcache -- so the stdlib frames are foreign and the
-        #    walk stops in the middle.
+        #  * `''` gives a prefix of `\` on Windows, which no absolute path
+        #    starts with, so the walk returned at the first frame.
+        #  * this file's drive gives `D:\` on a GitHub runner, where the
+        #    checkout is on D: and the interpreter under C:\hostedtoolcache,
+        #    so the stdlib frames are foreign and the walk stops midway.
+        #  * patching `os.path.abspath` reaches `posixpath` itself, since
+        #    base.py does `import os` -- so it redirects every call in the
+        #    process for the duration, including coverage's own
+        #    `canonical_filename`, which would then record a newly traced file
+        #    as living under `schwaby/`.
         #
-        # Both are green on Linux and red on `windows-latest`, which runs on
-        # pull requests and on tags: the runs used to clear a release. So do
-        # not construct a root at all. Make the *filenames* internal instead,
-        # which is what the branch under test actually reacts to, and is a
-        # claim about no filesystem.
-        internal = self.client._PACKAGE_ROOT + os.sep + 'somewhere.py'
-        real = os.path.abspath
+        # The first two are green on Linux and red on `windows-latest`, which
+        # runs on pull requests and tags: the runs used to clear a release.
+        #
+        # So supply the frames instead. `_caller_stacklevel` walks whatever
+        # `inspect.currentframe()` gives it and reads `co_filename` off each
+        # one, so a synthetic chain settles the question with no filesystem,
+        # no path semantics, and nothing patched outside this module.
+        internal = self.client._PACKAGE_ROOT + os.sep + 'inside.py'
+        foreign = os.path.join('elsewhere', 'outside.py')
 
-        with patch('schwaby.client.base.os.path.abspath',
-                   return_value=internal) as exhausted:
+        def chain(*filenames):
+            frame = None
+            for name in reversed(filenames):
+                frame = SimpleNamespace(
+                        f_code=SimpleNamespace(co_filename=name), f_back=frame)
+            return frame
+
+        # Every frame internal: the walk runs off the end and takes the
+        # fallback, which must never be 0 -- `warnings.warn` reads 0 as
+        # "blame the frame which called warn", which is this library.
+        with patch('schwaby.client.base.inspect.currentframe',
+                   return_value=chain(*([internal] * 12))):
             self.assertEqual(1, self.client._caller_stacklevel())
 
-        # The return value alone cannot tell the two paths apart: called
-        # straight from a test, the early return is `max(0, 1)`, which is also
-        # 1. What distinguishes them is how far the walk got, so count the
-        # frames it looked at. Unpatched it stops at this file immediately.
-        with patch('schwaby.client.base.os.path.abspath',
-                   side_effect=real) as stopped_early:
-            self.client._caller_stacklevel()
-
-        # `patch` resolves `schwaby.client.base.os.path.abspath` to the
-        # shared `posixpath` module, since base.py does `import os` -- so this
-        # counts every call in the process during the window, not just this
-        # walk's. An exact count is therefore hostage to anything else running
-        # concurrently: coverage's own canonical_filename calls abspath, and
-        # one newly traced file would break it in CI and nowhere else.
-        #
-        # A bound and a comparison say the same thing without the coupling:
-        # the unpatched walk stops within a frame or two, the patched one runs
-        # to the end of a pytest stack, which is dozens deep.
-        self.assertLess(stopped_early.call_count, 5)
-        self.assertGreater(exhausted.call_count,
-                           stopped_early.call_count + 5)
+        # The control. The same walk with a foreign frame in it returns that
+        # frame's depth, so the 1 above is the fallback rather than the value
+        # any stack happens to produce.
+        with patch('schwaby.client.base.inspect.currentframe',
+                   return_value=chain(internal, internal, internal, foreign)):
+            self.assertEqual(3, self.client._caller_stacklevel())
 
     @no_duplicates
     def test_a_sibling_package_is_not_mistaken_for_ours(self):

@@ -1203,19 +1203,29 @@ class DocExampleTest(unittest.TestCase):
         version can opt out of. Read from source, since a decorated test does
         not always expose a usable `__code__` at runtime.
         """
-        offenders = []
+        offenders, seen = [], []
         for path in self.python_files_under_tests():
             with open(path, encoding='utf-8') as f:
                 tree = ast.parse(f.read())
             for node in ast.walk(tree):
-                if not isinstance(node, ast.ClassDef):
+                # Module-level `def test_*` too: pytest collects those from any
+                # `*test*.py`, and the `filterwarnings` rule in setup.cfg keys
+                # on unittest's message, which pytest's own
+                # PytestReturnNotNoneWarning does not match. The trap this
+                # closes for methods was still open one scope up.
+                if isinstance(node, ast.Module):
+                    owner, body = '<module>', node.body
+                elif isinstance(node, ast.ClassDef):
+                    owner, body = node.name, node.body
+                else:
                     continue
-                for item in node.body:
+                for item in body:
                     if not isinstance(item, (ast.FunctionDef,
                                              ast.AsyncFunctionDef)):
                         continue
                     if not item.name.startswith('test'):
                         continue
+                    seen.append(item.name)
                     # Only this function's own body. `ast.walk` descends
                     # into nested `def`s, and a test defining a local helper
                     # that returns something -- a `side_effect`, typically --
@@ -1227,8 +1237,15 @@ class DocExampleTest(unittest.TestCase):
                            for inner in cls_own_body(item)):
                         offenders.append(
                                 '%s: %s.%s returns a value'
-                                % (display_path(path), node.name, item.name))
+                                % (display_path(path), owner, item.name))
         self.assertEqual([], offenders)
+
+        # A walk that found nothing satisfies the assertion above exactly as
+        # well as a clean tree does, and this guard exists for silent test
+        # loss -- so a silently empty scan is the one outcome that must not
+        # read as green. Verified by pointing the root at a missing directory:
+        # without this, both guards stayed passing.
+        self.assertGreater(len(seen), 500)
 
     @no_duplicates
     def test_no_test_module_defines_a_class_name_twice(self):
@@ -1244,16 +1261,22 @@ class DocExampleTest(unittest.TestCase):
         Read from the source rather than from the imported module, because by
         import time the first definition is already gone.
         """
-        offenders = []
+        offenders, classes = [], []
         for path in self.python_files_under_tests():
             with open(path, encoding='utf-8') as f:
                 tree = ast.parse(f.read())
             seen = collections.Counter(
                     n.name for n in tree.body if isinstance(n, ast.ClassDef))
+            classes.extend(seen)
             offenders.extend(
                     '%s: %s defined %d times' % (display_path(path), name, n)
                     for name, n in sorted(seen.items()) if n > 1)
         self.assertEqual([], offenders)
+
+        # Same reason as the positive control in the test above: an empty walk
+        # passes this assertion, and this guard is here because a shadowed
+        # class disappears quietly.
+        self.assertGreater(len(classes), 20)
 
     @staticmethod
     def python_files_under_tests():

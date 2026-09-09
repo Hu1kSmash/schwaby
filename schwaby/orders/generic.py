@@ -199,9 +199,16 @@ def _assert_finite(name, price, *, price_field=False):
             # naming neither the field nor the value, which is the ending
             # every other branch here exists to replace. Absurd as a
             # quantity and cheap to name.
+            # `bit_length()`, not a digit count. `len(str(abs(price)))` was
+            # the first version, and since 3.11 `int.__str__` itself refuses
+            # anything over `sys.get_int_max_str_digits()` -- so at 10**5000
+            # the message builder raised `Exceeds the limit (4300 digits) for
+            # integer string conversion`, chained off the OverflowError and
+            # naming neither the field nor the value. The fix reintroducing
+            # the failure it removes, one magnitude further out.
             raise ValueError(
-                    '{} is too large to be a price or a size, got a {}-digit '
-                    'integer'.format(name, len(str(abs(price))))) from None
+                    '{} is too large to be a price or a size: an integer of '
+                    '{} bits'.format(name, price.bit_length())) from None
 
     if math.isnan(value) or math.isinf(value):
         raise ValueError(
