@@ -289,6 +289,22 @@ class TokenMetadata:
 # client_from_login_flow
 
 
+# The login flow probes this path to decide whether the thing listening on the
+# callback port is its own server. One constant rather than two literals: the
+# route and the probe are 200 lines apart, and a divergence between them does
+# not fail -- it makes the probe miss its own server and time out.
+#
+# The value matters as much as the sharing. It was `/schwab-py-internal/status`
+# through 3.0.3, which is the path `schwab-py` serves for exactly the same
+# purpose -- so a `schwab-py` login flow already holding the port answers this
+# with 200, the guard below reads that as "our server is up", and the browser
+# delivers the authorization code into the other project's queue. That was
+# unreachable while the two could not be installed together and is merely
+# unlikely now, which is the wrong direction for a check whose whole job is to
+# refuse a stranger.
+INTERNAL_STATUS_PATH = '/schwaby-internal/status'
+
+
 # This runs in a separate process and is invisible to coverage
 def __run_client_from_login_flow_server(
         q, callback_port, callback_path):  # pragma: no cover
@@ -307,7 +323,7 @@ def __run_client_from_login_flow_server(
         q.put(flask.request.url)
         return 'schwaby callback received! You may now close this window/tab.'
 
-    @app.route('/schwab-py-internal/status')
+    @app.route(INTERNAL_STATUS_PATH)
     def status():
         return 'running'
 
@@ -497,8 +513,9 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
                 # suppression which used to sit here was for a urllib3 warning
                 # that never reached this code.
                 resp = httpx2.get(
-                        'https://127.0.0.1:{}/schwab-py-internal/status'.format(
-                            callback_port), verify=False)
+                        'https://127.0.0.1:{}{}'.format(
+                            callback_port, INTERNAL_STATUS_PATH),
+                        verify=False)
             except (httpx2.ConnectError, httpx2.ConnectTimeout):
                 # Not listening yet. Which of the two you get depends on the
                 # host: a port nothing is bound to is normally refused, giving

@@ -23,11 +23,11 @@ import schwaby                      # was: import schwab
 from schwaby.auth import easy_client
 ```
 
-Every method, argument, enum and return value is what 3.0.3 shipped. No
-behaviour changed and nothing was added or removed from the API.
+Every method, argument, enum and return value is what 3.0.3 shipped, and
+nothing was added or removed from the API.
 
-**Two things beyond the import line carry the name, and a find-and-replace over
-imports alone will miss both.**
+**Three things beyond the import line carry the name, and a find-and-replace
+over imports alone will miss all of them.**
 
 *Loggers are now `schwaby.*`.* They were `schwab.auth`, `schwab.client.base`,
 `schwab.streaming` and `schwab.debug`, and they are now the same names under
@@ -45,6 +45,17 @@ here: it does not raise, and the symptom is an absence.
 Anything matching on those strings needs the same treatment. They are
 diagnostics rather than an interface, but a test asserting on one will fail.
 
+*The login flow's internal status path is now `/schwaby-internal/status`.* This
+is the one actual behaviour change, and it is here because of what the release
+makes possible. `client_from_login_flow` decides whether the thing listening on
+your callback port is its own server by fetching that path and requiring a 200.
+It was `/schwab-py-internal/status` --- the path `schwab-py` serves, for the
+same purpose --- so a `schwab-py` login flow already holding the port answered
+it, the check read that as success, and the browser delivered the authorization
+code into the other project's queue while this one timed out. Unreachable while
+the two could not be installed together; merely unlikely now. Nothing calls
+this path but the library itself.
+
 ### Why
 
 The distribution has been `schwaby` since 2.6.0 while the package stayed
@@ -57,10 +68,10 @@ and destroyed the install.
 Every workaround for that was a workaround for the shared name:
 
 - an import-time check that scanned `sys.path` to detect the collision, which
-  grew to 203 of the 224 lines in `__init__.py`
+  grew to 224 of the 234 lines in `__init__.py`. Ten remain.
 - 17 tests and 15 red-proof cases holding it in place
-- a `danger` block in the streaming docs, an install-order caveat in
-  getting-started, and an uninstall-first instruction in the README
+- a `WARNING` block in the README and an install-order caveat in
+  getting-started, both of them telling you to uninstall `schwab-py` first
 - 3.0.2 spent entirely on reworking the check after it false-positived on this
   repository's own source tree
 

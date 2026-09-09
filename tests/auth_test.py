@@ -8,6 +8,7 @@ from .utils import (
 from unittest.mock import patch, ANY, MagicMock
 from unittest.mock import ANY as _
 
+import inspect
 import contextlib
 import json
 import os
@@ -288,6 +289,37 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                 auth.client_from_login_flow(
                         API_KEY, APP_SECRET, 'https://127.0.0.1:6969/callback',
                         self.token_path)
+
+
+    @no_duplicates
+    def test_the_internal_status_path_is_not_one_schwab_py_also_serves(self):
+        """The port guard asks "is the thing on this port mine?" by fetching a
+        path and requiring a 200. That only discriminates if the path is ours
+        alone.
+
+        Through 3.0.3 it was `/schwab-py-internal/status`, inherited from
+        `schwab-py`, which serves the same path for the same reason. A
+        `schwab-py` login flow already bound to the callback port therefore
+        answered with 200, the guard read that as its own server, and the
+        browser handed the authorization code to the other project. 4.0.0 is
+        the release that makes having both installed normal, so this is the
+        release where that stops being hypothetical.
+
+        Asserting the substring rather than the whole value on purpose: the
+        path may change again, and what must not come back is a name the other
+        project answers to.
+        """
+        self.assertNotIn('schwab-py', auth.INTERNAL_STATUS_PATH)
+        self.assertIn('schwaby', auth.INTERNAL_STATUS_PATH)
+
+        # The route and the probe have to be the same string, which is why it
+        # is a constant. A test comparing two literals would pass while both
+        # were wrong together.
+        source = inspect.getsource(auth)
+        self.assertEqual(
+                1, source.count("@app.route(INTERNAL_STATUS_PATH)"),
+                'the status route should be registered from the constant')
+        self.assertNotIn("'/schwab-py-internal/status'", source)
 
 
     @patch('schwaby.auth.Client')

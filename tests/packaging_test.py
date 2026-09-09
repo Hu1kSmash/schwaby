@@ -104,11 +104,12 @@ class SetupPyTest(unittest.TestCase):
         # Naming them the same thing removed all of it. Asserted because
         # reverting to a `schwab` package would reintroduce the collision
         # rather than restore compatibility, and would do it quietly.
-        import schwaby
-
+        # Not `schwaby.__name__`, which is 'schwaby' by construction the
+        # moment the import above succeeds and would hold no matter what
+        # setup.py said. The two sides that can actually disagree are the
+        # distribution name and the shipped package list.
         self.assertEqual('schwaby', self.kwargs['name'])
-        self.assertEqual('schwaby', schwaby.__name__)
-        self.assertIn('schwaby', self.kwargs['packages'])
+        self.assertIn(self.kwargs['name'], self.kwargs['packages'])
         self.assertNotIn('schwab', self.kwargs['packages'])
 
     @no_duplicates
@@ -1085,14 +1086,6 @@ class LongDescriptionTest(unittest.TestCase):
         for required in ('schwaby', 'schwab-py', 'easy_client'):
             self.assertIn(required, html)
 
-        # The README used to have to tell readers to uninstall `schwab-py`
-        # first, because both projects shipped a package called `schwab` and
-        # installing one over the other destroyed the install. The package is
-        # now `schwaby` too, so they coexist and that instruction would be
-        # wrong. What must survive is that the README still says which
-        # project this came from.
-        self.assertIn('schwab-py', html.lower())
-
         # Structure, not just length: a description that lost its headings is
         # not a page even if it is long.
         self.assertGreater(html.count('<h2'), 5)
@@ -1107,6 +1100,22 @@ class LongDescriptionTest(unittest.TestCase):
                 text = f.read()
         self.assertIn('pip install schwaby', text)
         self.assertNotIn('pip install schwab-py', text)
+
+        # The README used to tell readers to uninstall `schwab-py` first,
+        # because both projects shipped a package called `schwab` and
+        # installing one over the other destroyed the install. The package is
+        # now `schwaby` too, so they coexist and that instruction is wrong ---
+        # it would strand anyone who still imports `schwab`.
+        #
+        # Against the source for the same reason as the assertions above, and
+        # this one learned it the hard way: written against the rendered HTML
+        # it went GREEN under mutation, because the highlighter splits
+        # `pip uninstall -y schwab-py` with `<span>`s and the substring is not
+        # there to find. The README naming `schwab-py` at all is checked in
+        # `test_the_readme_renders_to_a_real_page`; what is checked here is
+        # that the old instruction has not come back.
+        self.assertNotIn('uninstall schwab-py', text)
+        self.assertNotIn('uninstall -y schwab-py', text)
 
     @no_duplicates
     def test_setup_py_names_an_encoding_when_it_reads_a_file(self):
