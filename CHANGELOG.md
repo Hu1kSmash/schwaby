@@ -1,16 +1,19 @@
 # Changelog
 
-This is a maintained fork of [`alexgolec/schwab-py`](https://github.com/alexgolec/schwab-py).
-Versions below 1.6.0 are upstream releases; see the upstream repository for their notes.
+Release notes for `schwaby`, newest first, written for someone deciding whether
+to upgrade.
 
-Through 2.1.0, changes here were offered upstream as pull requests first, so that anything
-upstream merged would shrink the divergence this fork carries. Upstream merged none of them, and
-its maintainer confirmed in September 2026 that he does not intend to update the project. As of
-2.2.0 this project no longer tracks upstream and no longer maintains compatibility with it.
+`schwaby` began from [`alexgolec/schwab-py`](https://github.com/alexgolec/schwab-py)
+and has been a separate project since 2.2.0; the
+[README](README.md#where-this-came-from) has that story, and Alex Golec's
+copyright and MIT licence are retained unchanged. The only trace of it in this
+file is the numbering: **versions below 1.6.0 are that project's releases**, not
+this one's, and their notes live in its repository.
 
-Entries below 2.2.0 were written under the old arrangement, and some of them discuss which changes
-had or had not been sent upstream. They are left as written rather than rewritten to match the
-current model.
+Entries are left as they were written on the day they shipped. The older ones
+describe a project that still tracked upstream and still called itself a fork,
+because at the time it did. Nothing has been rewritten to agree with how things
+work now — a changelog edited to match the present is not a record of anything.
 
 ---
 
