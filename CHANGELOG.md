@@ -24,7 +24,41 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ## Unreleased
 
-Documentation only.
+### `schwaby.contrib.util.decode_decimal`
+
+New, and the first thing in this release that is code rather than prose.
+
+Schwab streams money and quantities on `ACCT_ACTIVITY` as a serialized .NET
+`System.Decimal` — `{"lo": "6860000", "signScale": 12}` — not as numbers. The
+encoding is undocumented publicly; Schwab's Trader API support confirmed the
+conversion in writing. Every consumer ends up writing this, and the first
+attempt is reliably wrong in at least one of four ways, each of which is a
+**wrong number rather than an error**:
+
+- the mantissa spans `lo`, `mid` and `hi`, so reading `lo` alone truncates
+  anything over `4294.967295` at `signScale` 12 — `$5,000.00` decodes as
+  `$705.03`;
+- an odd `signScale` means negative, and the sign is not the side;
+- an object with a `signScale` and no mantissa is **zero**, not unknown — it
+  arrives that way as `LeavesQuantity` on the final fill of a completed order,
+  where reading it as unknown reports a complete fill as outstanding;
+- `10 ** (signScale // 2)` on a hostile scale builds an astronomical integer
+  and hangs the thread, which a per-item `try`/`except` cannot rescue.
+
+It returns a `decimal.Decimal`, never a float, so a decoded price can be fed
+straight back into `set_price`. A mantissa with no scale raises
+`UnknownDecimalScale` rather than guessing, because the guess that suggests
+itself is wrong by a factor of a million when it is wrong and says nothing when
+it is right.
+
+This library still models nothing else inside `MESSAGE_DATA`, and this does not
+change that — it decodes one primitive encoding, in `contrib`, alongside the
+JSON decoders the streaming docs already recommend. The documentation carried
+this as a code sample until now, which meant every consumer copied it; the
+sample was itself wrong about `mid` for a few hours today, which is the
+argument for shipping one tested version instead.
+
+### Documentation
 
 **The `Duration` enum lists four values Schwab rejects for equity orders**, and
 now says so where someone setting a duration will see it. `IMMEDIATE_OR_CANCEL`,

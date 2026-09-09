@@ -426,6 +426,7 @@ class UtilsTest(unittest.TestCase):
             'RedirectTimeoutError': ('m',),
             'RedirectServerExitedError': ('m',),
             'InvalidOrderException': ('m',),
+            'UnknownDecimalScale': ('m',),
         }
 
         # Seeded with `schwaby` for the same reason as the walk above: an

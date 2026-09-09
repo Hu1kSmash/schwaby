@@ -957,6 +957,25 @@ none of this, nothing here is validated by this library, and a shape that has
 not been seen is not thereby impossible. Treat it as a map drawn by someone who
 has been there, not as a specification.
 
+.. _confidence_tags:
+
+Some of it we are not sure about, and those are marked. Two tags appear below
+and on the other pages:
+
+**Unconfirmed** --- reasoned from a specification or from how the data must be
+laid out, and never actually seen on a feed. We handle it because the failure
+would be silent, not because we have met it.
+
+**Seen once, not reproduced** --- observed and written down at the time, but not
+reliably reproducible since, so we cannot tell you when it happens.
+
+**If you can confirm or refute either kind, please**
+`open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__. A single
+message saying "I see this" or "my traffic contradicts it" settles a question
+that no amount of reasoning here will, and account and asset mix differ enough
+that someone else's feed is genuinely different evidence. Being told we are
+wrong is the point of publishing these rather than keeping them.
+
 **The order identifier appears under at least seven spellings**, and which one
 you get depends on the message:
 
@@ -1105,24 +1124,19 @@ the sibling frame.
 ``signScale`` **means the value is negative.** The rule that reproduces every
 captured payload:
 
+**This library ships one**, because every consumer was writing it and the
+first attempt is reliably wrong in at least one of the ways below:
+
 .. code-block:: python
 
-  import decimal
+  from schwaby.contrib.util import decode_decimal
 
-  def decode(field):
-      # Not a dict on every frame: the paragraph above has Schwab sending a
-      # bare int where a sibling frame two milliseconds earlier sent a label,
-      # so `'lo' not in field` on its own raises TypeError on the odd one.
-      if not isinstance(field, dict):
-          return decimal.Decimal(0)
-      # The mantissa spans three fields. Reading only `lo` decodes a slice of
-      # anything that overflows 32 bits -- see below.
-      mantissa = (int(field.get('lo', 0))
-                  + (int(field.get('mid', 0)) << 32)
-                  + (int(field.get('hi', 0)) << 64))
-      scale = field.get('signScale', 0)
-      value = decimal.Decimal(mantissa).scaleb(-(scale // 2))
-      return -value if scale % 2 else value
+  decode_decimal({"lo": "6860000", "signScale": 12})   # Decimal('6.860000')
+  decode_decimal({"lo": "6860000", "signScale": 13})   # Decimal('-6.860000')
+  decode_decimal({"signScale": 12})                    # Decimal('0')
+
+.. autofunction:: schwaby.contrib.util.decode_decimal
+.. autoclass:: schwaby.contrib.util.UnknownDecimalScale
 
 .. danger::
 
@@ -1140,12 +1154,15 @@ captured payload:
     # lo alone       ->    705.032704
     # lo + mid<<32   ->   5000.000000      <- the actual value
 
-  Provenance, because it differs from the rest of this section: this one is
-  **reasoned from the .NET layout, not observed.** No captured payload has
-  carried a non-zero ``mid`` or ``hi``, on either feed anyone here has watched.
-  It is included because a value that does not fit in 32 bits cannot be sent
-  in ``lo`` alone, so the alternative to reading all three is waiting for a
-  large enough number to find out.
+  :ref:`Unconfirmed <confidence_tags>`. No captured payload has carried a
+  non-zero ``mid`` or ``hi``, on either feed anyone here has watched --- this
+  is reasoned from the .NET layout rather than observed. It is documented
+  anyway because a value that does not fit in 32 bits cannot be sent in ``lo``
+  alone, so the alternative to reading all three is waiting for a large enough
+  number to find out. **If you have a payload with** ``mid`` **set, please**
+  `open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__ **with the
+  field** --- it would turn the most consequential guess on this page into a
+  fact.
 
 ``Decimal`` rather than a float, deliberately: these are money, and
 :meth:`set_price <schwaby.orders.generic.OrderBuilder.set_price>` has refused a
@@ -1212,6 +1229,30 @@ malformed message and should not be reported as one.
   merely informational, on the account feed, at whatever moment Schwab decides
   to tell you something. Parse it defensively and treat a failure as "this one
   is a notice", not as a broken frame.
+
+.. warning::
+
+  **A re-subscribe can replay recent activity in a stripped shape.**
+  :ref:`Seen once, not reproduced <confidence_tags>`.
+
+  What was recorded at the time: after a reconnect, the stream re-sent recent
+  activity with **no account, no symbol and no execution id** --- a bare
+  quantity and price with none of the identifying envelope. A consumer without
+  a dedup guard re-books an old fill as a fresh one.
+
+  The shape is the useful part, because it is recognisable: those three absent
+  together is not what a live event looks like. A guard can key on that as well
+  as on execution id, which is what the consumer who reported it does.
+
+  **We cannot tell you when this happens.** A later capture is a
+  counter-example --- a subscribe on an account with four filled orders that
+  same day produced a bare ``SUBSCRIBED`` ack and then silence, replaying
+  nothing. So "replays on every re-subscribe" is wrong, and what triggers it is
+  unknown. What is true either way, and worth building for: **a consumer must
+  be idempotent across reconnects.**
+
+  `An issue <https://github.com/Hu1kSmash/schwaby/issues>`__ from anyone who
+  can reproduce this on demand would be worth a great deal.
 
 **Content items within one message are not necessarily in lifecycle order.** A
 ``CancelAccepted`` naming no symbol was seen arriving ahead of the
