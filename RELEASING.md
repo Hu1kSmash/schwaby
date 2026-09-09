@@ -13,10 +13,10 @@ test that passes both ways is worse than none, because it looks like protection.
 
 **A negative result about an installed package is not a result until you know
 which directory produced it.** `sys.path[0]` is the current directory, so
-`import schwab` run from the repository reads the working tree and ignores what
+`import schwaby` run from the repository reads the working tree and ignores what
 pip installed. Three consecutive reproductions of a reported install collision
 came back "does not reproduce" that way, while inspecting the source tree. `cd`
-somewhere else first, and check `schwab.__file__` before believing the answer.
+somewhere else first, and check `schwaby.__file__` before believing the answer.
 
 **A red-proof that greps for `FAILED` cannot see a `subTest`.** pytest reports
 a failing subtest as `SUBFAILED(...)`, so a harness matching `FAILED .*::` calls
@@ -101,7 +101,7 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
 1. `CHANGELOG.md` — a new section, written for someone deciding whether to
    upgrade.
 
-2. `schwab/version.py` — bump. **Major if anything public is removed or
+2. `schwaby/version.py` — bump. **Major if anything public is removed or
    renamed**, minor for added surface or changed behaviour, patch for fixes
    alone.
 
@@ -113,8 +113,8 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
 3. **Anything naming a version**, which goes stale silently:
 
    ```shell
-   grep -rn 'schwaby@v\|schwaby==' README.md docs/ schwab/
-   grep -rnE '\b[0-9]+\.[0-9]+\.[0-9]+' README.md docs/*.rst schwab/ \
+   grep -rn 'schwaby@v\|schwaby==' README.md docs/ schwaby/
+   grep -rnE '\b[0-9]+\.[0-9]+\.[0-9]+' README.md docs/*.rst schwaby/ \
        | grep -vE '127\.0\.0\.1|https?://'
    ```
 
@@ -137,7 +137,7 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
 4. **No dates in shipped documentation.**
 
    ```shell
-   grep -rnE '\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b' README.md docs/*.rst schwab/
+   grep -rnE '\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b' README.md docs/*.rst schwaby/
    ```
 
    Should be empty. A finding measured against a live account is worth
@@ -156,8 +156,14 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    python - <<'EOF'
    import ast, subprocess, pathlib
    PREV = 'vPREV'
+   PKG = 'schwaby/'
+   # A pathspec that matches nothing returns an empty list, which reads as
+   # "no library file changed" -- so a wrong path passes this check for any
+   # release at all. 4.0.0 renamed the package and left this pointing at
+   # `schwab/`; assert the path before trusting its silence.
+   assert pathlib.Path(PKG).is_dir(), PKG + ' is not the package directory'
    changed = subprocess.run(['git', 'diff', '--name-only', PREV + '..HEAD',
-                             '--', 'schwab/'],
+                             '--', PKG],
                             capture_output=True, text=True).stdout.split()
    def strip(src):
        t = ast.parse(src)
@@ -255,14 +261,26 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
 
 ## The distribution name and the import name
 
-The distribution is `schwaby`; the importable package is `schwab`. Those differ
-on purpose — keeping the import means a consumer moving to this changes one line
-of `requirements.txt`.
+Both are `schwaby`, as of 4.0.0. `pip install schwaby` then `import schwaby`,
+and there is nothing further to explain to a reader.
 
-The cost is that `schwaby` cannot be installed alongside `schwab-py`. Both
-provide the `schwab` package, so whichever lands second silently overwrites the
-other's files, with no warning from `pip` and no failure at install time. Say so
-wherever the install is documented.
+They used to differ: the distribution was renamed to `schwaby` at 2.6.0 and the
+package stayed `schwab`, so that a consumer moving over changed one line of
+`requirements.txt` and nothing else. The cost was that `schwaby` and `schwab-py`
+both provided a directory called `schwab`, so whichever pip installed second
+silently overwrote the other's files --- no warning, no failure at install time,
+and a version banner that named whichever project had won. 3.0.1 shipped an
+import-time check for it, which could itself be overwritten by the collision it
+detected, and 3.0.2 withdrew that. 4.0.0 renamed the package instead.
+
+So: the two install side by side now, and **the install documentation must not
+tell anyone to uninstall `schwab-py` first.** It was correct through 3.0.3 and
+is wrong from 4.0.0 --- an instruction to uninstall the package that owns
+`schwab/` will strand anyone who still imports it.
+
+`tests/packaging_test.py::…test_the_distribution_and_the_package_have_the_same_name`
+holds the names together. If a future release wants them to diverge again, that
+test is the thing to argue with first.
 
 A git install works for testing an unreleased commit:
 

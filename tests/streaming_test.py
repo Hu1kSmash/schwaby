@@ -8101,7 +8101,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
     @no_duplicates
     def test_set_json_decoder_does_not_need_contrib_imported(self):
-        # schwab/__init__.py does not import contrib, so looking the base class
+        # schwaby/__init__.py does not import contrib, so looking the base class
         # up as schwaby.contrib.util.StreamJsonDecoder raised AttributeError for
         # anyone who subclassed it where it is defined. Every other test here
         # imports contrib.util first, which is exactly what made the old code

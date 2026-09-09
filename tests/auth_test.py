@@ -307,7 +307,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
 
         with self.assertRaisesRegex(
                 auth.RedirectServerExitedError,
-                'Something other than the schwab-py callback server'):
+                'Something other than the schwaby callback server'):
             auth.client_from_login_flow(
                     API_KEY, APP_SECRET, 'https://127.0.0.1:6969/callback',
                     self.token_path)

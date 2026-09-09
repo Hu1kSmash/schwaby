@@ -305,7 +305,7 @@ def __run_client_from_login_flow_server(
     @app.route(callback_path)
     def handle_token():
         q.put(flask.request.url)
-        return 'schwab-py callback received! You may now close this window/tab.'
+        return 'schwaby callback received! You may now close this window/tab.'
 
     @app.route('/schwab-py-internal/status')
     def status():
@@ -438,7 +438,7 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
     #
     # import_module rather than `import flask`, which pyflakes reports as an
     # unused import -- it does not honour flake8's noqa, and `python -m
-    # pyflakes schwab/` is the documented way to find dead code here. A lint
+    # pyflakes schwaby/` is the documented way to find dead code here. A lint
     # channel with one permanent entry in it is one nobody reads.
     importlib.import_module('flask')
 
@@ -517,7 +517,7 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
                     break
 
                 raise RedirectServerExitedError(
-                        ('Something other than the schwab-py callback server '
+                        ('Something other than the schwaby callback server '
                          'is listening on port {}: it answered the status '
                          'check with HTTP {}. Refusing to start a login flow '
                          'which would send your authorization code to '
@@ -532,7 +532,7 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
         print('***********************************************************************')
         print()
         print('This is the browser-assisted login and token creation flow for')
-        print('schwab-py. This flow automatically opens the login page on your')
+        print('schwaby. This flow automatically opens the login page on your')
         print('browser, captures the resulting OAuth callback, and creates a token')
         print('using the result. The authorization URL is:')
         print()
@@ -540,7 +540,7 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
         print()
         print('IMPORTANT: Your browser will give you a security warning about an')
         print('invalid certificate prior to issuing the redirect. This is because')
-        print('schwab-py has started a server on your machine to receive the OAuth')
+        print('schwaby has started a server on your machine to receive the OAuth')
         print('redirect using a self-signed SSL certificate. You can ignore that')
         print('warning, but make sure to first check that the URL matches your')
         print('callback URL, ignoring URL parameters. As a reminder, your callback URL')
@@ -679,7 +679,7 @@ def client_from_manual_flow(api_key, app_secret, callback_url, token_path,
     auth_context = get_auth_context(api_key, callback_url)
 
     print('\n**************************************************************\n')
-    print('This is the manual login and token creation flow for schwab-py.')
+    print('This is the manual login and token creation flow for schwaby.')
     print('Please follow these instructions exactly:')
     print()
     print(' 1. Open the following link by copy-pasting it into the browser')
@@ -954,7 +954,7 @@ def client_from_received_url(
 # ensures that the _get_ipython variable is defined so that we can patch is 
 # using module-level patching. This is safe in most contexts, but there are 
 # circumstances where it gets weird like starting an ipython notebook after 
-# schwab-py is loaded.
+# schwaby is loaded.
 try:
     _get_ipython = get_ipython
 except NameError:

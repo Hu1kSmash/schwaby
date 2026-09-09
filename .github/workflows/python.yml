@@ -53,11 +53,11 @@ jobs:
     # Was `tox`, which is gone. It built an sdist, installed it into an
     # isolated env, and then ran `coverage` as an external command under a
     # different interpreter -- so the environment it had just built was never
-    # the one under test, and pytest imported schwab from the working tree
+    # the one under test, and pytest imported the package from the working tree
     # anyway. The Python version came from setup-python either way, which is
     # the part that mattered. This runs the same command without the layer.
     - name: Test
-      run: coverage run --rcfile=setup.cfg --source=schwab -p -m pytest tests/
+      run: coverage run --rcfile=setup.cfg --source=schwaby -p -m pytest tests/
 
     - name: Report coverage
       if: matrix.python == '3.10'

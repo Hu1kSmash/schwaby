@@ -86,6 +86,27 @@ to ease the transition would reintroduce exactly what this release removes.
 If you pin `schwaby<4` you keep 3.0.3, which continues to work and continues
 to collide.
 
+**If you currently have both `schwaby` and `schwab-py` installed, reinstall
+`schwab-py` after upgrading.** This is the one upgrade that breaks something,
+and it breaks quietly.
+
+`pip install -U schwaby` uninstalls 3.0.3 first, and uninstalling a
+distribution deletes every path it recorded at install time. 3.0.3 recorded
+`schwab/*` --- the same paths `schwab-py` had overwritten --- so pip removes
+`schwab-py`'s files while still listing it as installed. Measured: 21 of the 25
+files under `schwab/` go, `pip check` reports no broken requirements, and
+`import schwab` still *succeeds*, because the four files 3.0.3 never shipped
+survive and keep the directory a package. The first real use is what fails:
+
+```
+>>> import schwab.auth
+ModuleNotFoundError: No module named 'schwab.auth'
+```
+
+Either uninstall `schwab-py` before upgrading, or run
+`pip install --force-reinstall schwab-py` afterwards. Nothing needs doing if
+you only ever had `schwaby`.
+
 ---
 
 ## 3.0.3

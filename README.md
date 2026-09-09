@@ -264,6 +264,12 @@ import schwaby
 different packages, so you can have both installed and import whichever you
 mean --- useful if you want to compare the two against the same account.
 
+One exception: if you are upgrading from `schwaby` 3.0.3 or earlier and
+`schwab-py` is also installed, run `pip install --force-reinstall schwab-py`
+afterwards. Those versions shipped a package called `schwab` as well, so
+uninstalling one takes files the other needs --- silently, and `import schwab`
+goes on succeeding until the first submodule you use.
+
 ---
 
 ## Getting help and contributing

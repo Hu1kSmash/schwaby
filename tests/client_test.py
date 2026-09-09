@@ -2393,16 +2393,22 @@ class _TestClient:
 
     @no_duplicates
     def test_a_sibling_package_is_not_mistaken_for_ours(self):
-        """A bare prefix test matches '.../schwabtools' against a root of
-        '.../schwab', so frames from an unrelated package are skipped as if
+        """A bare prefix test matches '.../schwabytools' against a root of
+        '.../schwaby', so frames from an unrelated package are skipped as if
         they were ours and the blame lands a frame too far out.
+
+        The sibling's name has to share the *current* package name as a
+        prefix, which is why it is not the 'schwabtools' this test was born
+        with: that collided with the old root and collides with nothing now,
+        so the fixture went quietly inert when 4.0.0 renamed the package and
+        the mutation stopped being caught.
 
         This needs a real module in a real sibling directory. Patching
         _PACKAGE_ROOT cannot stand it up, because the walk starts at this
         library's own frame -- any root not covering base.py makes that frame
         foreign and the walk stops at once, whichever way the comparison is
         written. So build the layout on disk: symlink the package in as
-        'schwaby', put 'schwabtools' beside it, and call from inside that.
+        'schwaby', put 'schwabytools' beside it, and call from inside that.
         """
         import os
         import subprocess
@@ -2413,7 +2419,7 @@ class _TestClient:
 
         with tempfile.TemporaryDirectory() as tmp:
             os.symlink(package, os.path.join(tmp, 'schwaby'))
-            sibling = os.path.join(tmp, 'schwabtools')
+            sibling = os.path.join(tmp, 'schwabytools')
             os.mkdir(sibling)
 
             with open(os.path.join(sibling, '__init__.py'), 'w') as f:
@@ -2430,7 +2436,7 @@ class _TestClient:
                 'import sys, warnings\n'
                 'sys.path.insert(0, {tmp!r})\n'
                 'from schwaby.client import Client\n'
-                'import schwabtools.caller as caller\n'
+                'import schwabytools.caller as caller\n'
                 'class S:\n'
                 '    timeout = None\n'
                 '    def get(self, *a, **k):\n'
@@ -2451,7 +2457,7 @@ class _TestClient:
                     capture_output=True, text=True, cwd=tmp).stdout.strip()
 
         self.assertTrue(
-                blamed.endswith(os.path.join('schwabtools', 'caller.py')),
+                blamed.endswith(os.path.join('schwabytools', 'caller.py')),
                 'the warning should name the sibling package that made the '
                 'call, but named {!r}'.format(blamed))
 

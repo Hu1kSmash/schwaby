@@ -133,7 +133,7 @@ class BaseClient(EnumEnforcer):
 
     @contextlib.contextmanager
     def _translate_token_errors(self):
-        '''Presents a failed token refresh as a schwab-py exception.
+        '''Presents a failed token refresh as a schwaby exception.
 
         authlib raises OAuthError when Schwab rejects a refresh. That happens
         in the middle of an ordinary request, because the session refreshes the
@@ -225,8 +225,8 @@ class BaseClient(EnumEnforcer):
         zipimport or a frozen build can manage.
 
         The separator matters in the prefix test: without it a sibling package
-        whose path merely starts the same way, ``.../schwabtools`` against a
-        root of ``.../schwab``, is mistaken for one of ours and skipped, and
+        whose path merely starts the same way, ``.../schwabytools`` against a
+        root of ``.../schwaby``, is mistaken for one of ours and skipped, and
         the blame lands on whoever called *that*.
 
         The count starts at 0 because ``warnings.warn`` is called one frame up,

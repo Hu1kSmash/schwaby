@@ -46,7 +46,7 @@ SETUP_PY = os.path.join(REPO_ROOT, 'setup.py')
 
 @contextlib.contextmanager
 def in_repo_root():
-    '''setup.py opens README.md and schwab/version.py by relative path, the
+    '''setup.py opens README.md and schwaby/version.py by relative path, the
     way pip runs it. Every other test here is independent of the working
     directory and this one has to be too, so run it where it expects to be
     rather than from wherever pytest was invoked.'''
@@ -215,7 +215,7 @@ class ShippedFilesTest(unittest.TestCase):
                          'schwaby.orders']
 
     @no_duplicates
-    def test_only_schwab_packages_are_shipped(self):
+    def test_only_schwaby_packages_are_shipped(self):
         with in_repo_root():
             found = setuptools.find_packages(include=['schwaby', 'schwaby.*'])
         self.assertEqual(self.EXPECTED_PACKAGES, sorted(found))
@@ -739,7 +739,7 @@ class DocReferenceTest(unittest.TestCase):
 
     The second puts the real target inside the angle brackets, so a pattern
     that reads the visible label sees `Client.get_quote()` -- which does not
-    start with `schwab`, gets skipped as somebody else's name, and the broken
+    start with `schwaby`, gets skipped as somebody else's name, and the broken
     target behind it is never looked at.
     """
 
@@ -864,10 +864,10 @@ class DocExampleTest(unittest.TestCase):
     `DocReferenceTest` cannot see this: the reference role `:func:`easy_client``
     resolves perfectly well. What is wrong is the call written underneath it.
     This walks the python code blocks instead and checks that every keyword
-    passed to a `schwab` callable is one that callable accepts.
+    passed to a `schwaby` callable is one that callable accepts.
 
     Deliberately narrow. It resolves a call only when the name is one the
-    documentation imported from `schwab`, and it skips a callable that takes
+    documentation imported from `schwaby`, and it skips a callable that takes
     `**kwargs`. It is not a type checker; it catches the argument that used to
     exist and does not any more, which is the one that rots.
     """
@@ -918,7 +918,7 @@ class DocExampleTest(unittest.TestCase):
 
     @staticmethod
     def resolve_callable(name, imported):
-        """Resolve a called name to a schwab callable, or None if not ours."""
+        """Resolve a called name to a schwaby callable, or None if not ours."""
         root = name.split('.')[0]
         if root not in imported:
             return None

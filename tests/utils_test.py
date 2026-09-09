@@ -203,8 +203,8 @@ class UtilsTest(unittest.TestCase):
         import importlib, inspect, pkgutil
         import schwaby
 
-        # Seeded with `schwab` itself: walk_packages yields only SUBmodules,
-        # and schwab/__init__.py already runs module-level code, so an
+        # Seeded with `schwaby` itself: walk_packages yields only SUBmodules,
+        # and schwaby/__init__.py already runs module-level code, so an
         # exception defined there would never be looked at. Verified by hand
         # rather than by mutation, because nothing in __init__.py raises today
         # so a mutation of the seed is green either way: with an exception
@@ -305,8 +305,8 @@ class UtilsTest(unittest.TestCase):
             'InvalidOrderException': ('m',),
         }
 
-        # Seeded with `schwab` for the same reason as the walk above: an
-        # exception defined in schwab/__init__.py is not a submodule, so it
+        # Seeded with `schwaby` for the same reason as the walk above: an
+        # exception defined in schwaby/__init__.py is not a submodule, so it
         # would get no sample, never be round-tripped, and the count control
         # below would still pass because it counts only what the walk found.
         seen, modules = 0, ['schwaby']

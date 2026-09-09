@@ -190,6 +190,6 @@ def _enable_bug_report_logging(output=None, loggers=None):
             pass
     atexit.register(write_logs)
 
-    get_logger().debug('schwab-api version %s', schwaby.__version__)
+    get_logger().debug('schwaby version %s', schwaby.__version__)
 
     return write_logs
