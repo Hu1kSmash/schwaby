@@ -63,8 +63,32 @@ jobs:
       if: matrix.python == '3.10'
       run: |
         coverage combine
+        # The reports are generated before the gate, and with the floor
+        # disabled, so that a run which fails `fail_under` still produces the
+        # report showing which lines caused it. Generated after `coverage
+        # report`, they would not exist on exactly the run you need them for.
+        coverage html --fail-under=0
+        coverage xml --fail-under=0
+        # This one is the gate: `fail_under` lives in setup.cfg.
         coverage report
-        coverage xml
+
+    # `htmlcov/` is the useful half of coverage -- which lines never ran,
+    # rather than a percentage -- and it was being generated and discarded.
+    - name: Keep the coverage report
+      if: ${{ !cancelled() && matrix.python == '3.10' }}
+      uses: actions/upload-artifact@v7
+      with:
+        # The 3.10 job runs on all three platforms when the matrix is full,
+        # and upload-artifact refuses two artifacts with the same name.
+        name: coverage-${{ matrix.platform }}
+        path: |
+          htmlcov/
+          coverage.xml
+        retention-days: 14
+        # A failed test run skips the step above, so there is nothing to
+        # collect. That build is already red for a better reason; a warning
+        # about a missing artifact on top of it is noise.
+        if-no-files-found: ignore
 
     - name: Check twine
       if: matrix.python == '3.10'
