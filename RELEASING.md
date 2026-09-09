@@ -18,6 +18,15 @@ pip installed. Three consecutive reproductions of a reported install collision
 came back "does not reproduce" that way, while inspecting the source tree. `cd`
 somewhere else first, and check `schwaby.__file__` before believing the answer.
 
+**And an editable install goes stale on its own.** `.venv` held an editable
+`schwaby` 3.0.2 whose finder mapped the name `schwab` to a directory 4.0.0 had
+renamed away, so `import schwaby` *and* `import schwab` both raised
+`ModuleNotFoundError` from outside the repo while the suite passed --- pytest
+runs from the root, where the working tree is on the path regardless. The rule
+above sends you out of the repo to get a trustworthy answer and this is what
+you find when you get there. `pip install -e .` after anything that moves a
+package, and before believing an import failure you did not expect.
+
 **A red-proof that greps for `FAILED` cannot see a `subTest`.** pytest reports
 a failing subtest as `SUBFAILED(...)`, so a harness matching `FAILED .*::` calls
 it green. One mutation was reported as unnoticed here and was in fact caught,

@@ -1,8 +1,4 @@
-import sys
-import tempfile
-import warnings
-
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 
 class PicklableResponse:
