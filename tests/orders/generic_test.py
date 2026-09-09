@@ -1572,7 +1572,13 @@ class NonNumericOrderFieldTest(unittest.TestCase):
     #    the serializer's, `(int, float)`, not a mathematical one. Without
     #    this entry the two spellings are indistinguishable and the case went
     #    GREEN under mutation.
-    NOT_NUMBERS = (None, [], {}, b'1', object(), fractions.Fraction(3, 2))
+    #  * True is an `int` subclass, so it satisfies `isinstance(price,
+    #    (int, float))` -- and `_build_object` passes it through, so
+    #    `set_quantity(True)` built `{"quantity": true}`. The serializer's
+    #    predicate is the right one to copy and this is the single type it
+    #    lets through that Schwab's schema does not call a number.
+    NOT_NUMBERS = (None, [], {}, b'1', object(), fractions.Fraction(3, 2),
+                   True, False)
 
     # Strings are refused too, but for a different stated reason -- Schwab
     # types these fields as numbers, so a string is the wrong type rather than

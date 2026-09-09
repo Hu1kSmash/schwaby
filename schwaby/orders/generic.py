@@ -166,7 +166,14 @@ def _assert_finite(name, price, *, price_field=False):
         # the same ending as the bytes case above, reached by a different
         # route, and a quantity read off a dataframe column is the realistic
         # way to arrive at it.
-        if not isinstance(price, (int, float)):
+        # `bool` first, because it is an `int` subclass and so satisfies the
+        # test below -- and `_build_object` passes it through unchanged, so
+        # `set_quantity(True)` produced `{"quantity": true}`. A JSON `true` is
+        # not a number in Schwab's schema, which is the same ending as the
+        # bytes case: not wrong so much as unsendable. It arrives realistically
+        # from a column pandas inferred as bool dtype, or a flag threaded into
+        # the wrong argument.
+        if isinstance(price, bool) or not isinstance(price, (int, float)):
             raise ValueError(
                     '{} must be a number, got {!r}'.format(name, price))
         value = float(price)

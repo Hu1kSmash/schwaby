@@ -2406,8 +2406,21 @@ class _TestClient:
         of '' makes every absolute path look internal, which is the same shape
         as every frame being unresolvable, and takes the walk to the end.
         """
+        # Not `''`. The prefix under test is `_PACKAGE_ROOT + os.sep`, so an
+        # empty root gives `/` on POSIX -- which every absolute path starts
+        # with, as intended -- and `\` on Windows, which none do. The walk
+        # would then return at the very first frame, still 1, and the two
+        # paths stay indistinguishable by return value while the frame count
+        # collapses to 1. That is a green assertion on Linux and a red one on
+        # the `windows-latest` leg, which runs on pull requests and on tags:
+        # the runs used to clear a release.
+        #
+        # The drive of a real path plus the separator is a prefix every
+        # absolute path on this platform shares, on both.
+        root = os.path.splitdrive(os.path.abspath(__file__))[0]
+
         real = os.path.abspath
-        with patch.object(type(self.client), '_PACKAGE_ROOT', ''):
+        with patch.object(type(self.client), '_PACKAGE_ROOT', root):
             with patch('schwaby.client.base.os.path.abspath',
                        side_effect=real) as exhausted:
                 self.assertEqual(1, self.client._caller_stacklevel())

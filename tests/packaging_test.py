@@ -1108,17 +1108,33 @@ class DocExampleTest(unittest.TestCase):
                 # Marked in the documentation the reader can see, rather
                 # than by an allowlist of file and line here, which would
                 # go stale on the next edit above it.
-                own_line = source_lines[node.lineno - 1]
-                if 'raises' in own_line.partition('#')[2]:
-                    continue
+                #
+                # Every line the call spans is searched, not just the one it
+                # starts on: the marker naturally goes on the line carrying
+                # the offending argument, which for a wrapped call is not the
+                # first one.
+                span = source_lines[node.lineno - 1:node.end_lineno]
+                marked = any('raises' in l.partition('#')[2] for l in span)
 
                 where_line = '%s:%d %s' % (where, line, name)
                 checked.append(where_line)
+
+                # Marked calls are run too, and required to raise. Skipping
+                # them instead would let the documentation claim something
+                # raises after it had stopped raising -- and would quietly
+                # drop a working call whose comment happens to contain the
+                # word for another reason.
                 try:
                     templates[name](*args).build()
                 except Exception as e:
-                    failures.append('%s -> %s: %s'
-                                    % (where_line, type(e).__name__, e))
+                    if not marked:
+                        failures.append('%s -> %s: %s'
+                                        % (where_line, type(e).__name__, e))
+                else:
+                    if marked:
+                        failures.append(
+                                '%s is marked `# raises` and did not'
+                                % where_line)
 
         self.assertEqual([], failures)
 

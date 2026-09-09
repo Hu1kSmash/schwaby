@@ -1011,8 +1011,23 @@ it matches nothing at all.
    'ORDERMONITORCREATED', 'ORDERMONITORCOMPLETED',
    'CHANGECREATED', 'CHANGEACCEPTED')
 
-Both ``CANCELED`` and ``CANCELLED`` appear -- the spelling is not consistent
-within Schwab's own tokens, so match on both.
+``ORDERCANCELED`` and ``ORDERCANCELLED`` are both in that second block, and
+**that is not evidence Schwab spells it two ways.** The comment above the block
+says why: those spellings are the observer's, recorded before the casing was
+measured. A list normalised to upper case cannot settle a question about
+spelling, and reading it as though it could is the same error as treating an
+enum member as proof that a key is delivered.
+
+What was actually measured cuts the other way. The one cancel driven
+deliberately, below, produced ``CancelAccepted`` and ``OrderUROutCompleted``
+--- neither of which is any case variant of either upper-case token. Schwab
+documents the ``MESSAGE_TYPE`` vocabulary nowhere at all; a search of the whole
+developer portal returns nothing describing these values.
+
+So: **match case-insensitively, and prefer a substring over an enumerated
+set.** A consumer holding an exact list --- including this one --- can miss a
+real cancel and see only silence, which on an order feed is the failure that
+costs something.
 
 ``OrderUROutCompleted`` says the order **came off the book**. It does not say
 why, and it is worth resisting the obvious gloss. Calling it "an unsolicited

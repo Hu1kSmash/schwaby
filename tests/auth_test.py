@@ -835,8 +835,10 @@ class ClientFromAccessFunctionsTest(unittest.TestCase):
         update_token = async_session.mock_calls[0][2]['update_token']
         self.assertTrue(inspect.iscoroutinefunction(update_token))
 
-        asyncio.new_event_loop().run_until_complete(
-                update_token(self.raw_token))
+        # asyncio.run rather than new_event_loop(), which leaks the loop
+        # and its selector fd -- a ResourceWarning per test, across five
+        # Pythons and three platforms.
+        asyncio.run(update_token(self.raw_token))
         self.assertEqual([{
             'creation_timestamp': TOKEN_CREATION_TIMESTAMP,
             'token': self.raw_token
@@ -1040,7 +1042,7 @@ class ClientFromReceivedUrl(unittest.TestCase):
         self.assertTrue(inspect.iscoroutinefunction(update_token))
 
         refreshed = {'token': 'refreshed'}
-        asyncio.new_event_loop().run_until_complete(update_token(refreshed))
+        asyncio.run(update_token(refreshed))
 
         # Written through the metadata wrapper, so the creation timestamp is
         # the original one rather than now -- which is the whole reason the
