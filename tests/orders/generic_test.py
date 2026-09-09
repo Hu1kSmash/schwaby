@@ -2,8 +2,8 @@ import decimal
 import httpx2
 import unittest
 
-from schwab.orders.generic import *
-from schwab.orders.common import *
+from schwaby.orders.generic import *
+from schwaby.orders.common import *
 from ..utils import has_diff, no_duplicates
 
 
@@ -29,7 +29,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_session_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.Session.NORMAL'):
+                ValueError, 'schwaby.orders.common.Session.NORMAL'):
             self.order_builder.set_session('NORMAL')
 
     @no_duplicates
@@ -56,7 +56,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_duration_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.Duration.DAY'):
+                ValueError, 'schwaby.orders.common.Duration.DAY'):
             self.order_builder.set_duration('DAY')
 
     @no_duplicates
@@ -83,7 +83,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_order_type_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.OrderType.MARKET'):
+                ValueError, 'schwaby.orders.common.OrderType.MARKET'):
             self.order_builder.set_order_type('MARKET')
 
     @no_duplicates
@@ -112,7 +112,7 @@ class OrderBuilderTest(unittest.TestCase):
     def test__wrong_type(self):
         with self.assertRaisesRegex(
                 ValueError, 
-                'schwab.orders.common.ComplexOrderStrategyType.IRON_CONDOR'):
+                'schwaby.orders.common.ComplexOrderStrategyType.IRON_CONDOR'):
             self.order_builder.set_complex_order_strategy_type('IRON_CONDOR')
 
     @no_duplicates
@@ -162,7 +162,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_requested_destination_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.Destination.INET'):
+                ValueError, 'schwaby.orders.common.Destination.INET'):
             self.order_builder.set_requested_destination('INET')
 
     @no_duplicates
@@ -208,7 +208,7 @@ class OrderBuilderTest(unittest.TestCase):
 
     @no_duplicates
     def test_tax_lot_method_success(self):
-        # The enum was exported from schwab.orders.common from the beginning
+        # The enum was exported from schwaby.orders.common from the beginning
         # and had no setter, so the field could not be sent at all. It matters
         # on a closing order: FIFO and LIFO realise different gains.
         self.order_builder.set_tax_lot_method(TaxLotMethod.LIFO)
@@ -222,7 +222,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_tax_lot_method_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.TaxLotMethod.FIFO'):
+                ValueError, 'schwaby.orders.common.TaxLotMethod.FIFO'):
             self.order_builder.set_tax_lot_method('FIFO')
 
     @no_duplicates
@@ -308,7 +308,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_stop_price_link_basis_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.StopPriceLinkBasis.ASK'):
+                ValueError, 'schwaby.orders.common.StopPriceLinkBasis.ASK'):
             self.order_builder.set_stop_price_link_basis('ASK')
 
     @no_duplicates
@@ -335,7 +335,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_stop_price_link_type_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.StopPriceLinkType.VALUE'):
+                ValueError, 'schwaby.orders.common.StopPriceLinkType.VALUE'):
             self.order_builder.set_stop_price_link_type('VALUE')
 
     @no_duplicates
@@ -375,7 +375,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_stop_type_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.StopType.MARK'):
+                ValueError, 'schwaby.orders.common.StopType.MARK'):
             self.order_builder.set_stop_type('MARK')
 
     @no_duplicates
@@ -402,7 +402,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_price_link_basis_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.PriceLinkBasis.AVERAGE'):
+                ValueError, 'schwaby.orders.common.PriceLinkBasis.AVERAGE'):
             self.order_builder.set_price_link_basis('AVERAGE')
 
     @no_duplicates
@@ -429,7 +429,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_price_link_type_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.PriceLinkType.PERCENT'):
+                ValueError, 'schwaby.orders.common.PriceLinkType.PERCENT'):
             self.order_builder.set_price_link_type('PERCENT')
 
     @no_duplicates
@@ -564,7 +564,7 @@ class OrderBuilderTest(unittest.TestCase):
     def test_special_instruction_wrong_type(self):
         with self.assertRaisesRegex(
                 ValueError,
-                'schwab.orders.common.SpecialInstruction.DO_NOT_REDUCE'):
+                'schwaby.orders.common.SpecialInstruction.DO_NOT_REDUCE'):
             self.order_builder.set_special_instruction('DO_NOT_REDUCE')
 
     @no_duplicates
@@ -591,7 +591,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_order_strategy_type_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.OrderStrategyType.OCO'):
+                ValueError, 'schwaby.orders.common.OrderStrategyType.OCO'):
             self.order_builder.set_order_strategy_type('OCO')
 
     @no_duplicates
@@ -667,7 +667,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_add_equity_leg_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.EquityInstruction.BUY'):
+                ValueError, 'schwaby.orders.common.EquityInstruction.BUY'):
             self.order_builder.add_equity_leg('BUY', 'GOOG', 10)
 
     @no_duplicates
@@ -737,7 +737,7 @@ class OrderBuilderTest(unittest.TestCase):
     @no_duplicates
     def test_add_option_leg_wrong_type(self):
         with self.assertRaisesRegex(
-                ValueError, 'schwab.orders.common.OptionInstruction.BUY_TO_OPEN'):
+                ValueError, 'schwaby.orders.common.OptionInstruction.BUY_TO_OPEN'):
             self.order_builder.add_option_leg(
                 'BUY_TO_OPEN', 'GOOG31433C1342', 10)
 

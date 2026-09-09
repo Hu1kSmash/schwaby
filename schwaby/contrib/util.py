@@ -1,5 +1,5 @@
 import json
-from schwab.streaming import StreamJsonDecoder
+from schwaby.streaming import StreamJsonDecoder
 
 
 class HeuristicJsonDecoder(StreamJsonDecoder):

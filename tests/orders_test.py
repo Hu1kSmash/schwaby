@@ -1,7 +1,7 @@
 import unittest
 
-from schwab.orders.common import *
-from schwab.orders.equities import *
+from schwaby.orders.common import *
+from schwaby.orders.equities import *
 from .utils import has_diff, no_duplicates
 
 from unittest.mock import patch

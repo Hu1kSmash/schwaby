@@ -19,9 +19,9 @@ import time
 
 import httpx2
 
-import schwab
-from schwab.orders.equities import equity_buy_limit
-from schwab.utils import (
+import schwaby
+from schwaby.orders.equities import equity_buy_limit
+from schwaby.utils import (
     AccountHashMismatchException,
     OrderIdNotFoundError,
     UnsuccessfulOrderException,
@@ -99,7 +99,7 @@ def wait_for(client, account_hash, order_id):
 
 
 def main():
-    client = schwab.auth.client_from_token_file(
+    client = schwaby.auth.client_from_token_file(
             TOKEN_PATH, api_key=API_KEY, app_secret=APP_SECRET)
 
     accounts = client.get_account_numbers()

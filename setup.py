@@ -8,16 +8,16 @@ import setuptools
 with open('README.md', 'r', encoding='utf-8') as f:
     long_description = f.read()
 
-with open('schwab/version.py', 'r', encoding='utf-8') as f:
+with open('schwaby/version.py', 'r', encoding='utf-8') as f:
     '''Version looks like `version = '1.2.3'`'''
     version = [s.strip() for s in f.read().strip().split('=')][1]
     version = version[1:-1]
 
 setuptools.setup(
-    # The distribution is `schwaby`; the importable package is still `schwab`.
-    # Those differ deliberately -- see the note in README.md. It means a
-    # drop-in replacement for the original at the cost of never being
-    # installable alongside it.
+    # Distribution and package are both `schwaby`. They used to differ --
+    # the package was `schwab`, the same directory `schwab-py` ships -- which
+    # made the two impossible to install alongside each other and required a
+    # runtime collision check. Naming them the same thing removes both.
     name='schwaby',
     version=version,
     # Authorship stays with the original author of the code this began from.
@@ -42,7 +42,7 @@ setuptools.setup(
     # Anything else installing a top-level `tests` then collides with it
     # file-for-file, and `import tests` from outside a project root resolves
     # here. Published that way through 2.6.0.
-    packages=setuptools.find_packages(include=['schwab', 'schwab.*']),
+    packages=setuptools.find_packages(include=['schwaby', 'schwaby.*']),
     classifiers=[
         'Programming Language :: Python :: 3',
         # Named individually as well as generically: shields.io and PyPI's own

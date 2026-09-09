@@ -91,14 +91,29 @@ class SetupPyTest(unittest.TestCase):
     @no_duplicates
     def test_setup_py_parses_and_calls_setup(self):
         self.assertIn('name', self.kwargs)
-        # The distribution is `schwaby`; the importable package is still
-        # `schwab`. Asserted because they differ deliberately and a future
-        # edit aligning them would be a breaking change for every consumer.
         self.assertEqual('schwaby', self.kwargs['name'])
 
     @no_duplicates
+    def test_the_distribution_and_the_package_have_the_same_name(self):
+        # They used to differ: the distribution was `schwaby` and the package
+        # was `schwab`, the same directory `schwab-py` ships. That made the
+        # two impossible to install alongside each other -- whichever went in
+        # second overwrote the other's files -- and needed a runtime check on
+        # every import to say so.
+        #
+        # Naming them the same thing removed all of it. Asserted because
+        # reverting to a `schwab` package would reintroduce the collision
+        # rather than restore compatibility, and would do it quietly.
+        import schwaby
+
+        self.assertEqual('schwaby', self.kwargs['name'])
+        self.assertEqual('schwaby', schwaby.__name__)
+        self.assertIn('schwaby', self.kwargs['packages'])
+        self.assertNotIn('schwab', self.kwargs['packages'])
+
+    @no_duplicates
     def test_the_version_matches_the_package(self):
-        from schwab.version import version
+        from schwaby.version import version
         self.assertEqual(version, self.kwargs['version'])
 
     @no_duplicates
@@ -196,13 +211,13 @@ class ShippedFilesTest(unittest.TestCase):
     and answering `import tests` from outside a project root.
     """
 
-    EXPECTED_PACKAGES = ['schwab', 'schwab.client', 'schwab.contrib',
-                         'schwab.orders']
+    EXPECTED_PACKAGES = ['schwaby', 'schwaby.client', 'schwaby.contrib',
+                         'schwaby.orders']
 
     @no_duplicates
     def test_only_schwab_packages_are_shipped(self):
         with in_repo_root():
-            found = setuptools.find_packages(include=['schwab', 'schwab.*'])
+            found = setuptools.find_packages(include=['schwaby', 'schwaby.*'])
         self.assertEqual(self.EXPECTED_PACKAGES, sorted(found))
 
     @no_duplicates
@@ -308,7 +323,7 @@ class LinkTest(unittest.TestCase):
         rather than quietly reducing what is checked.
         """
         found = []
-        for directory in ('schwab', 'docs'):
+        for directory in ('schwaby', 'docs'):
             root = os.path.join(REPO_ROOT, directory)
             # os.walk on a path that does not exist yields nothing and raises
             # nothing, so a directory that is renamed or removed silently
@@ -430,7 +445,7 @@ class LinkTest(unittest.TestCase):
         # as well when linkable_files() found nothing -- a mistyped root, or a
         # future directory that is not named in it.
         self.assertGreater(len(files), 20)
-        for expected in (os.path.join(REPO_ROOT, 'schwab', 'auth.py'),
+        for expected in (os.path.join(REPO_ROOT, 'schwaby', 'auth.py'),
                          os.path.join(REPO_ROOT, 'docs', 'getting-started.rst'),
                          os.path.join(REPO_ROOT, 'README.md')):
             self.assertIn(expected, files)
@@ -642,7 +657,7 @@ class ScreenerVocabularyTest(unittest.TestCase):
 
     @no_duplicates
     def test_the_bullet_list_is_exactly_the_enum(self):
-        from schwab.client import Client
+        from schwaby.client import Client
 
         documented = self.prefixes()
         known = {m.value for m in Client.Movers.Index}
@@ -719,8 +734,8 @@ class DocReferenceTest(unittest.TestCase):
     Two forms have to be handled, and only handling the first is how this was
     missed the first time it was checked by hand:
 
-        :meth:`schwab.client.Client.get_quote`
-        :meth:`Client.get_quote() <schwab.client.Client.get_quote>`
+        :meth:`schwaby.client.Client.get_quote`
+        :meth:`Client.get_quote() <schwaby.client.Client.get_quote>`
 
     The second puts the real target inside the angle brackets, so a pattern
     that reads the visible label sees `Client.get_quote()` -- which does not
@@ -735,10 +750,10 @@ class DocReferenceTest(unittest.TestCase):
 
     # Bare class names the docs use as shorthand, and where they live.
     SHORTHAND = {
-        'Client': 'schwab.client',
-        'AsyncClient': 'schwab.client',
-        'StreamClient': 'schwab.streaming',
-        'OrderBuilder': 'schwab.orders.generic',
+        'Client': 'schwaby.client',
+        'AsyncClient': 'schwaby.client',
+        'StreamClient': 'schwaby.streaming',
+        'OrderBuilder': 'schwaby.orders.generic',
     }
 
     @staticmethod
@@ -778,7 +793,7 @@ class DocReferenceTest(unittest.TestCase):
             if parts[0] in cls.SHORTHAND:
                 obj = importlib.import_module(cls.SHORTHAND[parts[0]])
                 rest = parts
-            elif parts[0] == 'schwab':
+            elif parts[0] == 'schwaby':
                 obj, rest = None, None
                 for i in range(len(parts), 0, -1):
                     try:
@@ -809,7 +824,7 @@ class DocReferenceTest(unittest.TestCase):
         self.assertGreater(len(files), 8)
         refs = self.references_in(files)
         self.assertGreater(len(refs), 150)
-        self.assertIn('schwab.client.Client.get_quote', refs)
+        self.assertIn('schwaby.client.Client.get_quote', refs)
 
         broken = self.unresolvable(refs)
         self.assertEqual([], broken)
@@ -823,16 +838,16 @@ class DocReferenceTest(unittest.TestCase):
             with open(path, 'w') as f:
                 f.write(
                     'Use :meth:`Client.search_instruments() '
-                    '<schwab.client.Client.search_instruments>` for this.\n'
-                    'And :meth:`schwab.client.Client.get_quote` for that.\n'
-                    '.. autoclass:: schwab.streaming::StreamClient.NoSuchEnum\n')
+                    '<schwaby.client.Client.search_instruments>` for this.\n'
+                    'And :meth:`schwaby.client.Client.get_quote` for that.\n'
+                    '.. autoclass:: schwaby.streaming::StreamClient.NoSuchEnum\n')
 
             refs = self.references_in([path])
             broken = self.unresolvable(refs)
 
         self.assertEqual(
-                ['schwab.client.Client.search_instruments',
-                 'schwab.streaming.StreamClient.NoSuchEnum'],
+                ['schwaby.client.Client.search_instruments',
+                 'schwaby.streaming.StreamClient.NoSuchEnum'],
                 sorted(name for name, _ in broken))
 
 
@@ -928,7 +943,7 @@ class DocExampleTest(unittest.TestCase):
             imported = {}
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom) and \
-                        (node.module or '').startswith('schwab'):
+                        (node.module or '').startswith('schwaby'):
                     for alias in node.names:
                         try:
                             mod = importlib.import_module(node.module)
@@ -939,7 +954,7 @@ class DocExampleTest(unittest.TestCase):
                             imported[alias.asname or alias.name] = target
                 elif isinstance(node, ast.Import):
                     for alias in node.names:
-                        if alias.name.startswith('schwab'):
+                        if alias.name.startswith('schwaby'):
                             try:
                                 imported[alias.asname or alias.name] = \
                                         importlib.import_module(alias.name)
@@ -999,7 +1014,7 @@ class DocExampleTest(unittest.TestCase):
     @no_duplicates
     def test_the_check_catches_the_argument_that_was_removed(self):
         # webdriver_func, verbatim from the example this was written for.
-        code = ('from schwab.auth import easy_client\n'
+        code = ('from schwaby.auth import easy_client\n'
                 'c = easy_client(\n'
                 "        token_path='/path/to/token.json',\n"
                 "        api_key='api-key',\n"
@@ -1014,7 +1029,7 @@ class DocExampleTest(unittest.TestCase):
     def test_a_correct_call_is_not_flagged(self):
         # The same call, as it is actually written now. Without this the test
         # above passes for a checker that flags everything.
-        code = ('from schwab.auth import easy_client\n'
+        code = ('from schwaby.auth import easy_client\n'
                 'c = easy_client(\n'
                 "        api_key='api-key',\n"
                 "        app_secret='app-secret',\n"
@@ -1070,13 +1085,13 @@ class LongDescriptionTest(unittest.TestCase):
         for required in ('schwaby', 'schwab-py', 'easy_client'):
             self.assertIn(required, html)
 
-        # The collision warning, by substance rather than by one phrasing --
-        # it has been reworded twice and a literal match broke both times.
-        # What must survive is that it names the other distribution and tells
-        # you to uninstall it.
-        lowered = html.lower()
-        self.assertIn('uninstall', lowered)
-        self.assertIn('schwab-py', lowered)
+        # The README used to have to tell readers to uninstall `schwab-py`
+        # first, because both projects shipped a package called `schwab` and
+        # installing one over the other destroyed the install. The package is
+        # now `schwaby` too, so they coexist and that instruction would be
+        # wrong. What must survive is that the README still says which
+        # project this came from.
+        self.assertIn('schwab-py', html.lower())
 
         # Structure, not just length: a description that lost its headings is
         # not a page even if it is long.

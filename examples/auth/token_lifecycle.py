@@ -16,7 +16,7 @@ whatever does.
 import datetime
 import time
 
-import schwab
+import schwaby
 
 API_KEY = 'XXXXXX'
 APP_SECRET = 'XXXXXX'
@@ -47,7 +47,7 @@ def main():
     # would notice the token is old and open a browser -- which is right at a
     # desk and wrong in a container, where it blocks forever on a login nobody
     # can complete.
-    client = schwab.auth.client_from_token_file(
+    client = schwaby.auth.client_from_token_file(
             TOKEN_PATH, api_key=API_KEY, app_secret=APP_SECRET)
 
     while True:

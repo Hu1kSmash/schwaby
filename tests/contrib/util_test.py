@@ -1,6 +1,6 @@
 import unittest
 
-from schwab.contrib.util import HeuristicJsonDecoder
+from schwaby.contrib.util import HeuristicJsonDecoder
 
 
 class HeuristicJsonDecoderTest(unittest.TestCase):

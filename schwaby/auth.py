@@ -15,9 +15,9 @@ import urllib
 import warnings
 import webbrowser
 
-from schwab.client import AsyncClient, Client
-from schwab.utils import SchwabError
-from schwab.debug import register_redactions
+from schwaby.client import AsyncClient, Client
+from schwaby.utils import SchwabError
+from schwaby.debug import register_redactions
 
 
 TOKEN_ENDPOINT = 'https://api.schwabapi.com/v1/oauth/token'
@@ -616,8 +616,8 @@ def client_from_token_file(token_path, api_key, app_secret, asyncio=False,
 
     :param token_path: Path to an existing token. Updated tokens will be written
                        to this path. If you do not yet have a token, use
-                       :func:`~schwab.auth.client_from_login_flow` or
-                       :func:`~schwab.auth.easy_client` to create one.
+                       :func:`~schwaby.auth.client_from_login_flow` or
+                       :func:`~schwaby.auth.easy_client` to create one.
     :param api_key: Your Schwab application's app key.
     :param app_secret: Application secret. Provided upon :ref:`app approval 
                        <approved_pending>`.

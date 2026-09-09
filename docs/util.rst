@@ -6,7 +6,7 @@ Utilities
 
 Miscellaneous helpers, all presented under the ``Utils`` class:
 
-.. autoclass:: schwab.utils.Utils
+.. autoclass:: schwaby.utils.Utils
 
   .. automethod:: __init__
   .. automethod:: set_account_hash
@@ -19,14 +19,14 @@ Extract an order ID from a placed order
 ---------------------------------------
 
 For successfully placed orders, :meth:`place_order
-<schwab.client.Client.place_order>` returns the ID of the newly created order,
+<schwaby.client.Client.place_order>` returns the ID of the newly created order,
 encoded in the ``r.headers['Location']`` header. This method reads it out of
 the response. The ID is what you then use to monitor or modify the order, as
 described in the :ref:`Client documentation <orders-section>`.
 
 .. code-block:: python
 
-  from schwab.utils import Utils
+  from schwaby.utils import Utils
 
   # Assume client and order already exist and are valid
   account_hash = client.get_account_numbers().json()[0]['hashValue']
@@ -35,13 +35,13 @@ described in the :ref:`Client documentation <orders-section>`.
 
 Every outcome other than success raises, so there is no ``None`` to check for.
 The one worth handling deliberately is
-:class:`~schwab.utils.OrderIdNotFoundError`: Schwab accepted the order and did
+:class:`~schwaby.utils.OrderIdNotFoundError`: Schwab accepted the order and did
 not give back an ID, which means **the order may be live** and you have no
 handle on it.
 
 .. code-block:: python
 
-  from schwab.utils import (
+  from schwaby.utils import (
       AccountHashMismatchException,
       OrderIdNotFoundError,
       UnsuccessfulOrderException,
@@ -81,7 +81,7 @@ Finding an order you have no ID for
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``reconcile_recent_orders`` above is a placeholder for the work this section
-describes. :class:`~schwab.utils.OrderIdNotFoundError` means Schwab took the
+describes. :class:`~schwaby.utils.OrderIdNotFoundError` means Schwab took the
 order and did not hand back a handle, so the only way to find it is to ask what
 the account has done lately and recognise it:
 
@@ -89,7 +89,7 @@ the account has done lately and recognise it:
 
   import datetime
 
-  from schwab.client import Client
+  from schwaby.client import Client
 
   def find_recent(client, account_hash, symbol, quantity, placed_at):
       '''Returns orders that plausibly match one just placed.'''
@@ -109,7 +109,7 @@ the account has done lately and recognise it:
       return matches
 
 Capture ``placed_at`` **before** calling
-:meth:`~schwab.client.Client.place_order`, not after you have caught the
+:meth:`~schwaby.client.Client.place_order`, not after you have caught the
 exception --- by then you are guessing at a time you could have recorded.
 
 .. warning::
@@ -128,7 +128,7 @@ exception --- by then you are guessing at a time you could have recorded.
 Every order carries ``orderId``, so once a match is confirmed you have the
 handle the failed call could not give you.
 
-.. automethod:: schwab.utils.Utils.extract_order_id
+.. automethod:: schwaby.utils.Utils.extract_order_id
 
 
 .. _exceptions:
@@ -138,42 +138,42 @@ Exceptions
 ++++++++++
 
 The exceptions this library raises that a caller might reasonably catch.
-:class:`~schwab.streaming.ResponseTimeoutError`,
-:class:`~schwab.streaming.UnexpectedResponse`,
-:class:`~schwab.streaming.UnexpectedResponseCode`,
-:class:`~schwab.streaming.UnparsableMessage` and
-:class:`~schwab.streaming.UnusableMessage` are streaming-specific and are
+:class:`~schwaby.streaming.ResponseTimeoutError`,
+:class:`~schwaby.streaming.UnexpectedResponse`,
+:class:`~schwaby.streaming.UnexpectedResponseCode`,
+:class:`~schwaby.streaming.UnparsableMessage` and
+:class:`~schwaby.streaming.UnusableMessage` are streaming-specific and are
 covered in :ref:`the streaming documentation <error_handlers>`.
 
 Every exception class this library *defines* inherits
-:class:`~schwab.utils.SchwabError`, so ``except SchwabError`` is one name for
+:class:`~schwaby.utils.SchwabError`, so ``except SchwabError`` is one name for
 all of them. It is not everything the library can raise: argument validation
 still raises builtin ``ValueError`` --- a negative quantity, a float price, a
 strike finer than the symbol format carries --- and a builtin describes those
 correctly. Two of the order exceptions additionally inherit ``ValueError``
-because they always did; :class:`~schwab.utils.OrderIdNotFoundError`
+because they always did; :class:`~schwaby.utils.OrderIdNotFoundError`
 deliberately does not.
 
-.. autoclass:: schwab.utils.SchwabError
+.. autoclass:: schwaby.utils.SchwabError
 
-.. autoclass:: schwab.utils.UnsuccessfulOrderException
+.. autoclass:: schwaby.utils.UnsuccessfulOrderException
   :members:
 
-.. autoclass:: schwab.utils.OrderIdNotFoundError
+.. autoclass:: schwaby.utils.OrderIdNotFoundError
   :members:
 
-.. autoclass:: schwab.utils.MissingLocationHeaderError
+.. autoclass:: schwaby.utils.MissingLocationHeaderError
 
-.. autoclass:: schwab.utils.UnrecognizedLocationError
+.. autoclass:: schwaby.utils.UnrecognizedLocationError
 
-.. autoclass:: schwab.utils.AccountHashMismatchException
+.. autoclass:: schwaby.utils.AccountHashMismatchException
 
-.. autoclass:: schwab.orders.common.InvalidOrderException
+.. autoclass:: schwaby.orders.common.InvalidOrderException
 
 
 ``TokenRefreshError`` is documented under :ref:`auth` with the retry guidance it
 needs, and is not repeated here.
 
-.. autoclass:: schwab.auth.RedirectTimeoutError
+.. autoclass:: schwaby.auth.RedirectTimeoutError
 
-.. autoclass:: schwab.auth.RedirectServerExitedError
+.. autoclass:: schwaby.auth.RedirectServerExitedError

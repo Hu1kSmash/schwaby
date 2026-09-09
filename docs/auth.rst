@@ -1,5 +1,5 @@
 .. highlight:: python
-.. py:module:: schwab.auth
+.. py:module:: schwaby.auth
 
 .. _auth:
 
@@ -22,17 +22,17 @@ The Quick and Easy Route
 ------------------------
 
 If all you want to do is create a client, you should use
-:func:`~schwab.auth.easy_client`. This method will attempt to create a client in
+:func:`~schwaby.auth.easy_client`. This method will attempt to create a client in
 a way that's appropriate to the context in which you're running:
 
  * If you've already got a token at ``token_path``,
-   :func:`load it <schwab.auth.client_from_token_file>` and continue. Otherwise
+   :func:`load it <schwaby.auth.client_from_token_file>` and continue. Otherwise
    create a new one.
  * In desktop environments, :func:`start a web browser
-   <schwab.auth.client_from_login_flow>` in which you can sign in, and
+   <schwaby.auth.client_from_login_flow>` in which you can sign in, and
    automatically capture the created token.
  * In a notebook like Google Colab or Jupyter, instead run the :func:`manual
-   flow <schwab.auth.client_from_manual_flow>`.
+   flow <schwaby.auth.client_from_manual_flow>`.
 
 .. note::
 
@@ -47,13 +47,13 @@ a way that's appropriate to the context in which you're running:
 
 Here's how you can use it. If for some reason this doesn't work, please report
 your issues `on the issue tracker <https://github.com/Hu1kSmash/schwaby/issues>`__. See
-:func:`~schwab.auth.easy_client` for details:
+:func:`~schwaby.auth.easy_client` for details:
 
 .. code-block:: python
 
   import httpx2
 
-  from schwab.auth import easy_client
+  from schwaby.auth import easy_client
 
   # Follow the instructions on the screen to authenticate your client.
   c = easy_client(
@@ -73,7 +73,7 @@ your issues `on the issue tracker <https://github.com/Hu1kSmash/schwaby/issues>`
 Callback URL Requirements
 -------------------------
 
-:func:`~schwab.auth.client_from_login_flow` starts a server on the port in your
+:func:`~schwaby.auth.client_from_login_flow` starts a server on the port in your
 callback URL. When you finish logging in, Schwab sends a request to that URL
 with the login data in the query parameters. **Anyone who receives that request
 can steal your token and act on your account as though they were you.**
@@ -109,7 +109,7 @@ Fetching a Token and Creating a Client
 This function will guide you through the process of logging in and creating a
 token.
 
-.. autofunction:: schwab.auth.client_from_login_flow
+.. autofunction:: schwaby.auth.client_from_login_flow
 
 .. _manual_login:
 
@@ -117,17 +117,17 @@ If for some reason you cannot open a web browser, such as when running in a
 cloud environment or a notebook, this function will guide you through the
 process of manually creating a token by copy-pasting relevant URLs.
 
-.. autofunction:: schwab.auth.client_from_manual_flow
+.. autofunction:: schwaby.auth.client_from_manual_flow
 
 Once you have a token written on disk, you can reuse it without going through
 the login flow again.
 
-.. autofunction:: schwab.auth.client_from_token_file
+.. autofunction:: schwaby.auth.client_from_token_file
 
 The following is a convenient wrapper around token creation and fetching,
 calling each when appropriate:
 
-.. autofunction:: schwab.auth.easy_client
+.. autofunction:: schwaby.auth.easy_client
 
 .. _webapp_flow:
 
@@ -142,12 +142,12 @@ minutes later and possibly on a different host, and there is nothing for a
 local callback server to do.
 
 For that case, start the login with
-:func:`~schwab.auth.get_auth_context` and finish it with
-:func:`~schwab.auth.client_from_received_url`.
+:func:`~schwaby.auth.get_auth_context` and finish it with
+:func:`~schwaby.auth.client_from_received_url`.
 
 .. code-block:: python
 
-  from schwab.auth import get_auth_context, client_from_received_url
+  from schwaby.auth import get_auth_context, client_from_received_url
 
   # In the handler that begins a login:
   context = get_auth_context(API_KEY, 'https://your-app.example.com/callback')
@@ -168,7 +168,7 @@ carries the authorization code, which is what makes the token. Treat the value
 as you would the token itself --- in particular, keep it out of your request
 logs, which record full URLs by default.
 
-**Keep the** :class:`~schwab.auth.AuthContext` **with the session that created
+**Keep the** :class:`~schwaby.auth.AuthContext` **with the session that created
 it.** Its ``state`` is checked against the redirect, so a callback belonging to
 a different login is rejected instead of quietly authenticating the wrong
 person.
@@ -178,11 +178,11 @@ process listens on it. Everything in :ref:`callback_url_advisory` about who can
 read that request still applies, and applies more, because the request now
 crosses a network rather than a loopback interface.
 
-.. autofunction:: schwab.auth.get_auth_context
+.. autofunction:: schwaby.auth.get_auth_context
 
-.. autoclass:: schwab.auth.AuthContext
+.. autoclass:: schwaby.auth.AuthContext
 
-.. autofunction:: schwab.auth.client_from_received_url
+.. autofunction:: schwaby.auth.client_from_received_url
 
 
 .. _token_expiration:
@@ -200,7 +200,7 @@ stopped by it. If you trade on weekdays, recreating the token on Sunday before
 the open costs nothing and removes the question.
 
 For users wanting to craft more custom workflows, the client :meth:`exposes the
-age of the token <schwab.client.Client.token_age>`. Note, however, that the
+age of the token <schwaby.client.Client.token_age>`. Note, however, that the
 seven day token age restriction is implemented by Schwab, and so the token may
 become expired sooner *or* later than seven days.
 
@@ -275,7 +275,7 @@ token-shaped:
 
 .. code-block:: python
 
-  from schwab.utils import TokenRefreshError
+  from schwaby.utils import TokenRefreshError
 
   try:
       r = c.get_quote('AAPL')
@@ -286,7 +286,7 @@ token-shaped:
       else:
           retry_later()
 
-.. autoclass:: schwab.utils.TokenRefreshError
+.. autoclass:: schwaby.utils.TokenRefreshError
 
 **Retrying a dead refresh token cannot work, and the retries are not free.**
 A refresh token is good for seven days and is replaced only by the full
@@ -342,7 +342,7 @@ documentation and think anything other than "oh wow, this is exactly what I've
 been looking for," you don't need this function. Please use the other helpers
 instead.
 
-.. autofunction:: schwab.auth.client_from_access_functions
+.. autofunction:: schwaby.auth.client_from_access_functions
 
 
 ++++++++++++++++++++++++++++++++++++++++
@@ -473,10 +473,10 @@ Browser Warnings About Invalid/Self-Signed Certificates
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 When creating a token using :func:`client_from_login_flow
-<schwab.auth.client_from_login_flow>`, you will likely encounter a warning from
+<schwaby.auth.client_from_login_flow>`, you will likely encounter a warning from
 your browser about refusing to connect to a site using an invalid or self-signed
 certificate. Under the hood,
-:func:`client_from_login_flow <schwab.auth.client_from_login_flow>` starts a
+:func:`client_from_login_flow <schwaby.auth.client_from_login_flow>` starts a
 server on your machine to listen for the OAuth callback. Since Schwab requires
 ``https:`` callback URLs, this server must declare an SSL context. However,
 certificate authorities do not sign certificates for ``localhost`` or
@@ -487,7 +487,7 @@ security warning.
 It is safe to ignore this warning and proceed anyway. *However*, you should
 always verify that the address of the page displaying the warning matches your
 callback URL.  :func:`client_from_login_flow
-<schwab.auth.client_from_login_flow>` prints a message reminding you of your
+<schwaby.auth.client_from_login_flow>` prints a message reminding you of your
 callback URL each time you run it.
 
 
@@ -528,8 +528,8 @@ experiencing token parsing issues, remember that:
 
 1. You should never create the token file yourself. If you don't already have a
    token, you should pass a nonexistent file path to
-   :func:`~schwab.auth.client_from_login_flow` or
-   :func:`~schwab.auth.easy_client`.  If the file already exists, these methods
+   :func:`~schwaby.auth.client_from_login_flow` or
+   :func:`~schwaby.auth.easy_client`.  If the file already exists, these methods
    assume it's a valid token file. If the file does not exist, they will go
    through the login flow to create one.
 2. You should never modify the token file. The token file is automatically
@@ -565,7 +565,7 @@ Create the token on a machine that has a browser:
 
 .. code-block:: python
 
-  from schwab.auth import client_from_login_flow
+  from schwaby.auth import client_from_login_flow
 
   client_from_login_flow(
           api_key='YOUR_API_KEY',

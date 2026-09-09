@@ -16,15 +16,14 @@ edges off the parts that matter when the account is funded.
 
   pip install schwaby
 
-The distribution is ``schwaby``; the package you import is ``schwab``. It
-cannot be installed alongside ``schwab-py``, which provides that same package
---- see :ref:`getting_started`.
+The distribution and the package are both ``schwaby``, so ``pip install
+schwaby`` then ``import schwaby``.
 
 Once you have a token, the shape of it is this:
 
 .. code-block:: python
 
-  from schwab.auth import client_from_token_file
+  from schwaby.auth import client_from_token_file
 
   c = client_from_token_file(
           token_path='/path/to/token.json',

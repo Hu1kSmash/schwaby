@@ -1,5 +1,5 @@
 .. highlight:: python
-.. py:module:: schwab.client
+.. py:module:: schwaby.client
 
 
 .. _client:
@@ -22,7 +22,7 @@ this will likely cause issues with the underlying OAuth2 session management**
 
   import httpx2
 
-  from schwab.auth import easy_client
+  from schwaby.auth import easy_client
 
   # Follow the instructions on the screen to authenticate your client.
   c = easy_client(
@@ -50,7 +50,7 @@ of slightly increased application complexity.
 
   import httpx2
 
-  from schwab.auth import easy_client
+  from schwaby.auth import easy_client
 
   async def main():
       c = easy_client(
@@ -232,8 +232,8 @@ Here is an example of how to fetch an account hash and use it to place an order:
 
   import httpx2
 
-  from schwab.auth import easy_client
-  from schwab.orders.equities import equity_buy_market
+  from schwaby.auth import easy_client
+  from schwaby.orders.equities import equity_buy_market
 
   c = easy_client(
           api_key='api-key',
@@ -267,14 +267,14 @@ Timeouts for HTTP calls are managed under the hood by the ``httpx2`` library.
 than enough to allow even the slowest API calls to complete. A different timeout
 specification can be set using this method:
 
-.. automethod:: schwab.client.Client.set_timeout
+.. automethod:: schwaby.client.Client.set_timeout
 
 
 +++++++++
 Token Age
 +++++++++
 
-.. automethod:: schwab.client.Client.token_age
+.. automethod:: schwaby.client.Client.token_age
 
 
 ++++++++++++
@@ -292,10 +292,10 @@ See the official documentation for each method for a complete response schema.
 
 .. _account_hashes_method:
 
-.. automethod:: schwab.client.Client.get_account_numbers
-.. automethod:: schwab.client.Client.get_account
-.. automethod:: schwab.client.Client.get_accounts
-.. autoclass:: schwab.client.Client.Account
+.. automethod:: schwaby.client.Client.get_account_numbers
+.. automethod:: schwaby.client.Client.get_account
+.. automethod:: schwaby.client.Client.get_accounts
+.. autoclass:: schwaby.client.Client.Account
   :members:
   :undoc-members:
 
@@ -327,19 +327,19 @@ to read the documentation below to learn how much data is available.
    honouring it.
 
 
-.. automethod:: schwab.client.Client.get_price_history_every_minute
-.. automethod:: schwab.client.Client.get_price_history_every_five_minutes
-.. automethod:: schwab.client.Client.get_price_history_every_ten_minutes
-.. automethod:: schwab.client.Client.get_price_history_every_fifteen_minutes
-.. automethod:: schwab.client.Client.get_price_history_every_thirty_minutes
-.. automethod:: schwab.client.Client.get_price_history_every_day
-.. automethod:: schwab.client.Client.get_price_history_every_week
+.. automethod:: schwaby.client.Client.get_price_history_every_minute
+.. automethod:: schwaby.client.Client.get_price_history_every_five_minutes
+.. automethod:: schwaby.client.Client.get_price_history_every_ten_minutes
+.. automethod:: schwaby.client.Client.get_price_history_every_fifteen_minutes
+.. automethod:: schwaby.client.Client.get_price_history_every_thirty_minutes
+.. automethod:: schwaby.client.Client.get_price_history_every_day
+.. automethod:: schwaby.client.Client.get_price_history_every_week
 
 For the sake of completeness, here is the documentation for the raw price
 history endpoint, in all its complexity.
 
-.. automethod:: schwab.client.Client.get_price_history
-.. autoclass:: schwab.client.Client.PriceHistory
+.. automethod:: schwaby.client.Client.get_price_history
+.. autoclass:: schwaby.client.Client.PriceHistory
   :members:
   :undoc-members:
   :member-order: bysource
@@ -348,8 +348,8 @@ history endpoint, in all its complexity.
 Current Quotes
 ++++++++++++++
 
-.. automethod:: schwab.client.Client.get_quote
-.. automethod:: schwab.client.Client.get_quotes
+.. automethod:: schwaby.client.Client.get_quote
+.. automethod:: schwaby.client.Client.get_quotes
 
 .. _option_chain:
 
@@ -364,23 +364,23 @@ Schwab's own documentation.
 If you know the subject well enough to write something more substantive here,
 :ref:`contributing` has the instructions.
 
-.. automethod:: schwab.client.Client.get_option_chain
-.. autoclass:: schwab.client.Client.Options
+.. automethod:: schwaby.client.Client.get_option_chain
+.. autoclass:: schwaby.client.Client.Options
   :members:
   :undoc-members:
 
 If you only need to know *when* contracts expire rather than what they cost,
 there is a cheaper call which returns the expiration list on its own:
 
-.. automethod:: schwab.client.Client.get_option_expiration_chain
+.. automethod:: schwaby.client.Client.get_option_expiration_chain
 
 +++++++++++++++++++++++++++++++++++++
 Instrument Searching and Fundamentals
 +++++++++++++++++++++++++++++++++++++
 
-.. automethod:: schwab.client.Client.get_instruments
-.. automethod:: schwab.client.Client.get_instrument_by_cusip
-.. autoclass:: schwab.client.Client.Instrument
+.. automethod:: schwaby.client.Client.get_instruments
+.. automethod:: schwaby.client.Client.get_instrument_by_cusip
+.. autoclass:: schwaby.client.Client.Instrument
   :members:
   :undoc-members:
 
@@ -412,7 +412,7 @@ instead of creating your own order specs.
 
 .. _`example order specs`: https://developer.schwab.com/products/trader-api--individual/details/documentation/Retail%20Trader%20API%20Production
 
-.. automethod:: schwab.client.Client.place_order
+.. automethod:: schwaby.client.Client.place_order
 
 **Testing an order without placing it.** Schwab will tell you whether it would
 accept an order, and what it would become, without sending it to the market.
@@ -420,7 +420,7 @@ That is worth doing the first time you construct an order type programmatically
 --- a rejection here costs nothing, while a malformed order discovered at
 placement time costs an execution window.
 
-.. automethod:: schwab.client.Client.preview_order
+.. automethod:: schwaby.client.Client.preview_order
 
 .. _accessing_existing_orders:
 
@@ -428,10 +428,10 @@ placement time costs an execution window.
 Accessing Existing Orders
 -------------------------
 
-.. automethod:: schwab.client.Client.get_orders_for_account
-.. automethod:: schwab.client.Client.get_orders_for_all_linked_accounts
-.. automethod:: schwab.client.Client.get_order
-.. autoclass:: schwab.client.Client.Order
+.. automethod:: schwaby.client.Client.get_orders_for_account
+.. automethod:: schwaby.client.Client.get_orders_for_all_linked_accounts
+.. automethod:: schwaby.client.Client.get_order
+.. autoclass:: schwaby.client.Client.Order
   :members:
   :undoc-members:
 
@@ -444,12 +444,12 @@ Endpoints for canceling and replacing existing orders.
 These endpoints require the order ID. Because the API does not return a JSON
 response when creating an order, the workflow for extracting this order ID is a
 little complicated.  You can fetch the order ID from the response to a
-:meth:`place_order <schwab.client.Client.place_order>` request using :ref:`this
+:meth:`place_order <schwaby.client.Client.place_order>` request using :ref:`this
 helper function <extract_order_id>`. Otherwise, see
 :ref:`accessing_existing_orders` for finding historical orders.
 
-.. automethod:: schwab.client.Client.cancel_order
-.. automethod:: schwab.client.Client.replace_order
+.. automethod:: schwaby.client.Client.cancel_order
+.. automethod:: schwaby.client.Client.replace_order
 
 .. warning::
 
@@ -460,7 +460,7 @@ helper function <extract_order_id>`. Otherwise, see
 
   Getting the new ID is less settled than it looks. Schwab documents the
   ``Location`` header nowhere at all --- :meth:`Utils.extract_order_id
-  <schwab.utils.Utils.extract_order_id>` reads it because that is where a
+  <schwaby.utils.Utils.extract_order_id>` reads it because that is where a
   placed order's ID is observed to arrive, not because it is specified. Whether
   a replacement answers the same way has not been established here.
 
@@ -482,7 +482,7 @@ helper function <extract_order_id>`. Otherwise, see
   <https://github.com/Hu1kSmash/schwaby/issues>`__ --- it would settle this.
 
 **Testing a replacement without sending it.** :meth:`preview_order
-<schwab.client.Client.preview_order>` takes the same order spec and reports
+<schwaby.client.Client.preview_order>` takes the same order spec and reports
 what Schwab would do with it, which is worth a call the first time a
 replacement is constructed programmatically:
 
@@ -504,9 +504,9 @@ delayed too.
 Transaction History
 -------------------
 
-.. automethod:: schwab.client.Client.get_transaction
-.. automethod:: schwab.client.Client.get_transactions
-.. autoclass:: schwab.client.Client.Transactions
+.. automethod:: schwaby.client.Client.get_transaction
+.. automethod:: schwaby.client.Client.get_transactions
+.. autoclass:: schwaby.client.Client.Transactions
   :members:
   :undoc-members:
 
@@ -514,14 +514,14 @@ Transaction History
 User Preferences
 ----------------
 
-.. automethod:: schwab.client.Client.get_user_preferences
+.. automethod:: schwaby.client.Client.get_user_preferences
 
 -------------
 Market Movers
 -------------
 
-.. automethod:: schwab.client.Client.get_movers
-.. autoclass:: schwab.client.Client.Movers
+.. automethod:: schwaby.client.Client.get_movers
+.. autoclass:: schwaby.client.Client.Movers
   :members:
   :undoc-members:
 
@@ -530,8 +530,8 @@ Market Movers
 Market Hours
 ------------
 
-.. automethod:: schwab.client.Client.get_market_hours
-.. autoclass:: schwab.client.Client.MarketHours
+.. automethod:: schwaby.client.Client.get_market_hours
+.. autoclass:: schwaby.client.Client.MarketHours
   :members:
   :undoc-members:
 

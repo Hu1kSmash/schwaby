@@ -40,7 +40,7 @@ class Duration(Enum):
         ``Invalid value 'IMMEDIATE_OR_CANCEL'``. Individual values are marked
         below. Note this validation happens when the order is placed, not when
         it is built, so an unsupported value will not be caught by
-        :class:`~schwab.orders.generic.OrderBuilder`.
+        :class:`~schwaby.orders.generic.OrderBuilder`.
     '''
     #: Cancel the trade at the end of the trading day. Note if the order cannot
     #: be filled all at once, you may see partial executions throughout the day.
@@ -383,7 +383,7 @@ def one_cancels_other(order1, order2):
     '''
     If one of the orders is executed, immediately cancel the other.
     '''
-    from schwab.orders.generic import OrderBuilder
+    from schwaby.orders.generic import OrderBuilder
 
     return (OrderBuilder()
             .set_order_strategy_type(OrderStrategyType.OCO)
@@ -395,7 +395,7 @@ def first_triggers_second(first_order, second_order):
     '''
     If ``first_order`` is executed, immediately place ``second_order``.
     '''
-    from schwab.orders.generic import OrderBuilder
+    from schwaby.orders.generic import OrderBuilder
 
     return (first_order
             .set_order_strategy_type(OrderStrategyType.TRIGGER)

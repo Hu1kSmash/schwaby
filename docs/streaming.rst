@@ -1,5 +1,5 @@
 .. highlight:: python
-.. py:module:: schwab.streaming
+.. py:module:: schwaby.streaming
 
 .. _stream:
 
@@ -18,9 +18,9 @@ run this outside regular trading hours you may not see anything):
 
 .. code-block:: python
 
-  from schwab.auth import easy_client
-  from schwab.client import Client
-  from schwab.streaming import StreamClient
+  from schwaby.auth import easy_client
+  from schwaby.client import Client
+  from schwaby.streaming import StreamClient
 
   import asyncio
   import json
@@ -79,7 +79,7 @@ run this outside regular trading hours you may not see anything):
 Use Overview
 ++++++++++++
 
-The example above demonstrates the end-to-end workflow for using ``schwab.stream``.
+The example above demonstrates the end-to-end workflow for using ``schwaby.stream``.
 There's more in there than meets the eye, so let's dive into the details.
 
 
@@ -99,12 +99,12 @@ to
 perform operations that require login before this function is called raises an
 exception.
 
-.. automethod:: schwab.streaming.StreamClient.login
+.. automethod:: schwaby.streaming.StreamClient.login
 
 Requests to the streaming server -- logging in, subscribing, logging out -- give
 up after ``response_timeout`` seconds if the server accepts the request but
 never answers it, raising
-:class:`~schwab.streaming.ResponseTimeoutError`. It defaults to 60 seconds and
+:class:`~schwaby.streaming.ResponseTimeoutError`. It defaults to 60 seconds and
 can be set per client:
 
 .. code-block:: python
@@ -123,13 +123,13 @@ Logging Out and Closing
 For a clean exit, it's recommended to log out of the stream when you're done.
 This sends a logout request and then closes the connection.
 
-.. automethod:: schwab.streaming.StreamClient.logout
+.. automethod:: schwaby.streaming.StreamClient.logout
 
 If the connection has already failed, or you are tearing a client down without
 ceremony, :meth:`close` skips the logout and just closes the socket. It is safe
 to call more than once, and safe on a client which was never logged in.
 
-.. automethod:: schwab.streaming.StreamClient.close
+.. automethod:: schwaby.streaming.StreamClient.close
 
 The client is also an async context manager, which closes it on the way out:
 
@@ -243,7 +243,7 @@ ignored.
 A handler which raises does not stop the others from seeing the message, and
 does not propagate out of ``handle_message()`` into your receive loop, where it
 would be indistinguishable from the connection failing. The failure is reported
-on the ``schwab.streaming`` logger instead, with the service name attached. This
+on the ``schwaby.streaming`` logger instead, with the service name attached. This
 applies equally to synchronous and coroutine handlers.
 
 That is worth knowing when debugging: **a handler which is quietly failing shows
@@ -323,7 +323,7 @@ carried a fill. Ending the loop causes a reconnect and a re-subscribe, which is
 the one thing that can recover state.
 
 If your feed hits this often, try
-:class:`~schwab.contrib.util.HeuristicJsonDecoder` before concluding the stream
+:class:`~schwaby.contrib.util.HeuristicJsonDecoder` before concluding the stream
 is broken --- it exists because Schwab really does emit JSON the default parser
 rejects, which is evidence for a frame-level quirk rather than a dead
 connection.
@@ -410,7 +410,7 @@ knowing:
   yet and so has not reported yet. Await your own handler tasks first if you
   need their reports.
 
-.. automethod:: schwab.streaming.StreamClient.add_error_handler
+.. automethod:: schwaby.streaming.StreamClient.add_error_handler
 
 .. _data_field_relabeling:
 
@@ -532,11 +532,11 @@ Equity Charts
 
 Minute-by-minute OHLCV data for equities.
 
-.. automethod:: schwab.streaming::StreamClient.chart_equity_subs
-.. automethod:: schwab.streaming::StreamClient.chart_equity_unsubs
-.. automethod:: schwab.streaming::StreamClient.chart_equity_add
-.. automethod:: schwab.streaming::StreamClient.add_chart_equity_handler
-.. autoclass:: schwab.streaming::StreamClient.ChartEquityFields
+.. automethod:: schwaby.streaming::StreamClient.chart_equity_subs
+.. automethod:: schwaby.streaming::StreamClient.chart_equity_unsubs
+.. automethod:: schwaby.streaming::StreamClient.chart_equity_add
+.. automethod:: schwaby.streaming::StreamClient.add_chart_equity_handler
+.. autoclass:: schwaby.streaming::StreamClient.ChartEquityFields
   :members:
   :undoc-members:
 
@@ -549,11 +549,11 @@ Futures Charts
 
 Minute-by-minute OHLCV data for futures.
 
-.. automethod:: schwab.streaming::StreamClient.chart_futures_subs
-.. automethod:: schwab.streaming::StreamClient.chart_futures_unsubs
-.. automethod:: schwab.streaming::StreamClient.chart_futures_add
-.. automethod:: schwab.streaming::StreamClient.add_chart_futures_handler
-.. autoclass:: schwab.streaming::StreamClient.ChartFuturesFields
+.. automethod:: schwaby.streaming::StreamClient.chart_futures_subs
+.. automethod:: schwaby.streaming::StreamClient.chart_futures_unsubs
+.. automethod:: schwaby.streaming::StreamClient.chart_futures_add
+.. automethod:: schwaby.streaming::StreamClient.add_chart_futures_handler
+.. autoclass:: schwaby.streaming::StreamClient.ChartFuturesFields
   :members:
   :undoc-members:
 
@@ -577,11 +577,11 @@ Equities Quotes
 
 Level one quotes for equities traded on NYSE, AMEX, and PACIFIC.
 
-.. automethod:: schwab.streaming::StreamClient.level_one_equity_subs
-.. automethod:: schwab.streaming::StreamClient.level_one_equity_unsubs
-.. automethod:: schwab.streaming::StreamClient.level_one_equity_add
-.. automethod:: schwab.streaming::StreamClient.add_level_one_equity_handler
-.. autoclass:: schwab.streaming::StreamClient.LevelOneEquityFields
+.. automethod:: schwaby.streaming::StreamClient.level_one_equity_subs
+.. automethod:: schwaby.streaming::StreamClient.level_one_equity_unsubs
+.. automethod:: schwaby.streaming::StreamClient.level_one_equity_add
+.. automethod:: schwaby.streaming::StreamClient.add_level_one_equity_handler
+.. autoclass:: schwaby.streaming::StreamClient.LevelOneEquityFields
   :members:
   :undoc-members:
 
@@ -593,14 +593,14 @@ Options Quotes
 --------------
 
 Level one quotes for options. Note you can use
-:meth:`Client.get_option_chain() <schwab.client.Client.get_option_chain>` to fetch
+:meth:`Client.get_option_chain() <schwaby.client.Client.get_option_chain>` to fetch
 available option symbols.
 
-.. automethod:: schwab.streaming::StreamClient.level_one_option_subs
-.. automethod:: schwab.streaming::StreamClient.level_one_option_unsubs
-.. automethod:: schwab.streaming::StreamClient.level_one_option_add
-.. automethod:: schwab.streaming::StreamClient.add_level_one_option_handler
-.. autoclass:: schwab.streaming::StreamClient.LevelOneOptionFields
+.. automethod:: schwaby.streaming::StreamClient.level_one_option_subs
+.. automethod:: schwaby.streaming::StreamClient.level_one_option_unsubs
+.. automethod:: schwaby.streaming::StreamClient.level_one_option_add
+.. automethod:: schwaby.streaming::StreamClient.add_level_one_option_handler
+.. autoclass:: schwaby.streaming::StreamClient.LevelOneOptionFields
   :members:
   :undoc-members:
 
@@ -613,11 +613,11 @@ Futures Quotes
 
 Level one quotes for futures.
 
-.. automethod:: schwab.streaming::StreamClient.level_one_futures_subs
-.. automethod:: schwab.streaming::StreamClient.level_one_futures_unsubs
-.. automethod:: schwab.streaming::StreamClient.level_one_futures_add
-.. automethod:: schwab.streaming::StreamClient.add_level_one_futures_handler
-.. autoclass:: schwab.streaming::StreamClient.LevelOneFuturesFields
+.. automethod:: schwaby.streaming::StreamClient.level_one_futures_subs
+.. automethod:: schwaby.streaming::StreamClient.level_one_futures_unsubs
+.. automethod:: schwaby.streaming::StreamClient.level_one_futures_add
+.. automethod:: schwaby.streaming::StreamClient.add_level_one_futures_handler
+.. autoclass:: schwaby.streaming::StreamClient.LevelOneFuturesFields
   :members:
   :undoc-members:
 
@@ -630,11 +630,11 @@ Futures Options Quotes
 
 Level one quotes for futures options.
 
-.. automethod:: schwab.streaming::StreamClient.level_one_futures_options_subs
-.. automethod:: schwab.streaming::StreamClient.level_one_futures_options_unsubs
-.. automethod:: schwab.streaming::StreamClient.level_one_futures_options_add
-.. automethod:: schwab.streaming::StreamClient.add_level_one_futures_options_handler
-.. autoclass:: schwab.streaming::StreamClient.LevelOneFuturesOptionsFields
+.. automethod:: schwaby.streaming::StreamClient.level_one_futures_options_subs
+.. automethod:: schwaby.streaming::StreamClient.level_one_futures_options_unsubs
+.. automethod:: schwaby.streaming::StreamClient.level_one_futures_options_add
+.. automethod:: schwaby.streaming::StreamClient.add_level_one_futures_options_handler
+.. autoclass:: schwaby.streaming::StreamClient.LevelOneFuturesOptionsFields
   :members:
   :undoc-members:
 
@@ -647,11 +647,11 @@ Forex Quotes
 
 Level one quotes for foreign exchange pairs.
 
-.. automethod:: schwab.streaming::StreamClient.level_one_forex_subs
-.. automethod:: schwab.streaming::StreamClient.level_one_forex_unsubs
-.. automethod:: schwab.streaming::StreamClient.level_one_forex_add
-.. automethod:: schwab.streaming::StreamClient.add_level_one_forex_handler
-.. autoclass:: schwab.streaming::StreamClient.LevelOneForexFields
+.. automethod:: schwaby.streaming::StreamClient.level_one_forex_subs
+.. automethod:: schwaby.streaming::StreamClient.level_one_forex_unsubs
+.. automethod:: schwaby.streaming::StreamClient.level_one_forex_add
+.. automethod:: schwaby.streaming::StreamClient.add_level_one_forex_handler
+.. autoclass:: schwaby.streaming::StreamClient.LevelOneForexFields
   :members:
   :undoc-members:
 
@@ -697,13 +697,13 @@ the other, and it is useful to learn about the differences between them:
    <https://www.investopedia.com/ask/answers/05/stockmultipleexchanges.asp>`__
 
 You can identify on which exchange a symbol is listed by using
-:meth:`Client.get_instruments() <schwab.client.Client.get_instruments>`:
+:meth:`Client.get_instruments() <schwaby.client.Client.get_instruments>`:
 
 .. code-block:: python
 
   import httpx2
 
-  from schwab.client import Client
+  from schwaby.client import Client
 
   r = client.get_instruments(
           ['GOOG'], projection=Client.Instrument.Projection.FUNDAMENTAL)
@@ -720,15 +720,15 @@ Note that, to match what little documentation exists, the NYSE book is called
 see behaviour suggesting otherwise, please
 `let us know <https://github.com/Hu1kSmash/schwaby/issues>`__.
 
-.. automethod:: schwab.streaming::StreamClient.nyse_book_subs
-.. automethod:: schwab.streaming::StreamClient.nyse_book_unsubs
-.. automethod:: schwab.streaming::StreamClient.nyse_book_add
-.. automethod:: schwab.streaming::StreamClient.add_nyse_book_handler
+.. automethod:: schwaby.streaming::StreamClient.nyse_book_subs
+.. automethod:: schwaby.streaming::StreamClient.nyse_book_unsubs
+.. automethod:: schwaby.streaming::StreamClient.nyse_book_add
+.. automethod:: schwaby.streaming::StreamClient.add_nyse_book_handler
 
-.. automethod:: schwab.streaming::StreamClient.nasdaq_book_subs
-.. automethod:: schwab.streaming::StreamClient.nasdaq_book_unsubs
-.. automethod:: schwab.streaming::StreamClient.nasdaq_book_add
-.. automethod:: schwab.streaming::StreamClient.add_nasdaq_book_handler
+.. automethod:: schwaby.streaming::StreamClient.nasdaq_book_subs
+.. automethod:: schwaby.streaming::StreamClient.nasdaq_book_unsubs
+.. automethod:: schwaby.streaming::StreamClient.nasdaq_book_add
+.. automethod:: schwaby.streaming::StreamClient.add_nasdaq_book_handler
 
 
 ------------------
@@ -741,10 +741,10 @@ leading hypothesis is that it is the order book for the
 `Chicago Board of Exchange <https://www.cboe.com/us/options>`__ options
 exchanges, though that is a guess and not an informed one.
 
-.. automethod:: schwab.streaming::StreamClient.options_book_subs
-.. automethod:: schwab.streaming::StreamClient.options_book_unsubs
-.. automethod:: schwab.streaming::StreamClient.options_book_add
-.. automethod:: schwab.streaming::StreamClient.add_options_book_handler
+.. automethod:: schwaby.streaming::StreamClient.options_book_subs
+.. automethod:: schwaby.streaming::StreamClient.options_book_unsubs
+.. automethod:: schwaby.streaming::StreamClient.options_book_add
+.. automethod:: schwaby.streaming::StreamClient.add_options_book_handler
 
 
 .. _book_fields:
@@ -787,23 +787,23 @@ As with everything on this page, these labels are reverse engineered --- see
 the caveat at the top of :ref:`level_two`. Field *numbers* come from Schwab;
 the names attached to them are a best-effort reading.
 
-.. autoclass:: schwab.streaming::StreamClient.BookFields
+.. autoclass:: schwaby.streaming::StreamClient.BookFields
   :members:
   :undoc-members:
 
-.. autoclass:: schwab.streaming::StreamClient.BidFields
+.. autoclass:: schwaby.streaming::StreamClient.BidFields
   :members:
   :undoc-members:
 
-.. autoclass:: schwab.streaming::StreamClient.AskFields
+.. autoclass:: schwaby.streaming::StreamClient.AskFields
   :members:
   :undoc-members:
 
-.. autoclass:: schwab.streaming::StreamClient.PerExchangeBidFields
+.. autoclass:: schwaby.streaming::StreamClient.PerExchangeBidFields
   :members:
   :undoc-members:
 
-.. autoclass:: schwab.streaming::StreamClient.PerExchangeAskFields
+.. autoclass:: schwaby.streaming::StreamClient.PerExchangeAskFields
   :members:
   :undoc-members:
 
@@ -897,15 +897,15 @@ partial cycle, so discard it before averaging anything.
 
 **Frequency ``0`` is what the REST endpoint returns.** A stream subscription
 at ``NASDAQ_VOLUME_0`` and a
-:meth:`~schwab.client.Client.get_movers` call 70 seconds apart produced the
+:meth:`~schwaby.client.Client.get_movers` call 70 seconds apart produced the
 same ten symbols in the same order. The other buckets shared only four to six
-of those ten. So :meth:`~schwab.client.Client.get_movers` is not a different
+of those ten. So :meth:`~schwaby.client.Client.get_movers` is not a different
 view of the data --- it is this service's whole-session bucket, and it is the
 only one of the six that REST exposes.
 
 Both the equity and option screener streams use a common set of fields:
 
-.. autoclass:: schwab.streaming::StreamClient.ScreenerFields
+.. autoclass:: schwaby.streaming::StreamClient.ScreenerFields
   :members:
   :undoc-members:
 
@@ -914,20 +914,20 @@ Both the equity and option screener streams use a common set of fields:
 Screener Equity
 ---------------
 
-.. automethod:: schwab.streaming::StreamClient.screener_equity_subs
-.. automethod:: schwab.streaming::StreamClient.screener_equity_unsubs
-.. automethod:: schwab.streaming::StreamClient.screener_equity_add
-.. automethod:: schwab.streaming::StreamClient.add_screener_equity_handler
+.. automethod:: schwaby.streaming::StreamClient.screener_equity_subs
+.. automethod:: schwaby.streaming::StreamClient.screener_equity_unsubs
+.. automethod:: schwaby.streaming::StreamClient.screener_equity_add
+.. automethod:: schwaby.streaming::StreamClient.add_screener_equity_handler
 
 
 ---------------
 Screener Option
 ---------------
 
-.. automethod:: schwab.streaming::StreamClient.screener_option_subs
-.. automethod:: schwab.streaming::StreamClient.screener_option_unsubs
-.. automethod:: schwab.streaming::StreamClient.screener_option_add
-.. automethod:: schwab.streaming::StreamClient.add_screener_option_handler
+.. automethod:: schwaby.streaming::StreamClient.screener_option_subs
+.. automethod:: schwaby.streaming::StreamClient.screener_option_unsubs
+.. automethod:: schwaby.streaming::StreamClient.screener_option_add
+.. automethod:: schwaby.streaming::StreamClient.add_screener_option_handler
 
 
 .. _account_activity:
@@ -936,10 +936,10 @@ Screener Option
 Account Activity
 ++++++++++++++++
 
-.. automethod:: schwab.streaming::StreamClient.account_activity_sub
-.. automethod:: schwab.streaming::StreamClient.account_activity_unsubs
-.. automethod:: schwab.streaming::StreamClient.add_account_activity_handler
-.. autoclass:: schwab.streaming::StreamClient.AccountActivityFields
+.. automethod:: schwaby.streaming::StreamClient.account_activity_sub
+.. automethod:: schwaby.streaming::StreamClient.account_activity_unsubs
+.. automethod:: schwaby.streaming::StreamClient.add_account_activity_handler
+.. autoclass:: schwaby.streaming::StreamClient.AccountActivityFields
   :members:
   :undoc-members:
 
@@ -1089,7 +1089,7 @@ When the JSON Will Not Parse
 
 Schwab sometimes sends the streaming server's messages in a form Python's
 ``json`` module refuses. When that happens the frame raises
-:class:`~schwab.streaming.UnparsableMessage`, which is reported to your error
+:class:`~schwaby.streaming.UnparsableMessage`, which is reported to your error
 handler and then ends your receive loop --- see
 :ref:`Reacting to Absorbed Failures <error_handlers>` for why that one is not
 absorbed like the others.
@@ -1100,7 +1100,7 @@ repairing the escaping Schwab is known to get wrong:
 
 .. code-block:: python
 
-  from schwab.contrib.util import HeuristicJsonDecoder
+  from schwaby.contrib.util import HeuristicJsonDecoder
 
   stream_client.set_json_decoder(HeuristicJsonDecoder())
 
@@ -1108,16 +1108,16 @@ That this exists at all is the evidence that unparsable frames are a quirk of
 the venue rather than a sign of a dead connection.
 
 You can supply your own decoder by subclassing
-:class:`~schwab.contrib.util.StreamJsonDecoder`. It must return the decoded
+:class:`~schwaby.contrib.util.StreamJsonDecoder`. It must return the decoded
 JSON; this library reads it structurally rather than requiring ``dict`` and
 ``list`` exactly, so a decoder returning a mapping type of your own works ---
 but a JSON array must be **indexable**, because routing reads element zero and
 handlers are given the frame afterwards. A generator will not serve.
 
-.. automethod:: schwab.streaming::StreamClient.set_json_decoder
+.. automethod:: schwaby.streaming::StreamClient.set_json_decoder
 
-.. autoclass:: schwab.contrib.util.StreamJsonDecoder
+.. autoclass:: schwaby.contrib.util.StreamJsonDecoder
   :members:
 
-.. autoclass:: schwab.contrib.util.HeuristicJsonDecoder
+.. autoclass:: schwaby.contrib.util.HeuristicJsonDecoder
   :members:

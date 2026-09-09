@@ -1,4 +1,4 @@
-from schwab import auth
+from schwaby import auth
 from .utils import (
         AnyStringWith,
         MockAsyncOAuthClient,
@@ -72,11 +72,11 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                 'creation_timestamp': TOKEN_CREATION_TIMESTAMP
         }
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.input', MagicMock(return_value=''))
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     @_skip_on_macos_runner
     def test_create_token_file(
@@ -107,11 +107,11 @@ class ClientFromLoginFlowTest(unittest.TestCase):
             }, json.load(f))
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.input', MagicMock(return_value=''))
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     @_skip_on_macos_runner
     def test_specify_web_browser(
@@ -137,11 +137,11 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         mock_webbrowser_get.assert_called_with('custom-browser')
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.input')
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input')
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     @_skip_on_macos_runner
     def test_create_token_file_not_interactive(
@@ -176,11 +176,11 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         mock_prompt.assert_not_called()
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.input', MagicMock(return_value=''))
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     @_skip_on_macos_runner
     def test_create_token_file_root_callback_url(
@@ -211,10 +211,10 @@ class ClientFromLoginFlowTest(unittest.TestCase):
             }, json.load(f))
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_disallowed_hostname(
             self, mock_webbrowser_get, async_session, sync_session, client):
@@ -226,12 +226,12 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                     API_KEY, APP_SECRET, callback_url, self.token_path)
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.httpx2.get')
-    @patch('schwab.auth.input', MagicMock(return_value=''))
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.httpx2.get')
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
     def test_a_connect_timeout_is_treated_as_not_listening_yet(
             self, mock_get, mock_webbrowser_get, async_session, sync_session,
             client):
@@ -269,11 +269,11 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         self.assertEqual(3, mock_get.call_count)
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.httpx2.get')
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.httpx2.get')
     def test_server_which_never_answers_times_out(
             self, mock_get, mock_webbrowser_get, async_session, sync_session,
             client):
@@ -282,7 +282,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         import httpx2 as _httpx2
         mock_get.side_effect = _httpx2.ConnectError('never listening')
 
-        with patch('schwab.auth.SERVER_STARTUP_TIMEOUT', 0.3):
+        with patch('schwaby.auth.SERVER_STARTUP_TIMEOUT', 0.3):
             with self.assertRaisesRegex(
                     auth.RedirectServerExitedError, 'did not become ready'):
                 auth.client_from_login_flow(
@@ -290,11 +290,11 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                         self.token_path)
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.httpx2.get')
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.httpx2.get')
     def test_refuses_to_continue_when_something_else_holds_the_port(
             self, mock_get, mock_webbrowser_get, async_session, sync_session,
             client):
@@ -313,10 +313,10 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                     self.token_path)
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_negative_timeout(
             self, mock_webbrowser_get, async_session, sync_session, client):
@@ -329,10 +329,10 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                     callback_timeout=-1)
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_disallowed_hostname_with_port(
             self, mock_webbrowser_get, async_session, sync_session, client):
@@ -344,10 +344,10 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                     API_KEY, APP_SECRET, callback_url, self.token_path)
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_start_on_port_443(
             self, mock_webbrowser_get, async_session, sync_session, client):
@@ -359,11 +359,11 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                     API_KEY, APP_SECRET, callback_url, self.token_path)
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.input', MagicMock(return_value=''))
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     @_skip_on_macos_runner
     def test_time_out_waiting_for_request(
@@ -383,11 +383,11 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                     callback_timeout=0.01)
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.input', MagicMock(return_value=''))
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     @_skip_on_macos_runner
     def test_wait_forever_callback_timeout_equals_none(
@@ -406,11 +406,11 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                     callback_timeout=None)
 
 
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.input', MagicMock(return_value=''))
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     @_skip_on_macos_runner
     def test_wait_forever_callback_timeout_equals_zero(
@@ -450,9 +450,9 @@ class ClientFromTokenFileTest(unittest.TestCase):
             auth.client_from_token_file(self.token_path, API_KEY, APP_SECRET)
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_json_loads(self, async_session, sync_session, client):
         self.write_token()
 
@@ -472,9 +472,9 @@ class ClientFromTokenFileTest(unittest.TestCase):
             leeway=_)
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_update_token_updates_token(
             self, async_session, sync_session, client):
         self.write_token()
@@ -494,9 +494,9 @@ class ClientFromTokenFileTest(unittest.TestCase):
             })
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_update_token_is_user_readable_only(
             self, async_session, sync_session, client):
         # A token written by an earlier version, or by a user with a permissive
@@ -522,9 +522,9 @@ class ClientFromTokenFileTest(unittest.TestCase):
         self.assertEqual(mode, 0o600)
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_update_token_leaves_old_token_intact_on_failure(
             self, async_session, sync_session, client):
         # The point of writing to a temporary file and renaming: a write which
@@ -551,9 +551,9 @@ class ClientFromTokenFileTest(unittest.TestCase):
         self.assertEqual(leftovers, [])
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_update_token_sweeps_temp_files_left_by_a_hard_kill(
             self, async_session, sync_session, client):
         # A process killed between the temporary file being written and the
@@ -578,9 +578,9 @@ class ClientFromTokenFileTest(unittest.TestCase):
                 'a stale token temp file survived a subsequent write')
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_update_token_leaves_a_concurrent_write_alone(
             self, async_session, sync_session, client):
         # Another process may be partway through its own write right now. Its
@@ -608,9 +608,9 @@ class ClientFromTokenFileTest(unittest.TestCase):
                 'a temp file which may belong to a live write was deleted')
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_update_token_does_not_sweep_unrelated_files(
             self, async_session, sync_session, client):
         # The token directory is frequently the user's own, and may be their
@@ -637,9 +637,9 @@ class ClientFromTokenFileTest(unittest.TestCase):
                             '{} was deleted'.format(os.path.basename(path)))
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_update_token_writes_through_a_symlink(
             self, async_session, sync_session, client):
         # Renaming onto a symlink would replace the link with a regular file
@@ -666,9 +666,9 @@ class ClientFromTokenFileTest(unittest.TestCase):
             })
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_enforce_enums_being_disabled(self, async_session, sync_session, client):
         self.write_token()
 
@@ -682,9 +682,9 @@ class ClientFromTokenFileTest(unittest.TestCase):
                                        enforce_enums=False)
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_enforce_enums_being_enabled(self, async_session, sync_session, client):
         self.write_token()
 
@@ -709,9 +709,9 @@ class ClientFromAccessFunctionsTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_success_with_write_func(
             self, async_session, sync_session, client):
         token_read_func = MagicMock()
@@ -750,9 +750,9 @@ class ClientFromAccessFunctionsTest(unittest.TestCase):
         }], token_writes)
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_success_with_write_func_metadata_aware_token(
             self, async_session, sync_session, client):
         token_read_func = MagicMock()
@@ -791,9 +791,9 @@ class ClientFromAccessFunctionsTest(unittest.TestCase):
         }], token_writes)
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_success_with_enforce_enums_disabled(
             self, async_session, sync_session, client):
         token_read_func = MagicMock()
@@ -816,9 +816,9 @@ class ClientFromAccessFunctionsTest(unittest.TestCase):
                 API_KEY, _, token_metadata=_, enforce_enums=False)
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_success_with_enforce_enums_enabled(
             self, async_session, sync_session, client):
         token_read_func = MagicMock()
@@ -851,10 +851,10 @@ class ClientFromReceivedUrl(unittest.TestCase):
         self.raw_token = {'token': 'yes'}
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.AsyncClient')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.AsyncClient')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_success_sync(
             self, async_session, sync_session, async_client, client):
@@ -906,10 +906,10 @@ class ClientFromReceivedUrl(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.AsyncClient')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.AsyncClient')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_success_async(
             self, async_session, sync_session, async_client, client):
@@ -965,10 +965,10 @@ class ClientFromManualFlow(unittest.TestCase):
         self.raw_token = {'token': 'yes'}
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.input')
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.input')
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_no_token_file(
             self, prompt_func, async_session, sync_session, client):
@@ -992,10 +992,10 @@ class ClientFromManualFlow(unittest.TestCase):
             }, json.load(f))
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.input')
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.input')
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_custom_token_write_func(
             self, prompt_func, async_session, sync_session, client):
@@ -1029,10 +1029,10 @@ class ClientFromManualFlow(unittest.TestCase):
         }], token_writes)
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.input')
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.input')
     @patch('builtins.print')
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_print_warning_on_http_redirect_uri(
@@ -1061,10 +1061,10 @@ class ClientFromManualFlow(unittest.TestCase):
         print_func.assert_any_call(AnyStringWith('will transmit data over HTTP'))
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.input')
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.input')
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_enforce_enums_disabled(
             self, prompt_func, async_session, sync_session, client):
@@ -1086,10 +1086,10 @@ class ClientFromManualFlow(unittest.TestCase):
                                        enforce_enums=False)
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.input')
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.input')
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_enforce_enums_enabled(
             self, prompt_func, async_session, sync_session, client):
@@ -1170,8 +1170,8 @@ class EasyClientTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.client_from_token_file')
-    @patch('schwab.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_no_token(
             self, client_from_login_flow, client_from_token_file):
@@ -1184,9 +1184,9 @@ class EasyClientTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.client_from_token_file')
-    @patch('schwab.auth.client_from_login_flow', new_callable=MockOAuthClient)
-    @patch('schwab.auth.client_from_manual_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_manual_flow', new_callable=MockOAuthClient)
     @patch('os.getenv', new_callable=MockOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_running_on_collab_environment(
@@ -1205,11 +1205,11 @@ class EasyClientTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.client_from_token_file')
-    @patch('schwab.auth.client_from_login_flow', new_callable=MockOAuthClient)
-    @patch('schwab.auth.client_from_manual_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_manual_flow', new_callable=MockOAuthClient)
     @patch('os.getenv', new_callable=MockOAuthClient)
-    @patch('schwab.auth._get_ipython')
+    @patch('schwaby.auth._get_ipython')
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_running_on_ipython_in_notebook_mode(
             self, get_ipython, getenv, client_from_manual_flow, 
@@ -1228,11 +1228,11 @@ class EasyClientTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.client_from_token_file')
-    @patch('schwab.auth.client_from_login_flow', new_callable=MockOAuthClient)
-    @patch('schwab.auth.client_from_manual_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_manual_flow', new_callable=MockOAuthClient)
     @patch('os.getenv', new_callable=MockOAuthClient)
-    @patch('schwab.auth._get_ipython')
+    @patch('schwaby.auth._get_ipython')
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_running_on_ipython_in_something_other_than_notebook_mode(
             self, get_ipython, getenv, client_from_manual_flow, 
@@ -1251,8 +1251,8 @@ class EasyClientTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.client_from_token_file')
-    @patch('schwab.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_no_token_passing_parameters(
             self, client_from_login_flow, client_from_token_file):
@@ -1275,8 +1275,8 @@ class EasyClientTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.client_from_token_file')
-    @patch('schwab.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_existing_token(
             self, client_from_login_flow, client_from_token_file):
@@ -1292,8 +1292,8 @@ class EasyClientTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.client_from_token_file')
-    @patch('schwab.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_existing_token_passing_parameters(
             self, client_from_login_flow, client_from_token_file):
@@ -1314,8 +1314,8 @@ class EasyClientTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.client_from_token_file')
-    @patch('schwab.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_token_too_old(
             self, client_from_login_flow, client_from_token_file):
@@ -1335,8 +1335,8 @@ class EasyClientTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.client_from_token_file')
-    @patch('schwab.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_negative_max_token_age(
             self, client_from_login_flow, client_from_token_file):
@@ -1347,8 +1347,8 @@ class EasyClientTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.client_from_token_file')
-    @patch('schwab.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_none_max_token_age(
             self, client_from_login_flow, client_from_token_file):
@@ -1365,8 +1365,8 @@ class EasyClientTest(unittest.TestCase):
 
 
     @no_duplicates
-    @patch('schwab.auth.client_from_token_file')
-    @patch('schwab.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_zero_max_token_age(
             self, client_from_login_flow, client_from_token_file):
@@ -1418,9 +1418,9 @@ class NormalizeCredentialTest(unittest.TestCase):
         self.assertIsNone(self.normalize(None, 'api_key'))
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
     def test_entry_point_strips_before_use(
             self, async_session, sync_session, client):
         tmp = tempfile.TemporaryDirectory()

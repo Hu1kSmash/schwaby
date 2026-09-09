@@ -135,43 +135,24 @@ called ``my-venv`` here:
   virtualenv -v my-venv
   source my-venv/bin/activate
 
-Then install the library. The distribution is called ``schwaby`` and the
-package you import is called ``schwab``:
+Then install the library:
 
 .. code-block:: shell
 
   pip install schwaby
 
-.. warning::
+.. note::
 
-  ``schwaby`` and ``schwab-py`` cannot be installed together, and installing
-  one over the other is worse than it sounds. Both provide the ``schwab``
-  package and ``pip`` does not know they are the same project, so both end up
-  registered and both claim the same files.
-
-  Modules removed in the newer version survive on disk and stay importable. And
-  ``pip uninstall schwab-py`` afterwards deletes the shared files and destroys
-  the install --- ``pip`` still lists ``schwaby``, but ``import schwab`` raises
-  ``ModuleNotFoundError``.
-
-  ``pip`` never warns about this --- it does not implement ``Conflicts-Dist``,
-  and a wheel runs no code when it is installed. ``import schwab`` does warn,
-  but **only if** ``schwaby`` was installed last: both projects ship a
-  ``schwab/__init__.py``, whichever is installed second overwrites the other's,
-  and installing ``schwab-py`` over ``schwaby`` removes the file that carries
-  the check. Silence is not evidence that the install is clean.
-
-  Migrating from ``schwab-py``? Uninstall it **first**:
-
-  .. code-block:: shell
-
-    pip uninstall -y schwab-py && pip install schwaby
+  ``schwaby`` and ``schwab-py`` install side by side without interfering.
+  They ship different packages --- ``schwaby`` and ``schwab`` --- so you can
+  have both and import whichever you mean. Migrating does not require
+  uninstalling anything.
 
 Check that it worked:
 
 .. code-block:: python
 
-  import schwab
+  import schwaby
 
 A virtualenv is per-terminal. Open a new one and you will need to activate it
 again; to leave it in the current terminal, run:

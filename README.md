@@ -57,7 +57,7 @@ Synchronous and `asyncio` over the same interface. Python 3.10+.
 > than feels necessary. Reconcile against the broker rather than trusting what
 > this library tells you happened. Read the code on every path that places,
 > replaces or cancels an order — all of it is [right
-> here](https://github.com/Hu1kSmash/schwaby/tree/main/schwab). And assume the
+> here](https://github.com/Hu1kSmash/schwaby/tree/main/schwaby). And assume the
 > bug you have not found is on the path you did not read.
 >
 > If that is not a trade you want to make, use Schwab's own interfaces instead.
@@ -159,7 +159,7 @@ duration fails immediately in Python, where you can see which line did it.
 and refreshed for you from then on.
 
 ```python
-from schwab.auth import easy_client
+from schwaby.auth import easy_client
 
 c = easy_client(
         api_key='YOUR_API_KEY',
@@ -179,7 +179,7 @@ candles = r.json()['candles']
 **3. Place an order** from a template, without touching Schwab's order JSON.
 
 ```python
-from schwab.orders.equities import equity_buy_limit
+from schwaby.orders.equities import equity_buy_limit
 
 account_hash = c.get_account_numbers().json()[0]['hashValue']
 c.place_order(account_hash, equity_buy_limit('AAPL', 10, '210.50'))
@@ -192,7 +192,7 @@ written](#prices-go-out-exactly-as-written).
 
 ```python
 import asyncio
-from schwab.streaming import StreamClient
+from schwaby.streaming import StreamClient
 
 async def main():
     stream = StreamClient(c)
@@ -254,41 +254,15 @@ pip install schwaby
 
 That is the whole install. Python 3.10 and up, no extras to remember.
 
-**The distribution is `schwaby`. The importable package is `schwab`.** Those differ
-on purpose: keeping the import makes this a drop-in replacement, so moving an
-existing project over is one line of `requirements.txt`.
+**The distribution and the package are both `schwaby`.**
 
 ```python
-import schwab
+import schwaby
 ```
 
-> [!WARNING]
->
-> **Uninstall `schwab-py` before installing `schwaby`. In that order.**
->
-> ```shell
-> pip uninstall -y schwab-py && pip install schwaby
-> ```
->
-> Both provide the `schwab` package, and `pip` has no idea they are the same
-> project, so installing one over the other leaves *both* registered and both
-> claiming the same files. Two things then go wrong:
->
-> - Modules deleted in the newer version survive on disk and stay importable, so
->   you can `import` something the version you installed does not have.
-> - `pip uninstall schwab-py` — the obvious next step — **deletes the shared
->   files and destroys the install.** Measured: `pip` then lists `schwaby` as
->   present while `import schwab` raises `ModuleNotFoundError`.
->
-> `pip` never warns about this: it does not implement `Conflicts-Dist`, and a
-> wheel runs no code when it is installed. `import schwab` does warn — but
-> **only if `schwaby` was installed last.** Both projects ship a file called
-> `schwab/__init__.py`, and whichever is installed second overwrites the
-> other's; install `schwab-py` over `schwaby` and the file carrying the check
-> is the one that goes. So silence is not evidence you are fine.
->
-> If you have already done it in the wrong order, uninstall both and reinstall
-> `schwaby`.
+`schwaby` and `schwab-py` install side by side without interfering. They ship
+different packages, so you can have both installed and import whichever you
+mean --- useful if you want to compare the two against the same account.
 
 ---
 

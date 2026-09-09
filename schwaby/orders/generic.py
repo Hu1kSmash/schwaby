@@ -3,8 +3,8 @@ import math
 
 from enum import Enum
 
-from schwab.orders import common
-from schwab.utils import EnumEnforcer
+from schwaby.orders import common
+from schwaby.utils import EnumEnforcer
 
 import httpx2
 
@@ -227,7 +227,7 @@ class OrderBuilder(EnumEnforcer):
     # Session
     def set_session(self, session):
         '''
-        Set the order session. See :class:`~schwab.orders.common.Session` for
+        Set the order session. See :class:`~schwaby.orders.common.Session` for
         details.
         '''
         session = self.convert_enum(session, common.Session)
@@ -244,7 +244,7 @@ class OrderBuilder(EnumEnforcer):
     # Duration
     def set_duration(self, duration):
         '''
-        Set the order duration. See :class:`~schwab.orders.common.Duration` for
+        Set the order duration. See :class:`~schwaby.orders.common.Duration` for
         details.
         '''
         duration = self.convert_enum(duration, common.Duration)
@@ -261,7 +261,7 @@ class OrderBuilder(EnumEnforcer):
     # OrderType
     def set_order_type(self, order_type):
         '''
-        Set the order type. See :class:`~schwab.orders.common.OrderType` for
+        Set the order type. See :class:`~schwaby.orders.common.OrderType` for
         details.
         '''
         order_type = self.convert_enum(order_type, common.OrderType)
@@ -279,7 +279,7 @@ class OrderBuilder(EnumEnforcer):
     def set_complex_order_strategy_type(self, complex_order_strategy_type):
         '''
         Set the complex order strategy type. See
-        :class:`~schwab.orders.common.ComplexOrderStrategyType` for details.
+        :class:`~schwaby.orders.common.ComplexOrderStrategyType` for details.
         '''
         complex_order_strategy_type = self.convert_enum(
             complex_order_strategy_type, common.ComplexOrderStrategyType)
@@ -316,7 +316,7 @@ class OrderBuilder(EnumEnforcer):
     def set_requested_destination(self, requested_destination):
         '''
         Ask for the order to be routed to a specific venue. See
-        :class:`~schwab.orders.common.Destination` for the values Schwab
+        :class:`~schwaby.orders.common.Destination` for the values Schwab
         accepts. Omit it and Schwab routes the order itself, which is what
         almost everyone wants.
         '''
@@ -341,9 +341,9 @@ class OrderBuilder(EnumEnforcer):
 
         **This is probably not the method you want.** To route an order to a
         particular venue, use
-        :meth:`~schwab.orders.generic.OrderBuilder.set_requested_destination`.
+        :meth:`~schwaby.orders.generic.OrderBuilder.set_requested_destination`.
         This field takes the string Schwab's schema says it takes. It is not
-        the venue selector, and :class:`~schwab.orders.common.Destination`
+        the venue selector, and :class:`~schwaby.orders.common.Destination`
         does not apply to it --- those values belong to
         ``requestedDestination``.
         '''
@@ -386,7 +386,7 @@ class OrderBuilder(EnumEnforcer):
     def set_stop_price_link_basis(self, stop_price_link_basis):
         '''
         Set the stop price link basis. See
-        :class:`~schwab.orders.common.StopPriceLinkBasis` for details.
+        :class:`~schwaby.orders.common.StopPriceLinkBasis` for details.
         '''
         stop_price_link_basis = self.convert_enum(
             stop_price_link_basis, common.StopPriceLinkBasis)
@@ -404,7 +404,7 @@ class OrderBuilder(EnumEnforcer):
     def set_stop_price_link_type(self, stop_price_link_type):
         '''
         Set the stop price link type. See
-        :class:`~schwab.orders.common.StopPriceLinkType` for details.
+        :class:`~schwaby.orders.common.StopPriceLinkType` for details.
         '''
         stop_price_link_type = self.convert_enum(
             stop_price_link_type, common.StopPriceLinkType)
@@ -438,7 +438,7 @@ class OrderBuilder(EnumEnforcer):
     def set_stop_type(self, stop_type):
         '''
         Set the stop type. See
-        :class:`~schwab.orders.common.StopType` for more details.
+        :class:`~schwaby.orders.common.StopType` for more details.
         '''
         stop_type = self.convert_enum(stop_type, common.StopType)
         self._stopType = stop_type
@@ -455,7 +455,7 @@ class OrderBuilder(EnumEnforcer):
     def set_price_link_basis(self, price_link_basis):
         '''
         Set the price link basis. See
-        :class:`~schwab.orders.common.PriceLinkBasis` for details.
+        :class:`~schwaby.orders.common.PriceLinkBasis` for details.
         '''
         price_link_basis = self.convert_enum(
             price_link_basis, common.PriceLinkBasis)
@@ -473,7 +473,7 @@ class OrderBuilder(EnumEnforcer):
     def set_price_link_type(self, price_link_type):
         '''
         Set the price link type. See
-        :class:`~schwab.orders.common.PriceLinkType` for more details.
+        :class:`~schwaby.orders.common.PriceLinkType` for more details.
         '''
         price_link_type = self.convert_enum(
             price_link_type, common.PriceLinkType)
@@ -568,7 +568,7 @@ class OrderBuilder(EnumEnforcer):
     def set_tax_lot_method(self, tax_lot_method):
         '''
         Set the tax lot selection method for a closing order. See
-        :class:`~schwab.orders.common.TaxLotMethod` for details.
+        :class:`~schwaby.orders.common.TaxLotMethod` for details.
         '''
         tax_lot_method = self.convert_enum(
             tax_lot_method, common.TaxLotMethod)
@@ -586,7 +586,7 @@ class OrderBuilder(EnumEnforcer):
     def set_special_instruction(self, special_instruction):
         '''
         Set the special instruction. See
-        :class:`~schwab.orders.common.SpecialInstruction` for details.
+        :class:`~schwaby.orders.common.SpecialInstruction` for details.
         '''
         special_instruction = self.convert_enum(
             special_instruction, common.SpecialInstruction)
@@ -604,7 +604,7 @@ class OrderBuilder(EnumEnforcer):
     def set_order_strategy_type(self, order_strategy_type):
         '''
         Set the order strategy type. See
-        :class:`~schwab.orders.common.OrderStrategyType` for more details.
+        :class:`~schwaby.orders.common.OrderStrategyType` for more details.
         '''
         order_strategy_type = self.convert_enum(
             order_strategy_type, common.OrderStrategyType)
@@ -664,7 +664,7 @@ class OrderBuilder(EnumEnforcer):
         Add an equity order leg.
 
         :param instruction: Instruction for the leg. See
-                            :class:`~schwab.orders.common.EquityInstruction` for
+                            :class:`~schwaby.orders.common.EquityInstruction` for
                             valid options.
         :param symbol: Equity symbol
         :param quantity: Number of shares for the order
@@ -678,7 +678,7 @@ class OrderBuilder(EnumEnforcer):
         Add an option order leg.
 
         :param instruction: Instruction for the leg. See
-                            :class:`~schwab.orders.common.OptionInstruction` for
+                            :class:`~schwaby.orders.common.OptionInstruction` for
                             valid options.
         :param symbol: Option symbol
         :param quantity: Number of contracts for the order

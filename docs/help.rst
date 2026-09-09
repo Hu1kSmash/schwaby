@@ -1,5 +1,5 @@
 .. highlight:: python
-.. py:module:: schwab.debug
+.. py:module:: schwaby.debug
 
 .. _help:
 
@@ -24,7 +24,7 @@ Before You Ask
 Most problems are solved faster by gathering a little information first.
 
  1. Check that you are on the latest version, and note which version you are
-    using. ``print(schwab.__version__)`` will tell you.
+    using. ``print(schwaby.__version__)`` will tell you.
  2. Note your OS and how you are running your code -- a terminal, a notebook, a
     container, an IDE. Several common failures are specific to one of these.
  3. Capture the full stack trace and error message, not just the last line.
@@ -56,7 +56,7 @@ and a level low enough to let them through.
   import logging
 
   logging.getLogger('').addHandler(logging.StreamHandler())
-  logging.getLogger('schwab').setLevel(logging.DEBUG)
+  logging.getLogger('schwaby').setLevel(logging.DEBUG)
 
 **The second line is the one people miss.** A handler on its own changes
 nothing, because the root logger's default level is ``WARNING`` and almost
@@ -64,7 +64,7 @@ everything this library logs is ``DEBUG``. Adding the handler and stopping
 there produces a program that looks like it has logging switched on and emits
 none of it.
 
-Setting the level on ``schwab`` rather than on the root logger keeps the output
+Setting the level on ``schwaby`` rather than on the root logger keeps the output
 to this library. Point it at ``''`` instead if you want everything, including
 whatever your other dependencies have to say.
 
@@ -72,7 +72,7 @@ Sometimes this additional logging is enough to debug the problem yourself.
 Before you ask for help, read through your logs to see whether there is
 anything there that explains it.
 
-Note the streaming client reports handler failures on the ``schwab.streaming``
+Note the streaming client reports handler failures on the ``schwaby.streaming``
 logger rather than raising them, so a handler which is quietly failing shows up
 there and nowhere else.
 
@@ -88,7 +88,7 @@ them to the console when the program exits. Enable it by calling this method
 
 .. code-block:: python
 
-  schwab.debug.enable_bug_report_logging()
+  schwaby.debug.enable_bug_report_logging()
 
 This redacts common secrets such as account IDs, tokens and access keys.
 However, **that redaction is not guaranteed to be complete, and checking the
@@ -97,7 +97,7 @@ your token file.
 
 For completeness, here is this method's documentation:
 
-.. automethod:: schwab.debug.enable_bug_report_logging
+.. automethod:: schwaby.debug.enable_bug_report_logging
 
 
 ~~~~~~~~~~~~~~~~~~

@@ -12,8 +12,8 @@ how to create one.
 import asyncio
 import pprint
 
-import schwab
-from schwab.streaming import StreamClient
+import schwaby
+from schwaby.streaming import StreamClient
 
 API_KEY = 'XXXXXX'
 APP_SECRET = 'XXXXXX'
@@ -37,7 +37,7 @@ class StreamConsumer:
         self.queue = asyncio.Queue(queue_size)
 
     def initialize(self):
-        self.client = schwab.auth.client_from_token_file(
+        self.client = schwaby.auth.client_from_token_file(
                 self.token_path, api_key=self.api_key,
                 app_secret=self.app_secret)
 

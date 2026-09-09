@@ -1,4 +1,4 @@
-.. py:module:: schwab.orders.generic
+.. py:module:: schwaby.orders.generic
 
 
 .. _order_builder:
@@ -7,7 +7,7 @@
 ``OrderBuilder`` Reference
 ==========================
 
-The :meth:`Client.place_order() <schwab.client.Client.place_order>` method
+The :meth:`Client.place_order() <schwaby.client.Client.place_order>` method
 expects a rather complex JSON object that describes the desired order. Schwab
 provides some `example order specs
 <https://developer.schwab.com/products/trader-api--individual/details/documentation/Retail%20Trader%20API%20Production>`__
@@ -161,9 +161,9 @@ orders easy:
 
 .. code-block:: python
 
-  from schwab.orders.common import (
+  from schwaby.orders.common import (
       OrderType, first_triggers_second, one_cancels_other)
-  from schwab.orders.equities import equity_buy_limit, equity_sell_limit
+  from schwaby.orders.equities import equity_buy_limit, equity_sell_limit
 
   first_triggers_second(
       equity_buy_limit('GOOG', 1, '1310.00'),
@@ -216,11 +216,11 @@ Order Types
 
 Here are the order types that can be used:
 
-.. autoclass:: schwab.orders.common::OrderType
+.. autoclass:: schwaby.orders.common::OrderType
   :members:
   :undoc-members:
-.. automethod:: schwab.orders.generic.OrderBuilder.set_order_type
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_order_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_order_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_order_type
 
 
 ++++++++++++++++++++
@@ -233,17 +233,17 @@ place orders that are active for the duration of the current normal trading
 session.  If you want to modify the default session and duration, you can use
 these methods to do so.
 
-.. autoclass:: schwab.orders.common::Session
+.. autoclass:: schwaby.orders.common::Session
   :members:
   :undoc-members:
-.. autoclass:: schwab.orders.common::Duration
+.. autoclass:: schwaby.orders.common::Duration
   :members:
   :undoc-members:
 
-.. automethod:: schwab.orders.generic.OrderBuilder.set_duration
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_duration
-.. automethod:: schwab.orders.generic.OrderBuilder.set_session
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_session
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_duration
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_duration
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_session
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_session
 
 
 +++++
@@ -340,19 +340,19 @@ formatting one. Making it yourself is how you keep it.
    rounds to ``20.00``; ``0.186992`` truncates to ``0.1869`` where ``'{:.2f}'``
    gives ``0.19``.
 
-:meth:`~schwab.orders.generic.OrderBuilder.copy_price` still sets the field
+:meth:`~schwaby.orders.generic.OrderBuilder.copy_price` still sets the field
 without the type check, so a float or an int passes through as given. The one
 thing it refuses is a non-finite ``decimal.Decimal``, which would render as the
 transmittable string ``"NaN"``. It is there for rebuilding an order from a
 historical response, where the price Schwab reported is the price you mean and
 converting it would change the order. The prebuilt templates on the
 :ref:`order_templates` page are not an exception to any of this -- they call
-:meth:`~schwab.orders.generic.OrderBuilder.set_price` and take the same string
+:meth:`~schwaby.orders.generic.OrderBuilder.set_price` and take the same string
 it does.
 
-.. automethod:: schwab.orders.generic.OrderBuilder.set_price
-.. automethod:: schwab.orders.generic.OrderBuilder.copy_price
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_price
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_price
+.. automethod:: schwaby.orders.generic.OrderBuilder.copy_price
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_price
 
 
 .. _order_legs:
@@ -366,25 +366,25 @@ simple equity or single-options orders, there is just one leg. However, for
 complex multi-leg options trades, there can be more than one leg.
 
 Note that order legs often do not execute all at once. Order legs can be
-executed over the specified :class:`~schwab.orders.common.Duration` of the order.
+executed over the specified :class:`~schwaby.orders.common.Duration` of the order.
 What's more, if order legs request a large number of shares, legs themselves can
 be partially filled. You can control this setting using the
-:class:`~schwab.orders.common.SpecialInstruction` value ``ALL_OR_NONE``.
+:class:`~schwaby.orders.common.SpecialInstruction` value ``ALL_OR_NONE``.
 
 With all that out of the way, order legs are relatively simple to specify.
 ``schwaby`` currently supports equity and option order legs:
 
-.. automethod:: schwab.orders.generic.OrderBuilder.add_equity_leg
-.. autoclass:: schwab.orders.common::EquityInstruction
+.. automethod:: schwaby.orders.generic.OrderBuilder.add_equity_leg
+.. autoclass:: schwaby.orders.common::EquityInstruction
   :members:
   :undoc-members:
 
-.. automethod:: schwab.orders.generic.OrderBuilder.add_option_leg
-.. autoclass:: schwab.orders.common::OptionInstruction
+.. automethod:: schwaby.orders.generic.OrderBuilder.add_option_leg
+.. autoclass:: schwaby.orders.common::OptionInstruction
   :members:
   :undoc-members:
 
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_order_legs
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_order_legs
 
 
 
@@ -396,18 +396,18 @@ By default, Schwab routes an order to whichever venue offers the best price.
 To ask for a particular one, set ``requestedDestination``. Whether the order
 actually executes there remains Schwab's decision.
 
-.. autoclass:: schwab.orders.common::Destination
+.. autoclass:: schwaby.orders.common::Destination
   :members:
   :undoc-members:
-.. automethod:: schwab.orders.generic.OrderBuilder.set_requested_destination
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_requested_destination
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_requested_destination
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_requested_destination
 
 ``destinationLinkName`` is a different field and is **not** how you choose a
 venue, despite the similar name. Schwab's schema types it as a free string and
-:class:`~schwab.orders.common.Destination` does not apply to it.
+:class:`~schwaby.orders.common.Destination` does not apply to it.
 
-.. automethod:: schwab.orders.generic.OrderBuilder.set_destination_link_name
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_destination_link_name
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_destination_link_name
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_destination_link_name
 
 
 ++++++++++++++++++++
@@ -416,11 +416,11 @@ Special Instructions
 
 Trades can contain special instructions which handle some edge cases:
 
-.. autoclass:: schwab.orders.common::SpecialInstruction
+.. autoclass:: schwaby.orders.common::SpecialInstruction
   :members:
   :undoc-members:
-.. automethod:: schwab.orders.generic.OrderBuilder.set_special_instruction
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_special_instruction
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_special_instruction
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_special_instruction
 
 
 ++++++++++++++++++++++++++
@@ -438,7 +438,7 @@ documentation, we cannot definitively say how to structure these orders. A few
 things have been observed, however:
 
  * The legs of the order can be placed by adding them as option order legs using
-   :meth:`~schwab.orders.generic.OrderBuilder.add_option_leg`.
+   :meth:`~schwaby.orders.generic.OrderBuilder.add_option_leg`.
  * For spreads resulting in a new debit/credit, the price represents the overall
    debit or credit desired.
 
@@ -446,11 +446,11 @@ If you use these strategies successfully, please say so on the `issue tracker
 <https://github.com/Hu1kSmash/schwaby/issues>`__. What works is worth more here
 than what the schema permits.
 
-.. autoclass:: schwab.orders.common::ComplexOrderStrategyType
+.. autoclass:: schwaby.orders.common::ComplexOrderStrategyType
   :members:
   :undoc-members:
-.. automethod:: schwab.orders.generic.OrderBuilder.set_complex_order_strategy_type
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_complex_order_strategy_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_complex_order_strategy_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_complex_order_strategy_type
 
 
 ++++++++++++++++
@@ -466,16 +466,16 @@ order has an effect on another:
    immediately results in placement of the other.
 
 ``schwaby`` provides helpers to specify these easily:
-:func:`~schwab.orders.common.one_cancels_other` and
-:func:`~schwab.orders.common.first_triggers_second`. This is almost certainly
+:func:`~schwaby.orders.common.one_cancels_other` and
+:func:`~schwaby.orders.common.first_triggers_second`. This is almost certainly
 easier than specifying these orders manually. However, if you still want to
 create them yourself, you can specify these composite order strategies like so:
 
-.. autoclass:: schwab.orders.common::OrderStrategyType
+.. autoclass:: schwaby.orders.common::OrderStrategyType
   :members:
   :undoc-members:
-.. automethod:: schwab.orders.generic.OrderBuilder.set_order_strategy_type
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_order_strategy_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_order_strategy_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_order_strategy_type
 
 
 +++++++++++++++++++
@@ -501,8 +501,8 @@ suggests this field means something else. The leading hypothesis is that it
 outlines the number of copies of the order to place, although we have yet to
 verify that.
 
-.. automethod:: schwab.orders.generic.OrderBuilder.set_quantity
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_quantity
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_quantity
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_quantity
 
 
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -523,44 +523,44 @@ understand how these fields work, they've been temporarily placed into the
 these fields at their own risk.
 
 
-.. automethod:: schwab.orders.generic.OrderBuilder.set_stop_price
-.. automethod:: schwab.orders.generic.OrderBuilder.copy_stop_price
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_stop_price
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_stop_price
+.. automethod:: schwaby.orders.generic.OrderBuilder.copy_stop_price
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_stop_price
 
-.. autoclass:: schwab.orders.common::StopPriceLinkBasis
+.. autoclass:: schwaby.orders.common::StopPriceLinkBasis
   :members:
   :undoc-members:
-.. automethod:: schwab.orders.generic.OrderBuilder.set_stop_price_link_basis
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_stop_price_link_basis
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_stop_price_link_basis
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_stop_price_link_basis
 
-.. autoclass:: schwab.orders.common::StopPriceLinkType
+.. autoclass:: schwaby.orders.common::StopPriceLinkType
   :members:
   :undoc-members:
-.. automethod:: schwab.orders.generic.OrderBuilder.set_stop_price_link_type
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_stop_price_link_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_stop_price_link_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_stop_price_link_type
 
-.. automethod:: schwab.orders.generic.OrderBuilder.set_stop_price_offset
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_stop_price_offset
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_stop_price_offset
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_stop_price_offset
 
-.. autoclass:: schwab.orders.common::StopType
+.. autoclass:: schwaby.orders.common::StopType
   :members:
   :undoc-members:
-.. automethod:: schwab.orders.generic.OrderBuilder.set_stop_type
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_stop_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_stop_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_stop_type
 
-.. autoclass:: schwab.orders.common::PriceLinkBasis
+.. autoclass:: schwaby.orders.common::PriceLinkBasis
   :members:
   :undoc-members:
-.. automethod:: schwab.orders.generic.OrderBuilder.set_price_link_basis
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_price_link_basis
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_price_link_basis
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_price_link_basis
 
-.. autoclass:: schwab.orders.common::PriceLinkType
+.. autoclass:: schwaby.orders.common::PriceLinkType
   :members:
   :undoc-members:
-.. automethod:: schwab.orders.generic.OrderBuilder.set_price_link_type
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_price_link_type
-.. automethod:: schwab.orders.generic.OrderBuilder.set_price_offset
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_price_offset
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_price_link_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_price_link_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_price_offset
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_price_offset
 
-.. automethod:: schwab.orders.generic.OrderBuilder.set_activation_price
-.. automethod:: schwab.orders.generic.OrderBuilder.clear_activation_price
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_activation_price
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_activation_price

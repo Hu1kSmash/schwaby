@@ -3,7 +3,7 @@ import httpx2
 import json
 import logging
 import sys
-import schwab
+import schwaby
 
 
 def get_logger():
@@ -116,7 +116,7 @@ def register_redactions(obj, key_path=None,
             if last_key in whitelisted:
                 return
             elif any(bad in last_key for bad in bad_patterns):
-                schwab.LOG_REDACTOR.register(obj, '-'.join(key_path))
+                schwaby.LOG_REDACTOR.register(obj, '-'.join(key_path))
 
 
 def enable_bug_report_logging():
@@ -144,9 +144,9 @@ def _enable_bug_report_logging(output=None, loggers=None):
 
     if loggers is None:
         loggers = (
-            schwab.auth.get_logger(),
-            schwab.client.base.get_logger(),
-            schwab.streaming.get_logger(),
+            schwaby.auth.get_logger(),
+            schwaby.client.base.get_logger(),
+            schwaby.streaming.get_logger(),
             get_logger())
 
     class RecordingHandler(logging.Handler):
@@ -178,7 +178,7 @@ def _enable_bug_report_logging(output=None, loggers=None):
             print(file=out)
 
             for msg in handler.messages:
-                msg = schwab.LOG_REDACTOR.redact(msg)
+                msg = schwaby.LOG_REDACTOR.redact(msg)
                 print(msg, file=out)
         except (ValueError, OSError):
             # The stream is gone. Closed before the interpreter shut down
@@ -190,6 +190,6 @@ def _enable_bug_report_logging(output=None, loggers=None):
             pass
     atexit.register(write_logs)
 
-    get_logger().debug('schwab-api version %s', schwab.__version__)
+    get_logger().debug('schwab-api version %s', schwaby.__version__)
 
     return write_logs

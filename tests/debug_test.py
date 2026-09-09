@@ -2,10 +2,10 @@ import atexit
 import io
 import json
 import logging
-import schwab
+import schwaby
 import unittest
 
-from schwab.client import Client
+from schwaby.client import Client
 from .utils import MockResponse, no_duplicates
 from unittest.mock import Mock, patch
 
@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 class RedactorTest(unittest.TestCase):
 
     def setUp(self):
-        self.redactor = schwab.debug.LogRedactor()
+        self.redactor = schwaby.debug.LogRedactor()
 
     @no_duplicates
     def test_no_redactions(self):
@@ -51,28 +51,28 @@ class RegisterRedactionsTest(unittest.TestCase):
     def setUp(self):
         self.captured = io.StringIO()
         self.logger = logging.getLogger('test')
-        self.dump_logs = schwab.debug._enable_bug_report_logging(
+        self.dump_logs = schwaby.debug._enable_bug_report_logging(
             output=self.captured, loggers=[self.logger])
-        schwab.LOG_REDACTOR = schwab.debug.LogRedactor()
+        schwaby.LOG_REDACTOR = schwaby.debug.LogRedactor()
 
     @no_duplicates
     def test_empty_string(self):
-        schwab.debug.register_redactions('')
+        schwaby.debug.register_redactions('')
 
     @no_duplicates
     def test_empty_dict(self):
-        schwab.debug.register_redactions({})
+        schwaby.debug.register_redactions({})
 
     @no_duplicates
     def test_empty_list(self):
-        schwab.debug.register_redactions([])
+        schwaby.debug.register_redactions([])
 
     @no_duplicates
     def test_dict(self):
-        schwab.debug.register_redactions(
+        schwaby.debug.register_redactions(
             {'BadNumber': '100001'},
             bad_patterns=['bad'])
-        schwab.debug.register_redactions(
+        schwaby.debug.register_redactions(
             {'OtherBadNumber': '200002'},
             bad_patterns=['bad'])
 
@@ -87,7 +87,7 @@ class RegisterRedactionsTest(unittest.TestCase):
 
     @no_duplicates
     def test_list_of_dict(self):
-        schwab.debug.register_redactions(
+        schwaby.debug.register_redactions(
             [{'GoodNumber': '900009'},
              {'BadNumber': '100001'},
              {'OtherBadNumber': '200002'}],
@@ -106,7 +106,7 @@ class RegisterRedactionsTest(unittest.TestCase):
 
     @no_duplicates
     def test_whitelist(self):
-        schwab.debug.register_redactions(
+        schwaby.debug.register_redactions(
             [{'GoodNumber': '900009'},
              {'BadNumber': '100001'},
              {'OtherBadNumber': '200002'}],
@@ -130,7 +130,7 @@ class RegisterRedactionsTest(unittest.TestCase):
         # a user is least likely to want in a bug report they paste into a
         # public issue. The default patterns were inherited from an API which
         # called them accountId and displayName.
-        schwab.debug.register_redactions({
+        schwaby.debug.register_redactions({
             'accounts': [{'accountNumber': '12345678',
                           'hashValue': 'ABCDEF0123456789'}]})
 
@@ -147,7 +147,7 @@ class RegisterRedactionsTest(unittest.TestCase):
         # anywhere they appear, so a pattern which matches short or common
         # values corrupts the rest of the log. Balances, colours and account
         # types must not be caught.
-        schwab.debug.register_redactions({
+        schwaby.debug.register_redactions({
             'securitiesAccount': {
                 'accountNumber': '12345678',
                 'type': 'MARGIN',
@@ -163,39 +163,39 @@ class RegisterRedactionsTest(unittest.TestCase):
         self.assertIn('Green', logged)
 
     @no_duplicates
-    @patch('schwab.debug.register_redactions', new_callable=Mock)
+    @patch('schwaby.debug.register_redactions', new_callable=Mock)
     def test_register_from_request_success(self, register_redactions):
         resp = MockResponse({'success': 1}, 200)
-        schwab.debug.register_redactions_from_response(resp)
+        schwaby.debug.register_redactions_from_response(resp)
         register_redactions.assert_called_with({'success': 1})
 
     @no_duplicates
-    @patch('schwab.debug.register_redactions', new_callable=Mock)
+    @patch('schwaby.debug.register_redactions', new_callable=Mock)
     def test_register_from_request_not_okay(self, register_redactions):
         resp = MockResponse({'success': 1}, 403)
-        schwab.debug.register_redactions_from_response(resp)
+        schwaby.debug.register_redactions_from_response(resp)
         register_redactions.assert_not_called()
 
     @no_duplicates
-    @patch('schwab.debug._COLLECT_RESPONSE_REDACTIONS', False)
-    @patch('schwab.debug.register_redactions', new_callable=Mock)
+    @patch('schwaby.debug._COLLECT_RESPONSE_REDACTIONS', False)
+    @patch('schwaby.debug.register_redactions', new_callable=Mock)
     def test_register_from_request_does_nothing_when_not_collecting(
             self, register_redactions):
         # Walking every response is only worth paying for when the logs are
         # going to be shared, which is what enable_bug_report_logging signals.
         resp = MockResponse({'success': 1}, 200)
-        schwab.debug.register_redactions_from_response(resp)
+        schwaby.debug.register_redactions_from_response(resp)
         register_redactions.assert_not_called()
 
     @no_duplicates
-    @patch('schwab.debug.register_redactions', new_callable=Mock)
+    @patch('schwaby.debug.register_redactions', new_callable=Mock)
     def test_register_unparseable_json(self, register_redactions):
         class MR(MockResponse):
             def json(self):
                 raise json.decoder.JSONDecodeError('e243rschwabgew', '', 0)
 
         resp = MR({'success': 1}, 200)
-        schwab.debug.register_redactions_from_response(resp)
+        schwaby.debug.register_redactions_from_response(resp)
         register_redactions.assert_not_called()
 
 class EnableDebugLoggingTest(unittest.TestCase):
@@ -204,7 +204,7 @@ class EnableDebugLoggingTest(unittest.TestCase):
     @patch('logging.Logger.addHandler')
     def test_enable_doesnt_throw_exceptions(self, _, __):
         try:
-            schwab.debug.enable_bug_report_logging()
+            schwaby.debug.enable_bug_report_logging()
         except AttributeError:
             self.fail("debug.enable_bug_report_logging() raised AttributeError unexpectedly")
 
@@ -214,7 +214,7 @@ class EnableDebugLoggingTest(unittest.TestCase):
         # is whatever sys.stderr is then -- not whatever it happened to be when
         # this module was imported.
         replacement = io.StringIO()
-        dump_logs = schwab.debug._enable_bug_report_logging(
+        dump_logs = schwaby.debug._enable_bug_report_logging(
                 loggers=[logging.getLogger('test-late-binding')])
         self.addCleanup(atexit.unregister, dump_logs)
         logging.getLogger('test-late-binding').info('a line worth reporting')
@@ -234,7 +234,7 @@ class EnableDebugLoggingTest(unittest.TestCase):
             def write(self, s):
                 raise BrokenPipeError(32, 'Broken pipe')
 
-        dump_logs = schwab.debug._enable_bug_report_logging(
+        dump_logs = schwaby.debug._enable_bug_report_logging(
                 output=BrokenPipe(),
                 loggers=[logging.getLogger('test-broken-pipe')])
         self.addCleanup(atexit.unregister, dump_logs)
@@ -246,7 +246,7 @@ class EnableDebugLoggingTest(unittest.TestCase):
         # An application which replaced sys.stderr and then closed it should
         # not have a traceback out of an atexit handler as its last output.
         closed = io.StringIO()
-        dump_logs = schwab.debug._enable_bug_report_logging(
+        dump_logs = schwaby.debug._enable_bug_report_logging(
                 loggers=[logging.getLogger('test-closed-stream')])
         self.addCleanup(atexit.unregister, dump_logs)
         closed.close()
@@ -262,10 +262,10 @@ class ClientRedactionWiringTest(unittest.TestCase):
 
     @no_duplicates
     def test_clients_use_the_real_redactor(self):
-        from schwab.client import asynchronous, synchronous
+        from schwaby.client import asynchronous, synchronous
 
         for module in (synchronous, asynchronous):
             self.assertIs(
                     module.register_redactions_from_response,
-                    schwab.debug.register_redactions_from_response,
+                    schwaby.debug.register_redactions_from_response,
                     '{} does not use the real redactor'.format(module.__name__))

@@ -12,10 +12,10 @@ import inspect
 import json
 import logging
 import os
-import schwab
+import schwaby
 import warnings
 
-from schwab.orders.generic import OrderBuilder
+from schwaby.orders.generic import OrderBuilder
 
 from ..utils import EnumEnforcer, TokenRefreshError
 
@@ -48,7 +48,7 @@ class BaseClient(EnumEnforcer):
         self.logger = get_logger()
         self.request_number = 0
 
-        schwab.LOG_REDACTOR.register(api_key, 'API_KEY')
+        schwaby.LOG_REDACTOR.register(api_key, 'API_KEY')
 
         self.token_metadata = token_metadata
 
@@ -513,7 +513,7 @@ class BaseClient(EnumEnforcer):
     def place_order(self, account_hash, order_spec):
         '''Place an order for a specific account. If order creation was
         successful, the response will contain the ID of the generated order. See
-        :meth:`schwab.utils.Utils.extract_order_id` for more details. Note unlike
+        :meth:`schwaby.utils.Utils.extract_order_id` for more details. Note unlike
         most methods in this library, responses for successful calls to this
         method typically do not contain ``json()`` data, and attempting to
         extract it will likely result in an exception.'''
@@ -1290,7 +1290,7 @@ class BaseClient(EnumEnforcer):
 
           The streaming screener does honour both. If you need a ranking other
           than volume, or a time-resolved bucket, use
-          :meth:`~schwab.streaming.StreamClient.screener_equity_subs`; a
+          :meth:`~schwaby.streaming.StreamClient.screener_equity_subs`; a
           subscription at frequency ``0`` reproduces this endpoint's output.
           See :ref:`screener`.
 

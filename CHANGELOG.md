@@ -14,6 +14,63 @@ current model.
 
 ---
 
+## 4.0.0
+
+**The package you import is now `schwaby`, not `schwab`.**
+
+```python
+import schwaby                      # was: import schwab
+from schwaby.auth import easy_client
+```
+
+Nothing else changed. Every method, argument, enum and return value is what
+3.0.3 shipped; the only edit to any of them is the name at the front of the
+import line. A project-wide find and replace of `schwab` with `schwaby` in
+import statements is the whole migration.
+
+### Why
+
+The distribution has been `schwaby` since 2.6.0 while the package stayed
+`schwab` — the same directory `schwab-py` ships. That is what made the two
+impossible to install together: `pip` does not know they are the same project,
+so installing one over the other left both registered and both claiming the
+same files, and `pip uninstall schwab-py` afterwards deleted the shared files
+and destroyed the install.
+
+Every workaround for that was a workaround for the shared name:
+
+- an import-time check that scanned `sys.path` to detect the collision, which
+  grew to 203 of the 224 lines in `__init__.py`
+- 17 tests and 15 red-proof cases holding it in place
+- a `danger` block in the streaming docs, an install-order caveat in
+  getting-started, and an uninstall-first instruction in the README
+- 3.0.2 spent entirely on reworking the check after it false-positived on this
+  repository's own source tree
+
+**Keeping `import schwab` working and removing the collision were mutually
+exclusive.** Any compatibility shim would still have to ship a directory called
+`schwab`, which is the collision. There was no version of this that gave both.
+
+All of it is gone. `__init__.py` is ten lines.
+
+### What this buys
+
+`schwaby` and `schwab-py` now install side by side and do not interfere. They
+ship different packages, so both can be present and you import whichever you
+mean — which also makes it possible to compare the two against one account,
+something that was not possible before.
+
+### Migrating
+
+Change the imports. There is no compatibility shim and there deliberately is
+not one: a package named `schwab` is the thing that collides, so shipping one
+to ease the transition would reintroduce exactly what this release removes.
+
+If you pin `schwaby<4` you keep 3.0.3, which continues to work and continues
+to collide.
+
+---
+
 ## 3.0.3
 
 Documentation only. No behaviour changed, and the library's code is

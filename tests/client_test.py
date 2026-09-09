@@ -12,10 +12,10 @@ import warnings
 from unittest.mock import ANY, MagicMock, Mock, patch
 
 from authlib.integrations.base_client.errors import OAuthError
-import schwab.client.base
-from schwab.client import AsyncClient, Client
-from schwab.orders.generic import OrderBuilder
-from schwab.utils import TokenRefreshError
+import schwaby.client.base
+from schwaby.client import AsyncClient, Client
+from schwaby.orders.generic import OrderBuilder
+from schwaby.utils import TokenRefreshError
 
 from .utils import AsyncMagicMock, ResyncProxy, no_duplicates
 
@@ -220,7 +220,7 @@ class _TestClient:
 
     # get_orders_for_account
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_account_vanilla(self):
         self.client.get_orders_for_account(ACCOUNT_HASH)
         self.mock_session.get.assert_called_once_with(
@@ -230,7 +230,7 @@ class _TestClient:
             })
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_account_from_not_datetime(self):
         with self.assertRaises(ValueError) as cm:
             self.client.get_orders_for_account(
@@ -241,7 +241,7 @@ class _TestClient:
                 "from_entered_datetime, got 'builtins.str'")
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_account_to_not_datetime(self):
         with self.assertRaises(ValueError) as cm:
             self.client.get_orders_for_account(
@@ -252,7 +252,7 @@ class _TestClient:
                 "to_entered_datetime, got 'builtins.str'")
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_account_max_results(self):
         self.client.get_orders_for_account(ACCOUNT_HASH, max_results=100)
         self.mock_session.get.assert_called_once_with(
@@ -263,7 +263,7 @@ class _TestClient:
             })
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_account_from_entered_datetime(self):
         self.client.get_orders_for_account(
                 ACCOUNT_HASH, from_entered_datetime=datetime.datetime(
@@ -275,7 +275,7 @@ class _TestClient:
             })
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_account_to_entered_datetime(self):
         self.client.get_orders_for_account(
                 ACCOUNT_HASH, to_entered_datetime=datetime.datetime(
@@ -287,7 +287,7 @@ class _TestClient:
             })
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_account_status(self):
         self.client.get_orders_for_account(
                 ACCOUNT_HASH, status=self.client_class.Order.Status.FILLED)
@@ -299,7 +299,7 @@ class _TestClient:
             })
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_account_multiple_statuses(self):
         with self.assertRaises(ValueError) as cm:
             self.client.get_orders_for_account(
@@ -311,7 +311,7 @@ class _TestClient:
                 str(cm.exception))
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_account_status_unchecked(self):
         self.client.set_enforce_enums(False)
         self.client.get_orders_for_account(ACCOUNT_HASH, status='NOT_A_STATUS')
@@ -325,7 +325,7 @@ class _TestClient:
 
     # get_orders_for_all_linked_accounts
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_all_linked_accounts_vanilla(self):
         self.client.get_orders_for_all_linked_accounts()
         self.mock_session.get.assert_called_once_with(
@@ -335,7 +335,7 @@ class _TestClient:
             })
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_all_linked_accounts_from_not_datetime(self):
         with self.assertRaises(ValueError) as cm:
             self.client.get_orders_for_all_linked_accounts(
@@ -346,7 +346,7 @@ class _TestClient:
                 "from_entered_datetime, got 'builtins.str'")
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_all_linked_accounts_to_not_datetime(self):
         with self.assertRaises(ValueError) as cm:
             self.client.get_orders_for_all_linked_accounts(
@@ -357,7 +357,7 @@ class _TestClient:
                 "to_entered_datetime, got 'builtins.str'")
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_all_linked_accounts_max_results(self):
         self.client.get_orders_for_all_linked_accounts(max_results=100)
         self.mock_session.get.assert_called_once_with(
@@ -368,7 +368,7 @@ class _TestClient:
             })
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_all_linked_accounts_from_entered_datetime(self):
         self.client.get_orders_for_all_linked_accounts(
                 from_entered_datetime=datetime.datetime(
@@ -380,7 +380,7 @@ class _TestClient:
             })
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_all_linked_accounts_to_entered_datetime(self):
         self.client.get_orders_for_all_linked_accounts(
                 to_entered_datetime=datetime.datetime(
@@ -392,7 +392,7 @@ class _TestClient:
             })
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_all_linked_accounts_status(self):
         self.client.get_orders_for_all_linked_accounts(
                 status=self.client_class.Order.Status.FILLED)
@@ -404,7 +404,7 @@ class _TestClient:
             })
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_all_linked_accounts_multiple_statuses(self):
         with self.assertRaises(ValueError) as cm:
             self.client.get_orders_for_all_linked_accounts(
@@ -415,7 +415,7 @@ class _TestClient:
                 str(cm.exception))
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_all_linked_accounts_status_unchecked(self):
         self.client.set_enforce_enums(False)
         self.client.get_orders_for_all_linked_accounts(status='NOT_A_STATUS')
@@ -503,7 +503,7 @@ class _TestClient:
     # get_transactions
 
     
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_transactions(self):
         self.client.get_transactions(ACCOUNT_HASH)
         self.mock_session.get.assert_called_once_with(
@@ -514,7 +514,7 @@ class _TestClient:
                 'endDate': NOW_DATETIME_ISO})
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_transactions_one_type(self):
         self.client.get_transactions(
                 ACCOUNT_HASH, 
@@ -527,7 +527,7 @@ class _TestClient:
                 'endDate': NOW_DATETIME_ISO})
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_transactions_type_list(self):
         self.client.get_transactions(
                 ACCOUNT_HASH, 
@@ -542,7 +542,7 @@ class _TestClient:
                 'endDate': NOW_DATETIME_ISO})
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_transactions_type_list_unchecked(self):
         self.client.set_enforce_enums(False)
         self.client.get_transactions(
@@ -555,7 +555,7 @@ class _TestClient:
                 'endDate': NOW_DATETIME_ISO})
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_transactions_symbol(self):
         self.client.get_transactions(ACCOUNT_HASH, symbol='AAPL')
         self.mock_session.get.assert_called_once_with(
@@ -567,7 +567,7 @@ class _TestClient:
                 'symbol': 'AAPL'})
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_transactions_symbol_start_date_as_datetime(self):
         self.client.get_transactions(
                 ACCOUNT_HASH, start_date=NOW_DATETIME)
@@ -579,7 +579,7 @@ class _TestClient:
                 'endDate': NOW_DATETIME_ISO})
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_transactions_symbol_start_date_as_date(self):
         self.client.get_transactions(
                 ACCOUNT_HASH, start_date=NOW_DATE)
@@ -591,7 +591,7 @@ class _TestClient:
                 'endDate': NOW_DATETIME_ISO})
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_transactions_symbol_end_date_as_datetime(self):
         self.client.get_transactions(
                 ACCOUNT_HASH,
@@ -605,7 +605,7 @@ class _TestClient:
                 'endDate': '2020-06-07T08:09:00Z'})
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_transactions_symbol_end_date_as_date(self):
         self.client.get_transactions(ACCOUNT_HASH, end_date=NOW_DATE)
         self.mock_session.get.assert_called_once_with(
@@ -1081,7 +1081,7 @@ class _TestClient:
     # been silently ignored. get_price_history's own docstring says period
     # "should not be provided if start_datetime and end_datetime".
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_price_history_helpers_omit_period_when_given_a_range(self):
         helpers = [name for name in dir(self.client)
                    if name.startswith('get_price_history_every')]
@@ -1103,7 +1103,7 @@ class _TestClient:
                 self.assertIn('startDate', params)
                 self.assertIn('endDate', params)
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_price_history_helpers_keep_period_without_a_range(self):
         # With no range asked for, the synthesized one spans decades and is not
         # something to request. period is what should describe the request.
@@ -1120,7 +1120,7 @@ class _TestClient:
 
     # get_price_history_every_minute
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_minute_vanilla(self):
         self.client.get_price_history_every_minute('AAPL')
         params = {
@@ -1139,7 +1139,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_minute_start_datetime(self):
         self.client.get_price_history_every_minute(
                 'AAPL', start_datetime=EARLIER_DATETIME)
@@ -1157,7 +1157,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_minute_end_datetime(self):
         self.client.get_price_history_every_minute(
                 'AAPL', end_datetime=EARLIER_DATETIME)
@@ -1175,7 +1175,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_minute_empty_extendedhours(self):
         self.client.get_price_history_every_minute(
             'AAPL', need_extended_hours_data=None)
@@ -1195,7 +1195,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_minute_extendedhours(self):
         self.client.get_price_history_every_minute(
             'AAPL', need_extended_hours_data=True)
@@ -1215,7 +1215,7 @@ class _TestClient:
             self.make_url('/marketdata/v1/pricehistory'),
             params=params)
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_minute_empty_previous_close(self):
         self.client.get_price_history_every_minute(
             'AAPL', need_previous_close=None)
@@ -1235,7 +1235,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_minute_previous_close(self):
         self.client.get_price_history_every_minute(
             'AAPL', need_previous_close=True)
@@ -1260,7 +1260,7 @@ class _TestClient:
     # get_price_history_every_five_minutes
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_five_minutes_vanilla(self):
         self.client.get_price_history_every_five_minutes('AAPL')
         params = {
@@ -1279,7 +1279,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_five_minutes_start_datetime(self):
         self.client.get_price_history_every_five_minutes(
                 'AAPL', start_datetime=EARLIER_DATETIME)
@@ -1297,7 +1297,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_five_minutes_end_datetime(self):
         self.client.get_price_history_every_five_minutes(
                 'AAPL', end_datetime=EARLIER_DATETIME)
@@ -1315,7 +1315,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_five_minutes_empty_extendedhours(self):
         self.client.get_price_history_every_five_minutes(
             'AAPL', need_extended_hours_data=None)
@@ -1335,7 +1335,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_five_minutes_extendedhours(self):
         self.client.get_price_history_every_five_minutes(
             'AAPL', need_extended_hours_data=True)
@@ -1355,7 +1355,7 @@ class _TestClient:
             self.make_url('/marketdata/v1/pricehistory'),
             params=params)
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_five_minutes_empty_previous_close(self):
         self.client.get_price_history_every_five_minutes(
             'AAPL', need_previous_close=None)
@@ -1375,7 +1375,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_five_minutes_previous_close(self):
         self.client.get_price_history_every_five_minutes(
             'AAPL', need_previous_close=True)
@@ -1399,7 +1399,7 @@ class _TestClient:
     # get_price_history_every_ten_minutes
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_ten_minutes_vanilla(self):
         self.client.get_price_history_every_ten_minutes('AAPL')
         params = {
@@ -1418,7 +1418,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_ten_minutes_start_datetime(self):
         self.client.get_price_history_every_ten_minutes(
                 'AAPL', start_datetime=EARLIER_DATETIME)
@@ -1436,7 +1436,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_ten_minutes_end_datetime(self):
         self.client.get_price_history_every_ten_minutes(
                 'AAPL', end_datetime=EARLIER_DATETIME)
@@ -1454,7 +1454,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_ten_minutes_empty_extendedhours(self):
         self.client.get_price_history_every_ten_minutes(
             'AAPL', need_extended_hours_data=None)
@@ -1474,7 +1474,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_ten_minutes_extendedhours(self):
         self.client.get_price_history_every_ten_minutes(
             'AAPL', need_extended_hours_data=True)
@@ -1494,7 +1494,7 @@ class _TestClient:
             self.make_url('/marketdata/v1/pricehistory'),
             params=params)
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_ten_minutes_empty_previous_close(self):
         self.client.get_price_history_every_ten_minutes(
             'AAPL', need_previous_close=None)
@@ -1514,7 +1514,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_ten_minutes_previous_close(self):
         self.client.get_price_history_every_ten_minutes(
             'AAPL', need_previous_close=True)
@@ -1538,7 +1538,7 @@ class _TestClient:
     # get_price_history_every_fifteen_minutes
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_fifteen_minutes_vanilla(self):
         self.client.get_price_history_every_fifteen_minutes('AAPL')
         params = {
@@ -1557,7 +1557,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_fifteen_minutes_start_datetime(self):
         self.client.get_price_history_every_fifteen_minutes(
                 'AAPL', start_datetime=EARLIER_DATETIME)
@@ -1575,7 +1575,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_fifteen_minutes_end_datetime(self):
         self.client.get_price_history_every_fifteen_minutes(
                 'AAPL', end_datetime=EARLIER_DATETIME)
@@ -1593,7 +1593,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_fifteen_minutes_empty_extendedhours(self):
         self.client.get_price_history_every_fifteen_minutes(
             'AAPL', need_extended_hours_data=None)
@@ -1613,7 +1613,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_fifteen_minutes_extendedhours(self):
         self.client.get_price_history_every_fifteen_minutes(
             'AAPL', need_extended_hours_data=True)
@@ -1633,7 +1633,7 @@ class _TestClient:
             self.make_url('/marketdata/v1/pricehistory'),
             params=params)
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_fifteen_minutes_empty_previous_close(self):
         self.client.get_price_history_every_fifteen_minutes(
             'AAPL', need_previous_close=None)
@@ -1653,7 +1653,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_fifteen_minutes_previous_close(self):
         self.client.get_price_history_every_fifteen_minutes(
             'AAPL', need_previous_close=True)
@@ -1677,7 +1677,7 @@ class _TestClient:
     # get_price_history_every_thirty_minutes
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_thirty_minutes_vanilla(self):
         self.client.get_price_history_every_thirty_minutes('AAPL')
         params = {
@@ -1696,7 +1696,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_thirty_minutes_start_datetime(self):
         self.client.get_price_history_every_thirty_minutes(
                 'AAPL', start_datetime=EARLIER_DATETIME)
@@ -1714,7 +1714,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_thirty_minutes_end_datetime(self):
         self.client.get_price_history_every_thirty_minutes(
                 'AAPL', end_datetime=EARLIER_DATETIME)
@@ -1732,7 +1732,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_thirty_minutes_empty_extendedhours(self):
         self.client.get_price_history_every_thirty_minutes(
             'AAPL', need_extended_hours_data=None)
@@ -1752,7 +1752,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_thirty_minutes_extendedhours(self):
         self.client.get_price_history_every_thirty_minutes(
             'AAPL', need_extended_hours_data=True)
@@ -1772,7 +1772,7 @@ class _TestClient:
             self.make_url('/marketdata/v1/pricehistory'),
             params=params)
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_thirty_minutes_empty_previous_close(self):
         self.client.get_price_history_every_thirty_minutes(
             'AAPL', need_previous_close=None)
@@ -1792,7 +1792,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_thirty_minutes_previous_close(self):
         self.client.get_price_history_every_thirty_minutes(
             'AAPL', need_previous_close=True)
@@ -1816,7 +1816,7 @@ class _TestClient:
     # get_price_history_every_day
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_day_vanilla(self):
         self.client.get_price_history_every_day('AAPL')
         params = {
@@ -1835,7 +1835,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_day_start_datetime(self):
         self.client.get_price_history_every_day(
                 'AAPL', start_datetime=EARLIER_DATETIME)
@@ -1853,7 +1853,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_day_end_datetime(self):
         self.client.get_price_history_every_day(
                 'AAPL', end_datetime=EARLIER_DATETIME)
@@ -1871,7 +1871,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_day_empty_extendedhours(self):
         self.client.get_price_history_every_day(
             'AAPL', need_extended_hours_data=None)
@@ -1891,7 +1891,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_day_extendedhours(self):
         self.client.get_price_history_every_day(
             'AAPL', need_extended_hours_data=True)
@@ -1911,7 +1911,7 @@ class _TestClient:
             self.make_url('/marketdata/v1/pricehistory'),
             params=params)
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_day_empty_previous_close(self):
         self.client.get_price_history_every_day(
             'AAPL', need_previous_close=None)
@@ -1931,7 +1931,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_day_previous_close(self):
         self.client.get_price_history_every_day(
             'AAPL', need_previous_close=True)
@@ -1955,7 +1955,7 @@ class _TestClient:
     # get_price_history_every_week
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_week_vanilla(self):
         self.client.get_price_history_every_week('AAPL')
         params = {
@@ -1974,7 +1974,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_week_start_datetime(self):
         self.client.get_price_history_every_week(
                 'AAPL', start_datetime=EARLIER_DATETIME)
@@ -1992,7 +1992,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_week_end_datetime(self):
         self.client.get_price_history_every_week(
                 'AAPL', end_datetime=EARLIER_DATETIME)
@@ -2010,7 +2010,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_week_empty_extendedhours(self):
         self.client.get_price_history_every_week(
             'AAPL', need_extended_hours_data=None)
@@ -2030,7 +2030,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_week_extendedhours(self):
         self.client.get_price_history_every_week(
             'AAPL', need_extended_hours_data=True)
@@ -2050,7 +2050,7 @@ class _TestClient:
             self.make_url('/marketdata/v1/pricehistory'),
             params=params)
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_week_empty_previous_close(self):
         self.client.get_price_history_every_week(
             'AAPL', need_previous_close=None)
@@ -2070,7 +2070,7 @@ class _TestClient:
             params=params)
 
 
-    @patch('schwab.client.base.datetime.datetime', mockdatetime)
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_price_history_every_week_previous_close(self):
         self.client.get_price_history_every_week(
             'AAPL', need_previous_close=True)
@@ -2402,17 +2402,17 @@ class _TestClient:
         library's own frame -- any root not covering base.py makes that frame
         foreign and the walk stops at once, whichever way the comparison is
         written. So build the layout on disk: symlink the package in as
-        'schwab', put 'schwabtools' beside it, and call from inside that.
+        'schwaby', put 'schwabtools' beside it, and call from inside that.
         """
         import os
         import subprocess
         import tempfile
 
         package = os.path.dirname(os.path.dirname(os.path.abspath(
-                schwab.client.base.__file__)))
+                schwaby.client.base.__file__)))
 
         with tempfile.TemporaryDirectory() as tmp:
-            os.symlink(package, os.path.join(tmp, 'schwab'))
+            os.symlink(package, os.path.join(tmp, 'schwaby'))
             sibling = os.path.join(tmp, 'schwabtools')
             os.mkdir(sibling)
 
@@ -2429,7 +2429,7 @@ class _TestClient:
             script = (
                 'import sys, warnings\n'
                 'sys.path.insert(0, {tmp!r})\n'
-                'from schwab.client import Client\n'
+                'from schwaby.client import Client\n'
                 'import schwabtools.caller as caller\n'
                 'class S:\n'
                 '    timeout = None\n'

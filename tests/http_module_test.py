@@ -28,9 +28,9 @@ import tempfile
 import types
 import unittest
 
-from schwab import auth, debug, streaming
-from schwab.orders import generic
-from schwab.orders.generic import OrderBuilder
+from schwaby import auth, debug, streaming
+from schwaby.orders import generic
+from schwaby.orders.generic import OrderBuilder
 
 from .utils import MockAsyncOAuthClient, MockOAuthClient, no_duplicates
 
@@ -164,7 +164,7 @@ class ConnectErrorSiblingsAreAbsorbedTest(unittest.TestCase):
         with patch.object(http, 'get') as mock_get:
             mock_get.side_effect = getattr(http, exception_name)('nope')
 
-            with patch('schwab.auth.SERVER_STARTUP_TIMEOUT', 0.3):
+            with patch('schwaby.auth.SERVER_STARTUP_TIMEOUT', 0.3):
                 with self.assertRaises(auth.RedirectServerExitedError):
                     auth.client_from_login_flow(
                             API_KEY, APP_SECRET,
@@ -179,11 +179,11 @@ class ConnectErrorSiblingsAreAbsorbedTest(unittest.TestCase):
                 f'{exception_name} and this test proved nothing')
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.input', MagicMock(return_value=''))
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
     def test_connect_error_is_absorbed(
             self, mock_webbrowser_get, async_session, sync_session, client):
         sync_session.return_value = sync_session
@@ -195,11 +195,11 @@ class ConnectErrorSiblingsAreAbsorbedTest(unittest.TestCase):
         self._drive_login_flow_until_the_wait_gives_up('ConnectError')
 
     @no_duplicates
-    @patch('schwab.auth.Client')
-    @patch('schwab.auth.OAuth2Client', new_callable=MockOAuthClient)
-    @patch('schwab.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
-    @patch('schwab.auth.webbrowser.get', new_callable=MagicMock)
-    @patch('schwab.auth.input', MagicMock(return_value=''))
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
     def test_connect_timeout_is_absorbed(
             self, mock_webbrowser_get, async_session, sync_session, client):
         sync_session.return_value = sync_session

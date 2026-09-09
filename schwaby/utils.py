@@ -344,7 +344,7 @@ class Utils(EnumEnforcer):
 
     def extract_order_id(self, place_order_response):
         '''Extracts the order ID from a response returned by
-        :meth:`Client.place_order() <schwab.client.Client.place_order>`.
+        :meth:`Client.place_order() <schwaby.client.Client.place_order>`.
 
         Every outcome other than success raises, and each one raises something
         different, because they call for different handling:
@@ -364,7 +364,7 @@ class Utils(EnumEnforcer):
 
         :param place_order_response: Response from
                                      :meth:`Client.place_order()
-                                     <schwab.client.Client.place_order>`.
+                                     <schwaby.client.Client.place_order>`.
         '''
         if place_order_response.is_error:
             raise UnsuccessfulOrderException(

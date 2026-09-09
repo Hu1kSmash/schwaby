@@ -1,4 +1,4 @@
-.. py:module:: schwab.orders
+.. py:module:: schwaby.orders
 
 .. _order_templates:
 
@@ -43,8 +43,8 @@ any time in the next six months:
 
 .. code-block:: python
 
-  from schwab.orders.equities import equity_buy_limit
-  from schwab.orders.common import Duration, Session
+  from schwaby.orders.equities import equity_buy_limit
+  from schwaby.orders.common import Duration, Session
 
   client = ... # See "Authentication and Client Creation"
 
@@ -66,53 +66,53 @@ Equity Templates
 Buy orders
 ++++++++++
 
-.. autofunction:: schwab.orders.equities.equity_buy_market
-.. autofunction:: schwab.orders.equities.equity_buy_limit
-.. autofunction:: schwab.orders.equities.equity_buy_stop
-.. autofunction:: schwab.orders.equities.equity_buy_stop_limit
-.. autofunction:: schwab.orders.equities.equity_buy_trailing_stop
-.. autofunction:: schwab.orders.equities.equity_buy_trailing_stop_limit
-.. autofunction:: schwab.orders.equities.equity_buy_market_on_close
-.. autofunction:: schwab.orders.equities.equity_buy_limit_on_close
+.. autofunction:: schwaby.orders.equities.equity_buy_market
+.. autofunction:: schwaby.orders.equities.equity_buy_limit
+.. autofunction:: schwaby.orders.equities.equity_buy_stop
+.. autofunction:: schwaby.orders.equities.equity_buy_stop_limit
+.. autofunction:: schwaby.orders.equities.equity_buy_trailing_stop
+.. autofunction:: schwaby.orders.equities.equity_buy_trailing_stop_limit
+.. autofunction:: schwaby.orders.equities.equity_buy_market_on_close
+.. autofunction:: schwaby.orders.equities.equity_buy_limit_on_close
 
 +++++++++++
 Sell orders
 +++++++++++
 
-.. autofunction:: schwab.orders.equities.equity_sell_market
-.. autofunction:: schwab.orders.equities.equity_sell_limit
-.. autofunction:: schwab.orders.equities.equity_sell_stop
-.. autofunction:: schwab.orders.equities.equity_sell_stop_limit
-.. autofunction:: schwab.orders.equities.equity_sell_trailing_stop
-.. autofunction:: schwab.orders.equities.equity_sell_trailing_stop_limit
-.. autofunction:: schwab.orders.equities.equity_sell_market_on_close
-.. autofunction:: schwab.orders.equities.equity_sell_limit_on_close
+.. autofunction:: schwaby.orders.equities.equity_sell_market
+.. autofunction:: schwaby.orders.equities.equity_sell_limit
+.. autofunction:: schwaby.orders.equities.equity_sell_stop
+.. autofunction:: schwaby.orders.equities.equity_sell_stop_limit
+.. autofunction:: schwaby.orders.equities.equity_sell_trailing_stop
+.. autofunction:: schwaby.orders.equities.equity_sell_trailing_stop_limit
+.. autofunction:: schwaby.orders.equities.equity_sell_market_on_close
+.. autofunction:: schwaby.orders.equities.equity_sell_limit_on_close
 
 +++++++++++++++++
 Sell short orders
 +++++++++++++++++
 
-.. autofunction:: schwab.orders.equities.equity_sell_short_market
-.. autofunction:: schwab.orders.equities.equity_sell_short_limit
-.. autofunction:: schwab.orders.equities.equity_sell_short_stop
-.. autofunction:: schwab.orders.equities.equity_sell_short_stop_limit
-.. autofunction:: schwab.orders.equities.equity_sell_short_trailing_stop
-.. autofunction:: schwab.orders.equities.equity_sell_short_trailing_stop_limit
-.. autofunction:: schwab.orders.equities.equity_sell_short_market_on_close
-.. autofunction:: schwab.orders.equities.equity_sell_short_limit_on_close
+.. autofunction:: schwaby.orders.equities.equity_sell_short_market
+.. autofunction:: schwaby.orders.equities.equity_sell_short_limit
+.. autofunction:: schwaby.orders.equities.equity_sell_short_stop
+.. autofunction:: schwaby.orders.equities.equity_sell_short_stop_limit
+.. autofunction:: schwaby.orders.equities.equity_sell_short_trailing_stop
+.. autofunction:: schwaby.orders.equities.equity_sell_short_trailing_stop_limit
+.. autofunction:: schwaby.orders.equities.equity_sell_short_market_on_close
+.. autofunction:: schwaby.orders.equities.equity_sell_short_limit_on_close
 
 +++++++++++++++++++
 Buy to cover orders
 +++++++++++++++++++
 
-.. autofunction:: schwab.orders.equities.equity_buy_to_cover_market
-.. autofunction:: schwab.orders.equities.equity_buy_to_cover_limit
-.. autofunction:: schwab.orders.equities.equity_buy_to_cover_stop
-.. autofunction:: schwab.orders.equities.equity_buy_to_cover_stop_limit
-.. autofunction:: schwab.orders.equities.equity_buy_to_cover_trailing_stop
-.. autofunction:: schwab.orders.equities.equity_buy_to_cover_trailing_stop_limit
-.. autofunction:: schwab.orders.equities.equity_buy_to_cover_market_on_close
-.. autofunction:: schwab.orders.equities.equity_buy_to_cover_limit_on_close
+.. autofunction:: schwaby.orders.equities.equity_buy_to_cover_market
+.. autofunction:: schwaby.orders.equities.equity_buy_to_cover_limit
+.. autofunction:: schwaby.orders.equities.equity_buy_to_cover_stop
+.. autofunction:: schwaby.orders.equities.equity_buy_to_cover_stop_limit
+.. autofunction:: schwaby.orders.equities.equity_buy_to_cover_trailing_stop
+.. autofunction:: schwaby.orders.equities.equity_buy_to_cover_trailing_stop_limit
+.. autofunction:: schwaby.orders.equities.equity_buy_to_cover_market_on_close
+.. autofunction:: schwaby.orders.equities.equity_buy_to_cover_limit_on_close
 
 
 -----------------
@@ -150,20 +150,20 @@ and does not validate whether the symbol actually represents a traded option:
 
   import datetime
 
-  from schwab.orders.options import OptionSymbol
+  from schwaby.orders.options import OptionSymbol
 
   symbol = OptionSymbol(
       'TSLA', datetime.date(year=2020, month=11, day=20), 'P', '1360').build()
 
-.. autoclass:: schwab.orders.options.OptionSymbol
+.. autoclass:: schwaby.orders.options.OptionSymbol
    :special-members:
 
-.. automethod:: schwab.orders.options.OptionSymbol.build
+.. automethod:: schwaby.orders.options.OptionSymbol.build
 
 The reverse is also available: hand it a symbol Schwab gave you and get the
 parts back.
 
-.. automethod:: schwab.orders.options.OptionSymbol.parse_symbol
+.. automethod:: schwaby.orders.options.OptionSymbol.parse_symbol
 
 
 ++++++++++++++
@@ -172,14 +172,14 @@ Single Options
 
 Buy and sell single options.
 
-.. autofunction:: schwab.orders.options.option_buy_to_open_market
-.. autofunction:: schwab.orders.options.option_buy_to_open_limit
-.. autofunction:: schwab.orders.options.option_sell_to_open_market
-.. autofunction:: schwab.orders.options.option_sell_to_open_limit
-.. autofunction:: schwab.orders.options.option_buy_to_close_market
-.. autofunction:: schwab.orders.options.option_buy_to_close_limit
-.. autofunction:: schwab.orders.options.option_sell_to_close_market
-.. autofunction:: schwab.orders.options.option_sell_to_close_limit
+.. autofunction:: schwaby.orders.options.option_buy_to_open_market
+.. autofunction:: schwaby.orders.options.option_buy_to_open_limit
+.. autofunction:: schwaby.orders.options.option_sell_to_open_market
+.. autofunction:: schwaby.orders.options.option_sell_to_open_limit
+.. autofunction:: schwaby.orders.options.option_buy_to_close_market
+.. autofunction:: schwaby.orders.options.option_buy_to_close_limit
+.. autofunction:: schwaby.orders.options.option_sell_to_close_market
+.. autofunction:: schwaby.orders.options.option_sell_to_close_limit
 
 
 .. _vertical_spreads:
@@ -210,20 +210,20 @@ symbols by consulting the return value of the :ref:`option_chain` client call.
 Call Verticals
 ~~~~~~~~~~~~~~
 
-.. autofunction:: schwab.orders.options.bull_call_vertical_open
-.. autofunction:: schwab.orders.options.bull_call_vertical_close
-.. autofunction:: schwab.orders.options.bear_call_vertical_open
-.. autofunction:: schwab.orders.options.bear_call_vertical_close
+.. autofunction:: schwaby.orders.options.bull_call_vertical_open
+.. autofunction:: schwaby.orders.options.bull_call_vertical_close
+.. autofunction:: schwaby.orders.options.bear_call_vertical_open
+.. autofunction:: schwaby.orders.options.bear_call_vertical_close
 
 
 ~~~~~~~~~~~~~
 Put Verticals
 ~~~~~~~~~~~~~
 
-.. autofunction:: schwab.orders.options.bull_put_vertical_open
-.. autofunction:: schwab.orders.options.bull_put_vertical_close
-.. autofunction:: schwab.orders.options.bear_put_vertical_open
-.. autofunction:: schwab.orders.options.bear_put_vertical_close
+.. autofunction:: schwaby.orders.options.bull_put_vertical_open
+.. autofunction:: schwaby.orders.options.bull_put_vertical_close
+.. autofunction:: schwaby.orders.options.bear_put_vertical_open
+.. autofunction:: schwaby.orders.options.bear_put_vertical_close
 
 
 ---------------
@@ -240,8 +240,8 @@ Pass the ``OrderBuilder`` objects themselves, unbuilt and unplaced:
 
 .. code-block:: python
 
-  from schwab.orders.common import first_triggers_second
-  from schwab.orders.equities import equity_buy_limit, equity_sell_limit
+  from schwaby.orders.common import first_triggers_second
+  from schwaby.orders.equities import equity_buy_limit, equity_sell_limit
 
   c.place_order(
       account_hash,
@@ -267,5 +267,5 @@ independently, with none of the trigger relationship you wanted. An
 ``OrderBuilder`` describes an order without sending it, which is what makes
 the composite possible.
 
-.. autofunction:: schwab.orders.common.one_cancels_other
-.. autofunction:: schwab.orders.common.first_triggers_second
+.. autofunction:: schwaby.orders.common.one_cancels_other
+.. autofunction:: schwaby.orders.common.first_triggers_second

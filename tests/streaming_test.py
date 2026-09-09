@@ -1,4 +1,4 @@
-import schwab
+import schwaby
 import urllib.parse
 import asyncio
 import contextlib
@@ -13,7 +13,7 @@ from .utils import (
         TESTDATA)
 from unittest.mock import ANY, AsyncMock, call, MagicMock, Mock, patch
 from unittest import IsolatedAsyncioTestCase
-from schwab import streaming
+from schwaby import streaming
 
 StreamClient = streaming.StreamClient
 
@@ -135,7 +135,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # Custom JSON Decoder
 
 
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_default_parser_invalid_message(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -145,17 +145,17 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         msg = ('Failed to parse message. This often happens with ' +
                'unknown symbols or other error conditions. Full ' +
                'message text:')
-        with self.assertRaisesRegex(schwab.streaming.UnparsableMessage, msg):
+        with self.assertRaisesRegex(schwaby.streaming.UnparsableMessage, msg):
             await self.client.level_one_equity_subs(['GOOG', 'MSFT'])
 
 
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_custom_parser_invalid_message(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
         socket.recv.side_effect = ['invalid json']
 
-        class CustomJsonDecoder(schwab.contrib.util.StreamJsonDecoder):
+        class CustomJsonDecoder(schwaby.contrib.util.StreamJsonDecoder):
             def decode_json_string(_, raw):
                 self.assertEqual(raw, 'invalid json')
                 return self.success_response(1, 'LEVELONE_EQUITIES', 'SUBS')
@@ -164,7 +164,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await self.client.level_one_equity_subs(['GOOG', 'MSFT'])
 
 
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_custom_parser_wrong_type(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -179,7 +179,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # Login
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_single_account_success(self, ws_connect):
         preferences = account_preferences()
         preferences['accounts'].clear()
@@ -214,7 +214,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_single_account_success_async(self, ws_connect):
         '''
         Same as test_login_single_account_success except the underlying client 
@@ -255,7 +255,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_bad_response(self, ws_connect):
         preferences = account_preferences()
         preferences['accounts'].clear()
@@ -270,12 +270,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['msg'] = 'failed for some reason'
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.login()
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_ssl_context(self, ws_connect):
         self.client = StreamClient(self.http_client, ssl_context='ssl_context')
 
@@ -293,7 +293,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_websocket_connect_args(self, ws_connect):
         self.client = StreamClient(self.http_client, ssl_context='ssl_context')
 
@@ -311,7 +311,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_websocket_connect_args_extra_headers_refused(
             self, ws_connect):
         # This used to be translated to additional_headers with a
@@ -333,7 +333,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_does_not_mutate_the_callers_connect_args(
             self, ws_connect):
         # login adds `ssl` to these before handing them to websockets. The
@@ -362,7 +362,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_websocket_connect_args_both_header_names(
             self, ws_connect):
         # Supplying the new name alongside the old one does not rescue the old
@@ -392,7 +392,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_websocket_connect_args_removed(self, ws_connect):
         self.http_client.get_user_preferences.return_value = MockResponse(
             account_preferences(), 200)
@@ -408,7 +408,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_websocket_connect_args_unaffected(self, ws_connect):
         self.http_client.get_user_preferences.return_value = MockResponse(
             account_preferences(), 200)
@@ -428,7 +428,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_unexpected_request_id(self, ws_connect):
         preferences = account_preferences()
         preferences['accounts'].clear()
@@ -443,13 +443,13 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['requestid'] = 9999
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaisesRegex(schwab.streaming.UnexpectedResponse,
+        with self.assertRaisesRegex(schwaby.streaming.UnexpectedResponse,
                                     'unexpected requestid: 9999'):
             await self.client.login()
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_unexpected_service(self, ws_connect):
         preferences = account_preferences()
         preferences['accounts'].clear()
@@ -463,13 +463,13 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response = self.success_response(0, 'NOT_ADMIN', 'LOGIN')
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaisesRegex(schwab.streaming.UnexpectedResponse,
+        with self.assertRaisesRegex(schwaby.streaming.UnexpectedResponse,
                                     'unexpected service: NOT_ADMIN'):
             await self.client.login()
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_unexpected_command(self, ws_connect):
         preferences = account_preferences()
         preferences['accounts'].clear()
@@ -483,7 +483,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response = self.success_response(0, 'ADMIN', 'NOT_LOGIN')
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaisesRegex(schwab.streaming.UnexpectedResponse,
+        with self.assertRaisesRegex(schwaby.streaming.UnexpectedResponse,
                                     'unexpected command: NOT_LOGIN'):
             await self.client.login()
 
@@ -492,7 +492,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # Logout
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_logout_success(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -514,7 +514,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_logout_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -522,11 +522,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 9
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.logout()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_logout_closes_socket(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -539,7 +539,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIsNone(self.client._socket)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_logout_closes_socket_even_when_rejected(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -549,14 +549,14 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         # The stream is finished either way, so a rejected logout must not
         # leave the connection open.
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.logout()
 
         socket.close.assert_awaited_once()
         self.assertIsNone(self.client._socket)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_close(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -570,7 +570,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.close.assert_awaited_once()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_logout_close_failure_does_not_mask_logout_error(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -584,7 +584,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         # Closing is cleanup. If it fails it must not replace the error which
         # actually explains what went wrong.
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.logout()
 
         self.client.logger.exception.assert_called_once()
@@ -596,7 +596,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIsNone(self.client._socket)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_async_context_manager_closes(self, ws_connect):
         async with self.client as c:
             socket = await self.login_and_get_socket(ws_connect)
@@ -606,7 +606,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIsNone(self.client._socket)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_response_timeout(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
         self.client._response_timeout = 0.05
@@ -620,7 +620,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         socket.recv.side_effect = never_responds
 
-        with self.assertRaises(schwab.streaming.ResponseTimeoutError) as cm:
+        with self.assertRaises(schwaby.streaming.ResponseTimeoutError) as cm:
             await self.client.account_activity_sub()
 
         self.assertEqual(cm.exception.service, 'ACCT_ACTIVITY')
@@ -632,7 +632,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertFalse(self.client._request_lock.locked())
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_response_timeout_disabled(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
         self.client._response_timeout = None
@@ -648,7 +648,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertFalse(self.client._request_lock.locked())
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_subscribe_does_not_block_behind_handle_message(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -688,7 +688,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await asyncio.wait_for(listener, timeout=5)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_messages_are_dispatched_in_arrival_order(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -735,7 +735,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(['FIRST', 'SECOND'], seen)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_cancelling_a_request_does_not_wedge_the_client(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -781,7 +781,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await asyncio.wait_for(again, timeout=5)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_read_failure_fails_a_waiting_request(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -810,7 +810,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # ACCT_ACTIVITY
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_account_activity_subs_success(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -834,7 +834,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_handler_exception_does_not_stop_other_handlers(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -860,7 +860,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         succeeding_handler.assert_called_once()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_async_handler_exception_is_reported(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -893,7 +893,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(len(self.client._handler_tasks), 0)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_unparsable_message_shape_does_not_propagate(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -917,7 +917,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         handler.assert_not_called()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_notify_without_service_does_not_propagate(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -934,7 +934,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertNotIn(None, self.client._handlers)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_account_activity_unsubs_success(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -992,7 +992,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.send.assert_has_awaits(send_awaited, any_order=False)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_account_activity_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1000,11 +1000,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.account_activity_sub()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_account_activity_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1012,11 +1012,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.account_activity_unsubs()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_account_activity_handler(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1073,7 +1073,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # CHART_EQUITY
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_equity_subs_and_add_success(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1118,7 +1118,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_equity_unsubs_success(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1178,7 +1178,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_equity_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1186,11 +1186,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.chart_equity_subs(['GOOG', 'MSFT'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_equity_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1198,11 +1198,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.chart_equity_unsubs(['GOOG', 'MSFT'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_equity_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1216,11 +1216,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         await self.client.chart_equity_subs(['GOOG', 'MSFT'])
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.chart_equity_add(['INTC'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_equity_handler(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1308,7 +1308,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # CHART_FUTURES
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_futures_subs_and_add_success(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1353,7 +1353,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_futures_unsubs_success(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1408,7 +1408,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.send.assert_has_awaits(send_awaited, any_order=False)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_futures_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1416,11 +1416,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.chart_futures_subs(['/ES', '/CL'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_futures_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1428,11 +1428,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.chart_futures_unsubs(['/ES', '/CL'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_futures_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1446,11 +1446,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         await self.client.chart_futures_subs(['/ES', '/CL'])
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.chart_futures_add(['/ZC'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_chart_futures_handler(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1529,7 +1529,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # LEVELONE_EQUITIES
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_equity_subs_and_add_success_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1578,7 +1578,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_equity_unsubs_success(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1637,7 +1637,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_equity_subs_and_add_success_some_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1692,7 +1692,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_equity_subs_and_add_success_some_fields_no_symbol(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -1746,7 +1746,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_equity_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1754,11 +1754,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_equity_subs(['GOOG', 'MSFT'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_equity_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1766,11 +1766,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_equity_unsubs(['GOOG', 'MSFT'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_equity_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -1778,11 +1778,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_equity_add(['GOOG', 'MSFT'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_quote_handler(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2054,7 +2054,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # LEVELONE_OPTIONS
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_option_subs_and_add_success_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2106,7 +2106,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_option_unsubs_success_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2171,7 +2171,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.send.assert_has_awaits(send_awaited, any_order=False)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_option_subs_and_add_success_some_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2228,7 +2228,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_option_subs_and_add_success_some_fields_no_symbol(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -2284,7 +2284,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_option_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2292,12 +2292,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_option_subs(
                 ['GOOG  240517C00070000', 'MSFT  240517C00160000'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_option_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2305,12 +2305,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_option_unsubs(
                 ['GOOG  240517C00070000', 'MSFT  240517C00160000'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_option_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2318,11 +2318,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_option_add(['ADBE  240614C00500000'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_option_handler(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2607,7 +2607,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # LEVELONE_FUTURES
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_subs_and_add_success_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2655,7 +2655,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_unsubs_success_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2711,7 +2711,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.send.assert_has_awaits(send_awaited, any_order=False)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_subs_and_add_success_some_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2766,7 +2766,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_subs_and_add_success_some_fields_no_symbol(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -2820,7 +2820,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2828,11 +2828,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_futures_subs(['/ES', '/CL'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2840,11 +2840,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_futures_unsubs(['/ES', '/CL'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -2852,11 +2852,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_futures_add(['/NQ'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_handler(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3074,7 +3074,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # LEVELONE_FOREX
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_forex_subs_and_add_success_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3121,7 +3121,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_forex_unsubs_success_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3176,7 +3176,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.send.assert_has_awaits(send_awaited, any_order=False)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_forex_subs_and_add_success_some_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3231,7 +3231,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_forex_subs_and_add_success_some_fields_no_symbol(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -3285,7 +3285,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_forex_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3293,11 +3293,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_forex_subs(['EUR/USD', 'EUR/GBP'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_forex_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3305,11 +3305,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_forex_unsubs(['EUR/USD', 'EUR/GBP'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_forex_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3317,11 +3317,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_forex_add(['JPY/USD'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_forex_handler(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3492,7 +3492,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # LEVELONE_FUTURES_OPTIONS
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_options_subs_and_add_success_all_fields(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -3541,7 +3541,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_options_unsubs_success_all_fields(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -3603,7 +3603,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.send.assert_has_awaits(send_awaited, any_order=False)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_options_subs_and_add_success_some_fields(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -3661,7 +3661,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_options_subs_and_add_success_some_fields_no_symbol(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -3717,7 +3717,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_options_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3725,12 +3725,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_futures_options_subs(
                 ['./E3DM24P5490', './Q3DM24C19960'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_options_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3738,12 +3738,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_futures_options_unsubs(
                 ['./E3DM24P5490', './Q3DM24C19960'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_options_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3751,11 +3751,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_futures_options_add(['./OYMM24P38550'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_level_one_futures_options_handler(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3935,7 +3935,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # NYSE_BOOK
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nyse_book_subs_success_and_add_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -3980,7 +3980,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nyse_book_unsubs_success_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4040,7 +4040,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.send.assert_has_awaits(send_awaited, any_order=False)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nyse_book_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4048,11 +4048,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.nyse_book_subs(['GOOG', 'MSFT'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nyse_book_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4060,11 +4060,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.nyse_book_unsubs(['GOOG', 'MSFT'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nyse_book_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4072,14 +4072,14 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.nyse_book_add(['INTC'])
 
     ##########################################################################
     # NASDAQ_BOOK
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nasdaq_book_subs_success_and_add_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4124,7 +4124,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nasdaq_book_unsubs_success_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4184,7 +4184,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.send.assert_has_awaits(send_awaited, any_order=False)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nasdaq_book_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4192,11 +4192,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.nasdaq_book_subs(['GOOG', 'MSFT'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nasdaq_book_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4204,11 +4204,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.nasdaq_book_unsubs(['GOOG', 'MSFT'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nasdaq_book_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4216,14 +4216,14 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.nasdaq_book_add(['INTC'])
 
     ##########################################################################
     # OPTIONS_BOOK
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_options_book_subs_and_add_success_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4269,7 +4269,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_options_book_unsubs_success_all_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4331,7 +4331,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.send.assert_has_awaits(send_awaited, any_order=False)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_options_book_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4339,12 +4339,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.options_book_subs(
                 ['GOOG  240517C00070000', 'MSFT  240517C00160000'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_options_book_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4352,12 +4352,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.options_book_unsubs(
                 ['GOOG  240517C00070000', 'MSFT  240517C00160000'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_options_book_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4365,14 +4365,14 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.options_book_add(['ADBE  240614C00500000'])
 
     ##########################################################################
     # Common book handler functionality
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nyse_book_handler(self, ws_connect):
         async def subs():
             await self.client.nyse_book_subs(['GOOG', 'MSFT'])
@@ -4388,7 +4388,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             ws_connect, 'NYSE_BOOK', subs, register_handler)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_nasdaq_book_handler(self, ws_connect):
         async def subs():
             await self.client.nasdaq_book_subs(['GOOG', 'MSFT'])
@@ -4404,7 +4404,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             ws_connect, 'NASDAQ_BOOK', subs, register_handler)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_options_book_handler(self, ws_connect):
         async def subs():
             await self.client.options_book_subs(['GOOG', 'MSFT'])
@@ -4823,7 +4823,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # SCREENER_EQUITY
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_equity_subs_and_add_success_all_fields(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -4869,7 +4869,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_equity_unsubs_success_all_fields(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -4929,7 +4929,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.send.assert_has_awaits(send_awaited, any_order=False)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_equity_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4937,11 +4937,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.screener_equity_subs(['NYSE_VOLUME_5', 'NASDAQ_VOLUME_5'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_equity_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4949,11 +4949,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.screener_equity_unsubs(['NYSE_VOLUME_5', 'NASDAQ_VOLUME_5'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_equity_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -4961,11 +4961,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.screener_equity_add(['$DJI_TRADES_10'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_equity_handler(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -5437,7 +5437,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # SCREENER_OPTION
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_option_subs_and_add_success_all_fields(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -5483,7 +5483,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_option_unsubs_success_all_fields(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -5543,7 +5543,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.send.assert_has_awaits(send_awaited, any_order=False)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_option_subs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -5551,11 +5551,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.screener_option_subs(['OPTION_PUT_VOLUME_5', 'OPTION_CALL_VOLUME_5'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_option_unsubs_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -5563,11 +5563,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.screener_option_unsubs(['OPTION_PUT_VOLUME_5', 'OPTION_CALL_VOLUME_5'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_option_add_failure(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -5575,11 +5575,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         response['response'][0]['content']['code'] = 21
         socket.recv.side_effect = [json.dumps(response)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.screener_option_add(['OPTION_ALL_TRADES_10'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_screener_option_handler(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -6046,7 +6046,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # If this were to ever change, these tests will have to be revisited.
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_messages_received_while_awaiting_response(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -6069,7 +6069,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         async_handler.assert_called_once_with(stream_item['data'][0])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_messages_received_while_awaiting_failed_response_bad_code(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -6085,7 +6085,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             json.dumps(failed_add_response)]
 
         await self.client.chart_equity_subs(['GOOG,MSFT'])
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.chart_equity_add(['INTC'])
 
         handler = Mock()
@@ -6097,7 +6097,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         async_handler.assert_called_once_with(stream_item['data'][0])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_messages_received_while_receiving_unexpected_response(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -6113,7 +6113,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             json.dumps(failed_add_response)]
 
         await self.client.chart_equity_subs(['GOOG,MSFT'])
-        with self.assertRaises(schwab.streaming.UnexpectedResponse):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponse):
             await self.client.chart_equity_add(['INTC'])
 
         handler = Mock()
@@ -6125,7 +6125,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         async_handler.assert_called_once_with(stream_item['data'][0])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_notify_heartbeat_messages_ignored(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -6144,7 +6144,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         async_handler.assert_not_called()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_handle_message_orphaned_response_is_not_fatal(
             self, ws_connect):
         # A response with no request outstanding reaches handle_message
@@ -6161,7 +6161,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await self.client.chart_equity_subs(['GOOG,MSFT'])
 
         with self.assertLogs(
-                'schwab.streaming', level='INFO') as logged:
+                'schwaby.streaming', level='INFO') as logged:
             await self.client.handle_message()
 
         self.assertTrue(
@@ -6170,7 +6170,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                     logged.output))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_stale_response_does_not_poison_the_next_request(
             self, ws_connect):
         # A request which timed out is answered late. That answer must not be
@@ -6183,7 +6183,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         self.client._response_timeout = 0.05
         socket.recv.side_effect = asyncio.TimeoutError
-        with self.assertRaises(schwab.streaming.ResponseTimeoutError):
+        with self.assertRaises(schwaby.streaming.ResponseTimeoutError):
             await self.client.chart_equity_subs(['GOOG'])
 
         # The venue answers the abandoned request, then answers the next two
@@ -6198,7 +6198,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await self.client.chart_equity_subs(['AAPL'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_mismatched_service_still_fails_the_request(
             self, ws_connect):
         # A response carrying the right request id but the wrong service is
@@ -6208,11 +6208,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         wrong = self.success_response(1, 'LEVELONE_EQUITIES', 'SUBS')
         socket.recv.side_effect = [json.dumps(wrong)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponse):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponse):
             await self.client.chart_equity_subs(['GOOG'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_handle_message_orphaned_failure_is_a_warning(
             self, ws_connect):
         # A late acknowledgement of something that worked is routine. A late
@@ -6230,7 +6230,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         await self.client.chart_equity_subs(['GOOG,MSFT'])
 
-        with self.assertLogs('schwab.streaming', level='WARNING') as logged:
+        with self.assertLogs('schwaby.streaming', level='WARNING') as logged:
             await self.client.handle_message()
 
         self.assertTrue(
@@ -6239,7 +6239,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                     logged.output))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_handle_message_delivers_data_after_orphaned_response(
             self, ws_connect):
         # And the loop keeps working: a message arriving after the orphan is
@@ -6270,7 +6270,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         handler.assert_called_once()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_handle_message_unparsable_message(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -6286,11 +6286,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         await self.client.chart_equity_subs(['GOOG,MSFT'])
 
-        with self.assertRaises(schwab.streaming.UnparsableMessage):
+        with self.assertRaises(schwaby.streaming.UnparsableMessage):
             await self.client.handle_message()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_handle_message_multiple_handlers(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -6312,7 +6312,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         async_handler.assert_called_once_with(stream_item_1['data'][0])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_multiple_data_per_message(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -6339,19 +6339,19 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             [call(stream_item['data'][0]), call(stream_item['data'][1])])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_handle_message_without_login(self, ws_connect):
         with self.assertRaisesRegex(ValueError, '.*Socket not open.*'):
             await self.client.handle_message()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_subscribe_without_login(self, ws_connect):
         with self.assertRaisesRegex(ValueError, '.*Socket not open.*'):
             await self.client.chart_equity_subs(['GOOG,MSFT'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_unsubscribe_without_login(self, ws_connect):
         with self.assertRaisesRegex(ValueError, '.*Socket not open.*'):
             await self.client.chart_equity_unsubs(['GOOG,MSFT'])
@@ -6365,7 +6365,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     # will return no data on the service or symbol
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_service_op_sends_some_fields_with_field_type_and_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -6397,7 +6397,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_service_op_sends_no_fields_without_field_type(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -6415,7 +6415,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertFalse('fields' in request['parameters'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_service_op_sends_no_fields_for_sub_without_field_type(self, ws_connect):
         """
         There's no service's sub/add commands without field_type defined but this tests for fields=None behavior if field_type=None
@@ -6432,7 +6432,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             json.dumps(resp)
         ]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode) as e:
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode) as e:
             await self.client._service_op(
                 symbols=['GOOG','MSFT'],
                 service='LEVELONE_EQUITIES',
@@ -6444,7 +6444,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertFalse('fields' in request['parameters'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_service_op_sends_no_fields_for_sub_with_fields(self, ws_connect):
         """
         There's no service's sub/add commands without field_type defined but this tests for fields=None behavior if field_type=None
@@ -6461,7 +6461,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             json.dumps(resp)
         ]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode) as e:
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode) as e:
             await self.client._service_op(
                 symbols=['GOOG','MSFT'],
                 service='LEVELONE_EQUITIES',
@@ -6477,7 +6477,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertFalse('fields' in request['parameters'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_service_op_sends_all_fields_with_field_type(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -6532,7 +6532,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         })
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_service_op_sorts_fields(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -6590,7 +6590,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await self.client.handle_message()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_synchronous_handler_failure_is_reported(self, ws_connect):
         boom = ValueError('handler blew up')
         errors = []
@@ -6606,7 +6606,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual('LEVELONE_EQUITIES', msg['service'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_async_handler_failure_is_reported(self, ws_connect):
         # The site a reader of the other two would miss: an async handler's
         # exception never passes through an except block. It surfaces in the
@@ -6639,7 +6639,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual('LEVELONE_EQUITIES', msg['service'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_coroutine_error_handler_is_awaited(self, ws_connect):
         # Every other add_*_handler on this class accepts a coroutine function,
         # so writing `async def on_stream_error(...)` is the natural thing to
@@ -6662,7 +6662,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIs(boom, errors[0][1])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_error_handler_may_close_the_stream(self, ws_connect):
         # Tearing the stream down is a natural reaction to this signal, and it
         # has to be safe however many handlers do it. Reporting inline is what
@@ -6684,7 +6684,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([True], closed)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_async_stream_handler_reports_from_its_own_task(
             self, ws_connect):
         # An async stream handler's failure is reported from inside its own
@@ -6711,7 +6711,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                          'an async stream handler\'s report was lost')
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_close_failure_report_reaches_a_coroutine_handler(
             self, ws_connect):
         # The close failure is one of the three reported sites, and its report
@@ -6736,7 +6736,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                          'the close-failure report was never awaited')
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_coroutine_report_finishes_before_the_call_returns(
             self, ws_connect):
         # This is what replaced the drain. Awaiting the report where it is made
@@ -6757,7 +6757,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(['reported', 'handle_message returned'], order)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_close_does_not_wait_for_in_flight_handlers(
             self, ws_connect):
         # The documented guarantee, which replaced the drain: close() returns
@@ -6781,7 +6781,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             task.cancel()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_logout_can_still_be_cancelled_while_reporting(
             self, ws_connect):
         # The BaseException guard around the close-failure report must not
@@ -6805,7 +6805,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             await task
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_slow_error_handler_holds_up_handle_message(
             self, ws_connect):
         # The cost of awaiting the report rather than scheduling it, asserted
@@ -6832,7 +6832,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 'the report is no longer awaited inline')
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_extra_rejection_in_a_matched_frame_is_logged(
             self, ws_connect):
         # _validate_response reads element 0 only, because that is the answer
@@ -6854,7 +6854,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 records.append(record.getMessage())
 
         handler = Capture()
-        logging.getLogger('schwab.streaming').addHandler(handler)
+        logging.getLogger('schwaby.streaming').addHandler(handler)
         try:
             ok = self.success_response(1, 'LEVELONE_EQUITIES', 'SUBS')
             ok['response'].append({
@@ -6868,14 +6868,14 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             # The subscription itself must still succeed.
             await self.client.level_one_equity_subs(['GOOG'])
         finally:
-            logging.getLogger('schwab.streaming').removeHandler(handler)
+            logging.getLogger('schwaby.streaming').removeHandler(handler)
 
         self.assertTrue(
                 any('ACCT_ACTIVITY' in r and '21' in r for r in records),
                 'the extra rejection was dropped: {}'.format(records))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_extra_response_is_not_reported_while_routing(
             self, ws_connect):
         # The guarantee that keeps a slow handler from failing a successful
@@ -6910,7 +6910,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([(None, False, False)], seen)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_slow_handler_cannot_fail_a_successful_subscribe(
             self, ws_connect):
         # The reason the extra-response report is queued rather than delivered
@@ -6940,7 +6940,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await self.client.level_one_equity_subs(['GOOG'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_extra_rejection_is_reported_by_whoever_read_it(
             self, ws_connect):
         # The delivery half of the contract. _request_lock keeps one request
@@ -6976,7 +6976,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         service, exception, message = errors[0]
         self.assertEqual('ACCT_ACTIVITY', service)
         self.assertIsInstance(
-                exception, schwab.streaming.UnexpectedResponseCode)
+                exception, schwaby.streaming.UnexpectedResponseCode)
         # Same shape as the orphan path: the exception carries the whole frame,
         # and the rejected element arrives as `message`.
         self.assertEqual(ok, exception.response)
@@ -6984,7 +6984,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIn('21', str(exception))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_batched_and_standalone_rejections_report_alike(
             self, ws_connect):
         # The finding itself: the framing is the server's choice, so the two
@@ -7022,7 +7022,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([('ACCT_ACTIVITY', rejected)], batched)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_extra_success_is_not_reported(self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
 
@@ -7049,7 +7049,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([], errors)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_queued_report_is_delivered_once(self, ws_connect):
         # Popped before it is awaited, so a handler which re-enters
         # handle_message finds an empty queue rather than the same rejection
@@ -7082,7 +7082,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(1, len(errors))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_handler_may_resubscribe_from_a_queued_report(
             self, ws_connect):
         # The hazard that made this a queue rather than an inline call. Where
@@ -7123,7 +7123,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(['ACCT_ACTIVITY'], resubscribed)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_handler_may_close_from_a_queued_report(self, ws_connect):
         # Tearing the stream down is a reasonable reaction to a rejection, and
         # it is safe because the report runs with both locks released and
@@ -7160,7 +7160,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             await self.client.handle_message()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_handle_message_returns_when_a_report_closes_the_stream(
             self, ws_connect):
         # The other drain site. A handler which closes from here must not make
@@ -7172,7 +7172,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         self.client.add_error_handler(close_it)
         self.client._pending_reports.append(
-                (schwab.streaming.UnexpectedResponseCode({}, 'nope'),
+                (schwaby.streaming.UnexpectedResponseCode({}, 'nope'),
                  'ACCT_ACTIVITY', {}))
 
         # Returns rather than raising "Socket not open" out of the very call
@@ -7184,7 +7184,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             await self.client.handle_message()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_close_discards_reports_from_the_dead_session(
             self, ws_connect):
         # A queued report carries a frame from the connection it arrived on.
@@ -7196,7 +7196,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.client.add_error_handler(
                 lambda service, exc, msg: errors.append(exc))
         self.client._pending_reports.append(
-                (schwab.streaming.UnexpectedResponseCode({}, 'old session'),
+                (schwaby.streaming.UnexpectedResponseCode({}, 'old session'),
                  'ACCT_ACTIVITY', {}))
 
         await self.client.close()
@@ -7207,7 +7207,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([], errors)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_report_is_not_stranded_behind_a_parked_reader(
             self, ws_connect):
         # The reason _request_response drains as well as handle_message. If the
@@ -7267,7 +7267,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 await handling
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_rejection_at_element_zero_is_reported_once_nobody_waits(
             self, ws_connect):
         # If the waiter already timed out or was cancelled, its future is
@@ -7293,7 +7293,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         ]}
         self.client._overflow_items.appendleft(frame)
 
-        self.assertIs(schwab.streaming.ROUTED,
+        self.assertIs(schwaby.streaming.ROUTED,
                       await self.client._read_and_route())
 
         queued = [str(exc) for exc, _, _ in self.client._pending_reports]
@@ -7302,7 +7302,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIn('22', queued[1])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_element_zero_stays_with_its_waiter(self, ws_connect):
         # The mirror of the above: while somebody *is* waiting, element 0 is
         # theirs and must not also be queued as an unclaimed rejection.
@@ -7317,7 +7317,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 'code': 21, 'msg': 'subscribe rejected'}
         socket.recv.side_effect = [json.dumps(rejected)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_equity_subs(['GOOG'])
 
         # Raised to the caller, so it is not an absorbed failure.
@@ -7325,7 +7325,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([], errors)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_failed_request_still_reports_what_it_read(
             self, ws_connect):
         # The drain is in a finally. The caller's exception is element 0's
@@ -7347,7 +7347,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             'content': {'code': 21, 'msg': 'the abandoned one'}})
         socket.recv.side_effect = [json.dumps(frame)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponseCode):
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
             await self.client.level_one_equity_subs(['GOOG'])
 
         self.assertEqual(1, len(errors))
@@ -7357,7 +7357,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(0, len(self.client._pending_reports))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_discards_reports_from_the_previous_session(
             self, ws_connect):
         # A caller reconnecting after a ConnectionClosed may call login() again
@@ -7369,7 +7369,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.client.add_error_handler(
                 lambda service, exc, msg: errors.append(exc))
         self.client._pending_reports.append(
-                (schwab.streaming.UnexpectedResponseCode({}, 'old session'),
+                (schwaby.streaming.UnexpectedResponseCode({}, 'old session'),
                  'ACCT_ACTIVITY', {}))
 
         # The socket swap itself, which is what a reconnect does. Calling
@@ -7384,7 +7384,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([], errors)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_close_discards_unhandled_frames_from_the_dead_session(
             self, ws_connect):
         # _overflow_items holds frames read but not yet handled -- including
@@ -7406,7 +7406,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(0, len(self.client._overflow_items))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_login_discards_unhandled_frames_from_the_dead_session(
             self, ws_connect):
         # Same guarantee for a caller who reconnects with login() rather than
@@ -7433,7 +7433,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([], handled)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_malformed_extra_cannot_fail_a_successful_subscribe(
             self, ws_connect):
         # The parsing counterpart of
@@ -7463,7 +7463,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 await self.client.level_one_equity_subs(['GOOG'])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_response_field_of_the_wrong_shape_is_ignored(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -7479,7 +7479,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 queued = list(self.client._pending_reports)
                 self.assertEqual(1, len(queued))
                 self.assertIsInstance(
-                        queued[0][0], schwab.streaming.UnusableMessage)
+                        queued[0][0], schwaby.streaming.UnusableMessage)
 
         # A tuple is a list as far as this is concerned: set_json_decoder may
         # return one, and rejections must still be reported for such a caller.
@@ -7503,13 +7503,13 @@ class StreamClientTest(IsolatedAsyncioTestCase):
              'content': {'code': 21, 'msg': 'this one is fine'}},
         ]}, 0)
         kinds = [type(exc) for exc, _, _ in self.client._pending_reports]
-        self.assertEqual([schwab.streaming.UnusableMessage,
-                          schwab.streaming.UnexpectedResponseCode], kinds)
+        self.assertEqual([schwaby.streaming.UnusableMessage,
+                          schwaby.streaming.UnexpectedResponseCode], kinds)
         self.assertIn('this one is fine',
                       str(self.client._pending_reports[1][0]))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_handler_cannot_replace_the_requests_own_exception(
             self, ws_connect):
         # The drain is in a finally, so a handler raising a BaseException there
@@ -7532,14 +7532,14 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.recv.side_effect = [json.dumps(frame)]
 
         with self.assertRaises(
-                schwab.streaming.UnexpectedResponseCode) as cm:
+                schwaby.streaming.UnexpectedResponseCode) as cm:
             await self.client.level_one_equity_subs(['GOOG'])
 
         # The useful error, not the handler's.
         self.assertIn('this request failed', str(cm.exception))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_slow_handler_does_not_delay_a_cancellation(
             self, ws_connect):
         # Running a handler to completion while unwinding a cancel makes
@@ -7588,7 +7588,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         release.set()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_logging_in_again_closes_the_socket_it_replaces(
             self, ws_connect):
         # A caller who logs in again on a healthy client -- a re-auth, a
@@ -7603,7 +7603,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIsNot(first, self.client._socket)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_failed_close_does_not_stop_logging_in_again(
             self, ws_connect):
         first = await self.login_and_get_socket(ws_connect)
@@ -7617,7 +7617,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIsNot(first, self.client._socket)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_both_framings_survive_a_malformed_element(self, ws_connect):
         # The contract is that a late rejection behaves the same whether Schwab
         # sends it alone or batched. Two loops parsing the same JSON drift: one
@@ -7640,14 +7640,14 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         def rejections(pairs):
             return [(service, message) for exc, service, message in pairs
-                    if isinstance(exc, schwab.streaming.UnexpectedResponseCode)]
+                    if isinstance(exc, schwaby.streaming.UnexpectedResponseCode)]
 
         def absorbed(pairs):
             # exc.message, not the handler's `message`: the latter is now the
             # containing frame, which differs between the two framings by
             # construction.
             return [exc.message for exc, _, _ in pairs
-                    if isinstance(exc, schwab.streaming.UnusableMessage)]
+                    if isinstance(exc, schwaby.streaming.UnusableMessage)]
 
         # Standalone framing, through handle_message's orphan path. Collected
         # from the queue rather than from the handler, so both sides are read
@@ -7680,7 +7680,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(absorbed(standalone), absorbed(batched))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_malformed_orphan_does_not_end_the_receive_loop(
             self, ws_connect):
         # One bad element among many must not cost the caller the good ones.
@@ -7704,7 +7704,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([('ACCT_ACTIVITY', good)], errors)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_response_frame_of_the_wrong_shape_ends_nothing(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -7714,7 +7714,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await self.client.handle_message()
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_malformed_frame_does_not_fail_an_in_flight_request(
             self, ws_connect):
         # The version of the above that matters, and the one the first attempt
@@ -7742,7 +7742,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                         timeout=5)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_frame_read_during_the_socket_swap_is_discarded(
             self, ws_connect):
         # The clears run after the new socket is in place. Clearing first left
@@ -7770,7 +7770,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([], handled)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_malformed_answer_fails_only_its_own_request(
             self, ws_connect):
         # The sibling of the requestid guard. _validate_response read four more
@@ -7788,7 +7788,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 socket.recv.side_effect = [json.dumps(frame)]
 
                 with self.assertRaises(
-                        schwab.streaming.UnexpectedResponse) as cm:
+                        schwaby.streaming.UnexpectedResponse) as cm:
                     await asyncio.wait_for(
                             self.client.level_one_equity_subs(['GOOG']),
                             timeout=5)
@@ -7807,7 +7807,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(1, len(handled))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_rejection_without_a_message_still_reports_its_code(
             self, ws_connect):
         # The code is the part the caller can act on. Treating a missing `msg`
@@ -7820,7 +7820,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.recv.side_effect = [json.dumps(frame)]
 
         with self.assertRaises(
-                schwab.streaming.UnexpectedResponseCode) as cm:
+                schwaby.streaming.UnexpectedResponseCode) as cm:
             await asyncio.wait_for(
                     self.client.level_one_equity_subs(['GOOG']), timeout=5)
 
@@ -7828,7 +7828,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertNotIn('malformed', str(cm.exception))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_malformed_data_element_does_not_end_the_receive_loop(
             self, ws_connect):
         # d.get('service') is evaluated at the call site, outside the try in
@@ -7851,7 +7851,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([good], handled)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_channel_of_the_wrong_shape_does_not_end_the_loop(
             self, ws_connect):
         socket = await self.login_and_get_socket(ws_connect)
@@ -7877,7 +7877,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([good], handled)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_frame_which_is_not_an_object_is_ignored(self, ws_connect):
         # A regression the channel hardening introduced and this pins shut.
         # `'data' in msg` tolerates any container; `msg.get('data')` does not,
@@ -7904,7 +7904,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([good], handled)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_service_which_is_not_a_name_is_ignored(self, ws_connect):
         # The handler lookup is evaluated in the `for` header, outside the
         # per-handler try, so an unhashable service raised TypeError out of the
@@ -7932,7 +7932,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([good], handled)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_null_frame_is_logged_like_any_other(self, ws_connect):
         # A top-level JSON null was indistinguishable from the sentinel meaning
         # "this was routed to its waiter", so it was dropped without the
@@ -7952,11 +7952,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await self.client.handle_message()
 
         self.assertEqual(1, len(errors))
-        self.assertIsInstance(errors[0], schwab.streaming.UnusableMessage)
+        self.assertIsInstance(errors[0], schwaby.streaming.UnusableMessage)
         self.assertIsNone(errors[0].message)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_absorbed_message_reaches_the_error_handler(
             self, ws_connect):
         # add_error_handler exists so an absorbed failure is not visible only
@@ -7984,7 +7984,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         self.assertEqual(4, len(errors))
         for exc, message in errors:
-            self.assertIsInstance(exc, schwab.streaming.UnusableMessage)
+            self.assertIsInstance(exc, schwaby.streaming.UnusableMessage)
             # The containing frame reaches the handler, so a null channel is
             # not reported as (service=None, message=None) -- the signature the
             # logout-close failure already uses, which a consumer branching on
@@ -8003,12 +8003,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 records.append(record.getMessage())
 
         handler = Capture()
-        logging.getLogger('schwab.streaming').addHandler(handler)
+        logging.getLogger('schwaby.streaming').addHandler(handler)
         try:
             for _ in range(5000):
                 self.client._absorb('a thing', 'offender')
         finally:
-            logging.getLogger('schwab.streaming').removeHandler(handler)
+            logging.getLogger('schwaby.streaming').removeHandler(handler)
 
         # First three, then powers of ten: 1, 2, 3, 10, 100, 1000 -- not 5000
         # lines, and not silence between 3 and 1000 either.
@@ -8017,7 +8017,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIn('10 of these', records[3])
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_custom_decoder_returning_a_mapping_still_works(
             self, ws_connect):
         # set_json_decoder is a public hook which promises only "the decoded
@@ -8030,7 +8030,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         good = {'service': 'LEVELONE_EQUITIES', 'command': 'SUBS',
                 'timestamp': 1590116673258}
 
-        from schwab.contrib.util import StreamJsonDecoder
+        from schwaby.contrib.util import StreamJsonDecoder
 
         class MappingDecoder(StreamJsonDecoder):
             def decode_json_string(self, raw):
@@ -8049,7 +8049,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(1, len(handled))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_mismatched_request_id_is_named_as_such(self, ws_connect):
         # Reading all five fields first meant a frame with an id this client
         # never issued AND a missing field was reported as "malformed response
@@ -8063,7 +8063,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         del frame['response'][0]['service']
         socket.recv.side_effect = [json.dumps(frame)]
 
-        with self.assertRaises(schwab.streaming.UnexpectedResponse) as cm:
+        with self.assertRaises(schwaby.streaming.UnexpectedResponse) as cm:
             await asyncio.wait_for(
                     self.client.level_one_equity_subs(['GOOG']), timeout=5)
 
@@ -8083,7 +8083,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 records.append(record.getMessage())
 
         handler = Capture()
-        logging.getLogger('schwab.streaming').addHandler(handler)
+        logging.getLogger('schwaby.streaming').addHandler(handler)
         try:
             for i in range(5000):
                 self.client._absorb('a bad element', i)
@@ -8091,7 +8091,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             before = len(records)
             self.client._absorb('a service which is not a name', ['a list'])
         finally:
-            logging.getLogger('schwab.streaming').removeHandler(handler)
+            logging.getLogger('schwaby.streaming').removeHandler(handler)
 
         # The second kind is on its first occurrence and must be heard.
         self.assertEqual(before + 1, len(records))
@@ -8102,15 +8102,15 @@ class StreamClientTest(IsolatedAsyncioTestCase):
     @no_duplicates
     def test_set_json_decoder_does_not_need_contrib_imported(self):
         # schwab/__init__.py does not import contrib, so looking the base class
-        # up as schwab.contrib.util.StreamJsonDecoder raised AttributeError for
+        # up as schwaby.contrib.util.StreamJsonDecoder raised AttributeError for
         # anyone who subclassed it where it is defined. Every other test here
         # imports contrib.util first, which is exactly what made the old code
         # work -- so this one must not.
         for name in list(sys.modules):
-            if name.startswith('schwab.contrib'):
+            if name.startswith('schwaby.contrib'):
                 del sys.modules[name]
 
-        blocked = 'schwab.contrib'
+        blocked = 'schwaby.contrib'
 
         class Blocker:
             def find_spec(self, fullname, path=None, target=None):
@@ -8126,7 +8126,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 def decode_json_string(self, raw):
                     return json.loads(raw)
 
-            # Must not raise AttributeError reaching for schwab.contrib.
+            # Must not raise AttributeError reaching for schwaby.contrib.
             self.client.set_json_decoder(Decoder())
         finally:
             sys.meta_path.remove(blocker)
@@ -8194,11 +8194,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         self.assertEqual(1, len(self.client._pending_reports))
         exc = self.client._pending_reports[0][0]
-        self.assertIsInstance(exc, schwab.streaming.UnusableMessage)
+        self.assertIsInstance(exc, schwaby.streaming.UnusableMessage)
         self.assertIn('is not a list', str(exc))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_relabel_failure_is_absorbed_not_blamed_on_handlers(
             self, ws_connect):
         # Relabeling is this library's work. Reporting its failure as "your
@@ -8225,11 +8225,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         # Once, not once per handler, and as an absorbed message rather than a
         # handler failure.
         self.assertEqual(1, len(errors))
-        self.assertIsInstance(errors[0], schwab.streaming.UnusableMessage)
+        self.assertIsInstance(errors[0], schwaby.streaming.UnusableMessage)
         self.assertEqual(1, self.client._absorbed)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_unusable_message_is_not_mistaken_for_a_close_failure(
             self, ws_connect):
         # docs/streaming.rst designates (service=None, message=None) as the
@@ -8253,11 +8253,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         self.assertEqual(3, len(errors))
         for service, exc, message in errors:
-            self.assertIsInstance(exc, schwab.streaming.UnusableMessage)
+            self.assertIsInstance(exc, schwaby.streaming.UnusableMessage)
             self.assertFalse(service is None and message is None)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_relabel_failure_names_its_service_and_its_cause(
             self, ws_connect):
         # service, because a handler routing alerts by subscription needs to
@@ -8282,7 +8282,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(1, len(errors))
         service, exc = errors[0]
         self.assertEqual('NASDAQ_BOOK', service)
-        self.assertIsInstance(exc, schwab.streaming.UnusableMessage)
+        self.assertIsInstance(exc, schwaby.streaming.UnusableMessage)
         self.assertIsNotNone(exc.cause)
         # The cause is in the text too, so a log reader sees it as well.
         self.assertIn(type(exc.cause).__name__, str(exc))
@@ -8303,7 +8303,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([(1, 1), (2, 2), (3, 3), (1, 4)], by_kind)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_unusable_request_id_is_absorbed_not_only_logged(
             self, ws_connect):
         # The one unusable-message path that bypassed _absorb: uncounted,
@@ -8332,7 +8332,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.recv = recv
 
         # The id is only read while a request is outstanding.
-        with self.assertRaises(schwab.streaming.ResponseTimeoutError):
+        with self.assertRaises(schwaby.streaming.ResponseTimeoutError):
             await self.client.level_one_equity_subs(['GOOG'])
 
         self.assertEqual(1, self.client._absorbed)
@@ -8343,11 +8343,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.client.add_level_one_equity_handler(lambda msg: None)
         await self.client.handle_message()
 
-        self.assertTrue(any(isinstance(e, schwab.streaming.UnusableMessage)
+        self.assertTrue(any(isinstance(e, schwaby.streaming.UnusableMessage)
                             for e in errors))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_unparsable_frame_is_reported_and_still_raised(
             self, ws_connect):
         # The one failure class that still ends the receive loop. It was also
@@ -8362,7 +8362,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         socket.recv.side_effect = ['this is not json at all']
 
-        with self.assertRaises(schwab.streaming.UnparsableMessage) as cm:
+        with self.assertRaises(schwaby.streaming.UnparsableMessage) as cm:
             await self.client.handle_message()
 
         # Reported as well as raised.
@@ -8371,7 +8371,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIsNotNone(errors[0].json_parse_exception)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_unparsable_frame_is_not_reported_as_a_close_failure(
             self, ws_connect):
         # (service=None, message=None) is the logout-close signature, and a
@@ -8388,7 +8388,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         socket.recv.side_effect = ['definitely not json']
 
-        with self.assertRaises(schwab.streaming.UnparsableMessage):
+        with self.assertRaises(schwaby.streaming.UnparsableMessage):
             await self.client.handle_message()
 
         self.assertEqual(1, len(seen))
@@ -8397,7 +8397,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual('definitely not json', message)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_empty_frame_is_reported_with_an_empty_message(
             self, ws_connect):
         # raw_msg is '' for an empty text frame, so the pair is distinguishable
@@ -8412,7 +8412,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         socket.recv.side_effect = ['']
 
-        with self.assertRaises(schwab.streaming.UnparsableMessage):
+        with self.assertRaises(schwaby.streaming.UnparsableMessage):
             await self.client.handle_message()
 
         service, message = seen[0]
@@ -8424,7 +8424,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertTrue(not service and not message)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_unparsable_frame_is_reported_exactly_once(
             self, ws_connect):
         # handle_message hands the same exception to the waiting request
@@ -8469,7 +8469,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(1, len(errors))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_unparsable_frame_reports_from_the_request_path_too(
             self, ws_connect):
         # Two coroutines can be holding the read lock when a frame arrives, and
@@ -8486,16 +8486,16 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.recv.side_effect = ['this is not json at all']
 
         # The subscribe is the reader here, not handle_message.
-        with self.assertRaises(schwab.streaming.UnparsableMessage):
+        with self.assertRaises(schwaby.streaming.UnparsableMessage):
             await self.client.level_one_equity_subs(['GOOG'])
 
         self.assertEqual(1, len(errors))
         exc, message = errors[0]
-        self.assertIsInstance(exc, schwab.streaming.UnparsableMessage)
+        self.assertIsInstance(exc, schwaby.streaming.UnparsableMessage)
         self.assertEqual('this is not json at all', message)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_the_request_path_report_holds_no_lock(self, ws_connect):
         # Same guarantee as the handle_message path: the read lock is released
         # by _await_response's finally and the request lock by the `async
@@ -8510,13 +8510,13 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         socket.recv.side_effect = ['{not json']
 
-        with self.assertRaises(schwab.streaming.UnparsableMessage):
+        with self.assertRaises(schwaby.streaming.UnparsableMessage):
             await self.client.level_one_equity_subs(['GOOG'])
 
         self.assertEqual([(False, False)], observed)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_reporting_an_unparsable_frame_holds_no_lock(
             self, ws_connect):
         # Reporting from inside the `async with` would call a handler under the
@@ -8531,13 +8531,13 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         socket.recv.side_effect = ['{not json']
 
-        with self.assertRaises(schwab.streaming.UnparsableMessage):
+        with self.assertRaises(schwaby.streaming.UnparsableMessage):
             await self.client.handle_message()
 
         self.assertEqual([False], observed)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_handler_cannot_replace_the_parse_failure(
             self, ws_connect):
         # The caller needs the parse failure, not the handler's own accident.
@@ -8549,7 +8549,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.client.add_error_handler(explode)
         socket.recv.side_effect = ['nope']
 
-        with self.assertRaises(schwab.streaming.UnparsableMessage):
+        with self.assertRaises(schwaby.streaming.UnparsableMessage):
             await self.client.handle_message()
 
     @no_duplicates
@@ -8559,7 +8559,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         # rejection out of it -- and a rejection of an abandoned request is the
         # one thing nothing else will ever report. Reports are coalesced onto
         # the same schedule as the log for exactly this reason.
-        rejection = (schwab.streaming.UnexpectedResponseCode({}, 'the one'),
+        rejection = (schwaby.streaming.UnexpectedResponseCode({}, 'the one'),
                      'ACCT_ACTIVITY', {})
         self.client._pending_reports.append(rejection)
 
@@ -8570,7 +8570,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(500, self.client._absorbed)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_logging_in_again_resets_the_absorbed_count(
             self, ws_connect):
         # The log says "on this connection". Without a reset, a client which
@@ -8588,7 +8588,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(0, self.client._absorbed)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_null_channel_is_absorbed_not_dropped(self, ws_connect):
         # {"data": null} is a malformed channel, and was the one shape
         # indistinguishable from a frame carrying no data at all -- so it was
@@ -8609,7 +8609,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         # Two absorbed, and the frame with neither channel is not one of them.
         self.assertEqual(2, len(errors))
         for exc in errors:
-            self.assertIsInstance(exc, schwab.streaming.UnusableMessage)
+            self.assertIsInstance(exc, schwaby.streaming.UnusableMessage)
 
     @no_duplicates
     def test_the_report_queue_is_bounded(self):
@@ -8654,7 +8654,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(2, len(self.client._error_handlers))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_response_with_no_code_is_not_reported(self, ws_connect):
         # An absent code is neither a late rejection nor a late success.
         # Reporting it as a rejection pages someone over "code None, msg None".
@@ -8675,7 +8675,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([], errors)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_late_rejection_is_reported(self, ws_connect):
         # A response with no request outstanding is absorbed rather than
         # raised, which is right -- the request was abandoned and dropping the
@@ -8701,7 +8701,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIn('already', str(exc))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_late_success_is_not_reported(self, ws_connect):
         # The other half: a late acknowledgement of something that worked is
         # routine and must not wake anybody up.
@@ -8722,7 +8722,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual([], errors)
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_error_handler_which_raises_does_not_break_the_stream(
             self, ws_connect):
         # A callback for absorbed failures must not become a way to fail.
@@ -8739,7 +8739,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(1, len(second))
 
     @no_duplicates
-    @patch('schwab.streaming.ws_client.connect', new_callable=AsyncMock)
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_registering_no_error_handler_changes_nothing(
             self, ws_connect):
         # The behaviour without a callback is the behaviour before it existed:

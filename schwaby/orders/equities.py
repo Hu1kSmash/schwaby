@@ -1,6 +1,6 @@
 from enum import Enum
 
-from schwab.orders.common import Duration, Session, StopPriceLinkBasis
+from schwaby.orders.common import Duration, Session, StopPriceLinkBasis
 
 
 def _equity_order(instruction, order_type, symbol, quantity, *, price=None,
@@ -12,8 +12,8 @@ def _equity_order(instruction, order_type, symbol, quantity, *, price=None,
     This is an implementation detail of the templates below. It exists so the
     required fields for each order type are expressed in exactly one place.
     '''
-    from schwab.orders.common import OrderStrategyType
-    from schwab.orders.generic import OrderBuilder
+    from schwaby.orders.common import OrderStrategyType
+    from schwaby.orders.generic import OrderBuilder
 
     builder = (OrderBuilder()
                .set_order_type(order_type)
@@ -42,12 +42,12 @@ def _equity_order(instruction, order_type, symbol, quantity, *, price=None,
 
 def equity_buy_market(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy market order.
     '''
-    from schwab.orders.common import Duration, EquityInstruction
-    from schwab.orders.common import OrderStrategyType, OrderType, Session
-    from schwab.orders.generic import OrderBuilder
+    from schwaby.orders.common import Duration, EquityInstruction
+    from schwaby.orders.common import OrderStrategyType, OrderType, Session
+    from schwaby.orders.generic import OrderBuilder
 
     return (OrderBuilder()
             .set_order_type(OrderType.MARKET)
@@ -59,12 +59,12 @@ def equity_buy_market(symbol, quantity):
 
 def equity_buy_limit(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy limit order.
     '''
-    from schwab.orders.common import Duration, EquityInstruction
-    from schwab.orders.common import OrderStrategyType, OrderType, Session
-    from schwab.orders.generic import OrderBuilder
+    from schwaby.orders.common import Duration, EquityInstruction
+    from schwaby.orders.common import OrderStrategyType, OrderType, Session
+    from schwaby.orders.generic import OrderBuilder
 
     return (OrderBuilder()
             .set_order_type(OrderType.LIMIT)
@@ -77,10 +77,10 @@ def equity_buy_limit(symbol, quantity, price):
 
 def equity_buy_stop(symbol, quantity, stop_price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy stop order. Places a market order once ``stop_price`` is reached.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY, OrderType.STOP, symbol, quantity,
@@ -89,11 +89,11 @@ def equity_buy_stop(symbol, quantity, stop_price):
 
 def equity_buy_stop_limit(symbol, quantity, stop_price, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy stop-limit order. Places a limit order at ``price`` once ``stop_price``
     is reached.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY, OrderType.STOP_LIMIT, symbol, quantity,
@@ -104,22 +104,22 @@ def equity_buy_trailing_stop(
         symbol, quantity, stop_price_offset, stop_price_link_type,
         stop_price_link_basis=StopPriceLinkBasis.LAST):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy trailing stop order.
 
     :param stop_price_offset: Size of the trailing offset. Interpreted according
                               to ``stop_price_link_type``.
     :param stop_price_link_type: Whether ``stop_price_offset`` is a percentage,
                                  an absolute value, or a number of ticks. See
-                                 :class:`~schwab.orders.common.StopPriceLinkType`.
+                                 :class:`~schwaby.orders.common.StopPriceLinkType`.
                                  This parameter is required because an offset of
                                  ``2.5`` means a 2.5% trail under ``PERCENT``
                                  and a $2.50 trail under ``VALUE``, and Schwab
                                  accepts both without complaint.
     :param stop_price_link_basis: Which price the offset is applied to. See
-                                  :class:`~schwab.orders.common.StopPriceLinkBasis`.
+                                  :class:`~schwaby.orders.common.StopPriceLinkBasis`.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY, OrderType.TRAILING_STOP, symbol, quantity,
@@ -132,14 +132,14 @@ def equity_buy_trailing_stop_limit(
         symbol, quantity, stop_price_offset, stop_price_link_type, price,
         stop_price_link_basis=StopPriceLinkBasis.LAST):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy trailing stop-limit order. Places a limit order at ``price`` once the
     trailing stop condition is met.
 
     See :func:`equity_buy_trailing_stop` for a description of the trailing
     parameters.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY, OrderType.TRAILING_STOP_LIMIT, symbol,
@@ -150,10 +150,10 @@ def equity_buy_trailing_stop_limit(
 
 def equity_buy_market_on_close(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy market-on-close order.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY, OrderType.MARKET_ON_CLOSE, symbol, quantity)
@@ -161,10 +161,10 @@ def equity_buy_market_on_close(symbol, quantity):
 
 def equity_buy_limit_on_close(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy limit-on-close order.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY, OrderType.LIMIT_ON_CLOSE, symbol, quantity,
@@ -176,12 +176,12 @@ def equity_buy_limit_on_close(symbol, quantity, price):
 
 def equity_sell_market(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     sell market order.
     '''
-    from schwab.orders.common import Duration, EquityInstruction
-    from schwab.orders.common import OrderStrategyType, OrderType, Session
-    from schwab.orders.generic import OrderBuilder
+    from schwaby.orders.common import Duration, EquityInstruction
+    from schwaby.orders.common import OrderStrategyType, OrderType, Session
+    from schwaby.orders.generic import OrderBuilder
 
     return (OrderBuilder()
             .set_order_type(OrderType.MARKET)
@@ -193,12 +193,12 @@ def equity_sell_market(symbol, quantity):
 
 def equity_sell_limit(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     sell limit order.
     '''
-    from schwab.orders.common import Duration, EquityInstruction
-    from schwab.orders.common import OrderStrategyType, OrderType, Session
-    from schwab.orders.generic import OrderBuilder
+    from schwaby.orders.common import Duration, EquityInstruction
+    from schwaby.orders.common import OrderStrategyType, OrderType, Session
+    from schwaby.orders.generic import OrderBuilder
 
     return (OrderBuilder()
             .set_order_type(OrderType.LIMIT)
@@ -210,10 +210,10 @@ def equity_sell_limit(symbol, quantity, price):
 
 def equity_sell_stop(symbol, quantity, stop_price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     sell stop order. Places a market order once ``stop_price`` is reached.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL, OrderType.STOP, symbol, quantity,
@@ -222,11 +222,11 @@ def equity_sell_stop(symbol, quantity, stop_price):
 
 def equity_sell_stop_limit(symbol, quantity, stop_price, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     sell stop-limit order. Places a limit order at ``price`` once ``stop_price``
     is reached.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL, OrderType.STOP_LIMIT, symbol, quantity,
@@ -237,22 +237,22 @@ def equity_sell_trailing_stop(
         symbol, quantity, stop_price_offset, stop_price_link_type,
         stop_price_link_basis=StopPriceLinkBasis.LAST):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     sell trailing stop order.
 
     :param stop_price_offset: Size of the trailing offset. Interpreted according
                               to ``stop_price_link_type``.
     :param stop_price_link_type: Whether ``stop_price_offset`` is a percentage,
                                  an absolute value, or a number of ticks. See
-                                 :class:`~schwab.orders.common.StopPriceLinkType`.
+                                 :class:`~schwaby.orders.common.StopPriceLinkType`.
                                  This parameter is required because an offset of
                                  ``2.5`` means a 2.5% trail under ``PERCENT``
                                  and a $2.50 trail under ``VALUE``, and Schwab
                                  accepts both without complaint.
     :param stop_price_link_basis: Which price the offset is applied to. See
-                                  :class:`~schwab.orders.common.StopPriceLinkBasis`.
+                                  :class:`~schwaby.orders.common.StopPriceLinkBasis`.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL, OrderType.TRAILING_STOP, symbol, quantity,
@@ -265,14 +265,14 @@ def equity_sell_trailing_stop_limit(
         symbol, quantity, stop_price_offset, stop_price_link_type, price,
         stop_price_link_basis=StopPriceLinkBasis.LAST):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     sell trailing stop-limit order. Places a limit order at ``price`` once the
     trailing stop condition is met.
 
     See :func:`equity_sell_trailing_stop` for a description of the trailing
     parameters.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL, OrderType.TRAILING_STOP_LIMIT, symbol,
@@ -283,10 +283,10 @@ def equity_sell_trailing_stop_limit(
 
 def equity_sell_market_on_close(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     sell market-on-close order.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL, OrderType.MARKET_ON_CLOSE, symbol, quantity)
@@ -294,10 +294,10 @@ def equity_sell_market_on_close(symbol, quantity):
 
 def equity_sell_limit_on_close(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     sell limit-on-close order.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL, OrderType.LIMIT_ON_CLOSE, symbol, quantity,
@@ -309,12 +309,12 @@ def equity_sell_limit_on_close(symbol, quantity, price):
 
 def equity_sell_short_market(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     short sell market order.
     '''
-    from schwab.orders.common import Duration, EquityInstruction
-    from schwab.orders.common import OrderStrategyType, OrderType, Session
-    from schwab.orders.generic import OrderBuilder
+    from schwaby.orders.common import Duration, EquityInstruction
+    from schwaby.orders.common import OrderStrategyType, OrderType, Session
+    from schwaby.orders.generic import OrderBuilder
 
     return (OrderBuilder()
             .set_order_type(OrderType.MARKET)
@@ -326,12 +326,12 @@ def equity_sell_short_market(symbol, quantity):
 
 def equity_sell_short_limit(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     short sell limit order.
     '''
-    from schwab.orders.common import Duration, EquityInstruction
-    from schwab.orders.common import OrderStrategyType, OrderType, Session
-    from schwab.orders.generic import OrderBuilder
+    from schwaby.orders.common import Duration, EquityInstruction
+    from schwaby.orders.common import OrderStrategyType, OrderType, Session
+    from schwaby.orders.generic import OrderBuilder
 
     return (OrderBuilder()
             .set_order_type(OrderType.LIMIT)
@@ -343,10 +343,10 @@ def equity_sell_short_limit(symbol, quantity, price):
 
 def equity_sell_short_stop(symbol, quantity, stop_price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     short sell stop order. Places a market order once ``stop_price`` is reached.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL_SHORT, OrderType.STOP, symbol, quantity,
@@ -355,11 +355,11 @@ def equity_sell_short_stop(symbol, quantity, stop_price):
 
 def equity_sell_short_stop_limit(symbol, quantity, stop_price, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     short sell stop-limit order. Places a limit order at ``price`` once ``stop_price``
     is reached.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL_SHORT, OrderType.STOP_LIMIT, symbol, quantity,
@@ -370,22 +370,22 @@ def equity_sell_short_trailing_stop(
         symbol, quantity, stop_price_offset, stop_price_link_type,
         stop_price_link_basis=StopPriceLinkBasis.LAST):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     short sell trailing stop order.
 
     :param stop_price_offset: Size of the trailing offset. Interpreted according
                               to ``stop_price_link_type``.
     :param stop_price_link_type: Whether ``stop_price_offset`` is a percentage,
                                  an absolute value, or a number of ticks. See
-                                 :class:`~schwab.orders.common.StopPriceLinkType`.
+                                 :class:`~schwaby.orders.common.StopPriceLinkType`.
                                  This parameter is required because an offset of
                                  ``2.5`` means a 2.5% trail under ``PERCENT``
                                  and a $2.50 trail under ``VALUE``, and Schwab
                                  accepts both without complaint.
     :param stop_price_link_basis: Which price the offset is applied to. See
-                                  :class:`~schwab.orders.common.StopPriceLinkBasis`.
+                                  :class:`~schwaby.orders.common.StopPriceLinkBasis`.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL_SHORT, OrderType.TRAILING_STOP, symbol, quantity,
@@ -398,14 +398,14 @@ def equity_sell_short_trailing_stop_limit(
         symbol, quantity, stop_price_offset, stop_price_link_type, price,
         stop_price_link_basis=StopPriceLinkBasis.LAST):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     short sell trailing stop-limit order. Places a limit order at ``price`` once the
     trailing stop condition is met.
 
     See :func:`equity_sell_short_trailing_stop` for a description of the trailing
     parameters.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL_SHORT, OrderType.TRAILING_STOP_LIMIT, symbol,
@@ -416,10 +416,10 @@ def equity_sell_short_trailing_stop_limit(
 
 def equity_sell_short_market_on_close(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     short sell market-on-close order.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL_SHORT, OrderType.MARKET_ON_CLOSE, symbol, quantity)
@@ -427,10 +427,10 @@ def equity_sell_short_market_on_close(symbol, quantity):
 
 def equity_sell_short_limit_on_close(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     short sell limit-on-close order.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.SELL_SHORT, OrderType.LIMIT_ON_CLOSE, symbol, quantity,
@@ -442,12 +442,12 @@ def equity_sell_short_limit_on_close(symbol, quantity, price):
 
 def equity_buy_to_cover_market(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy-to-cover market order.
     '''
-    from schwab.orders.common import Duration, EquityInstruction
-    from schwab.orders.common import OrderStrategyType, OrderType, Session
-    from schwab.orders.generic import OrderBuilder
+    from schwaby.orders.common import Duration, EquityInstruction
+    from schwaby.orders.common import OrderStrategyType, OrderType, Session
+    from schwaby.orders.generic import OrderBuilder
 
     return (OrderBuilder()
             .set_order_type(OrderType.MARKET)
@@ -459,12 +459,12 @@ def equity_buy_to_cover_market(symbol, quantity):
 
 def equity_buy_to_cover_limit(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy-to-cover limit order.
     '''
-    from schwab.orders.common import Duration, EquityInstruction
-    from schwab.orders.common import OrderStrategyType, OrderType, Session
-    from schwab.orders.generic import OrderBuilder
+    from schwaby.orders.common import Duration, EquityInstruction
+    from schwaby.orders.common import OrderStrategyType, OrderType, Session
+    from schwaby.orders.generic import OrderBuilder
 
     return (OrderBuilder()
             .set_order_type(OrderType.LIMIT)
@@ -477,10 +477,10 @@ def equity_buy_to_cover_limit(symbol, quantity, price):
 
 def equity_buy_to_cover_stop(symbol, quantity, stop_price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy-to-cover stop order. Places a market order once ``stop_price`` is reached.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY_TO_COVER, OrderType.STOP, symbol, quantity,
@@ -489,11 +489,11 @@ def equity_buy_to_cover_stop(symbol, quantity, stop_price):
 
 def equity_buy_to_cover_stop_limit(symbol, quantity, stop_price, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy-to-cover stop-limit order. Places a limit order at ``price`` once ``stop_price``
     is reached.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY_TO_COVER, OrderType.STOP_LIMIT, symbol, quantity,
@@ -504,22 +504,22 @@ def equity_buy_to_cover_trailing_stop(
         symbol, quantity, stop_price_offset, stop_price_link_type,
         stop_price_link_basis=StopPriceLinkBasis.LAST):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy-to-cover trailing stop order.
 
     :param stop_price_offset: Size of the trailing offset. Interpreted according
                               to ``stop_price_link_type``.
     :param stop_price_link_type: Whether ``stop_price_offset`` is a percentage,
                                  an absolute value, or a number of ticks. See
-                                 :class:`~schwab.orders.common.StopPriceLinkType`.
+                                 :class:`~schwaby.orders.common.StopPriceLinkType`.
                                  This parameter is required because an offset of
                                  ``2.5`` means a 2.5% trail under ``PERCENT``
                                  and a $2.50 trail under ``VALUE``, and Schwab
                                  accepts both without complaint.
     :param stop_price_link_basis: Which price the offset is applied to. See
-                                  :class:`~schwab.orders.common.StopPriceLinkBasis`.
+                                  :class:`~schwaby.orders.common.StopPriceLinkBasis`.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY_TO_COVER, OrderType.TRAILING_STOP, symbol, quantity,
@@ -532,14 +532,14 @@ def equity_buy_to_cover_trailing_stop_limit(
         symbol, quantity, stop_price_offset, stop_price_link_type, price,
         stop_price_link_basis=StopPriceLinkBasis.LAST):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy-to-cover trailing stop-limit order. Places a limit order at ``price`` once the
     trailing stop condition is met.
 
     See :func:`equity_buy_to_cover_trailing_stop` for a description of the trailing
     parameters.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY_TO_COVER, OrderType.TRAILING_STOP_LIMIT, symbol,
@@ -550,10 +550,10 @@ def equity_buy_to_cover_trailing_stop_limit(
 
 def equity_buy_to_cover_market_on_close(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy-to-cover market-on-close order.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY_TO_COVER, OrderType.MARKET_ON_CLOSE, symbol, quantity)
@@ -561,10 +561,10 @@ def equity_buy_to_cover_market_on_close(symbol, quantity):
 
 def equity_buy_to_cover_limit_on_close(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for an equity
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for an equity
     buy-to-cover limit-on-close order.
     '''
-    from schwab.orders.common import EquityInstruction, OrderType
+    from schwaby.orders.common import EquityInstruction, OrderType
 
     return _equity_order(
             EquityInstruction.BUY_TO_COVER, OrderType.LIMIT_ON_CLOSE, symbol, quantity,

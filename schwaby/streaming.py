@@ -88,7 +88,7 @@ class UnparsableMessage(SchwabError):
 
     That is a deliberate choice rather than an oversight, but it was made after
     2.4.0 rather than during it, and the argument is not one-sided.
-    ``schwab.contrib.util.HeuristicJsonDecoder`` exists because Schwab really
+    ``schwaby.contrib.util.HeuristicJsonDecoder`` exists because Schwab really
     does emit JSON this library cannot parse, which is evidence for a
     frame-level quirk rather than a dead stream. If your feed hits this often
     and a reconnect is worse for you than a gap, set that decoder before
@@ -370,14 +370,14 @@ class StreamClient(EnumEnforcer):
                              incoming JSON strings. See
                              :class:`StreamJsonDecoder` for details.
         '''
-        # The local name, not schwab.contrib.util's. They are the same class
+        # The local name, not schwaby.contrib.util's. They are the same class
         # -- contrib.util imports it from here -- but reaching it through the
         # package attribute raises AttributeError unless the caller happens to
-        # have imported schwab.contrib.util, which someone subclassing the
+        # have imported schwaby.contrib.util, which someone subclassing the
         # class where it is actually defined has no reason to have done.
         if not isinstance(json_decoder, StreamJsonDecoder):
             raise ValueError('Custom JSON parser must be a subclass of ' +
-                             'schwab.contrib.util.StreamJsonDecoder')
+                             'schwaby.contrib.util.StreamJsonDecoder')
         self.json_decoder = json_decoder
 
     @staticmethod
@@ -1579,7 +1579,7 @@ class StreamClient(EnumEnforcer):
 
         Performs initial stream setup:
          * Fetches streaming information from the HTTP client's
-           :meth:`~schwab.client.Client.get_user_preferences` method
+           :meth:`~schwaby.client.Client.get_user_preferences` method
          * Initializes the socket
          * Builds and sends and authentication request
          * Waits for response indicating login success

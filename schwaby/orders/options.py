@@ -2,7 +2,7 @@ import decimal
 import math
 import datetime
 
-from schwab.orders.generic import OrderBuilder
+from schwaby.orders.generic import OrderBuilder
 
 
 # The symbol encodes the strike as eight digits of thousandths, so the largest
@@ -64,7 +64,7 @@ class OptionSymbol:
      * Not all dates have valid option expiration dates.
      * Not all strike prices are valid options strikes.
 
-    You can use :meth:`~schwab.client.Client.get_option_chain` to obtain real
+    You can use :meth:`~schwaby.client.Client.get_option_chain` to obtain real
     option symbols for an underlying, as well as extensive data in pricing,
     bid/ask spread, volume, etc.
 
@@ -242,7 +242,7 @@ class OptionSymbol:
 
 
 def __base_builder():
-    from schwab.orders.common import Duration, Session
+    from schwaby.orders.common import Duration, Session
 
     return (OrderBuilder()
             .set_session(Session.NORMAL)
@@ -256,10 +256,10 @@ def __base_builder():
 
 def option_buy_to_open_market(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for a
     buy-to-open market order.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.MARKET)
@@ -269,10 +269,10 @@ def option_buy_to_open_market(symbol, quantity):
 
 def option_buy_to_open_limit(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for a
     buy-to-open limit order.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.LIMIT)
@@ -286,10 +286,10 @@ def option_buy_to_open_limit(symbol, quantity, price):
 
 def option_sell_to_open_market(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for a
     sell-to-open market order.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.MARKET)
@@ -299,10 +299,10 @@ def option_sell_to_open_market(symbol, quantity):
 
 def option_sell_to_open_limit(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for a
     sell-to-open limit order.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.LIMIT)
@@ -317,10 +317,10 @@ def option_sell_to_open_limit(symbol, quantity, price):
 
 def option_buy_to_close_market(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for a
     buy-to-close market order.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.MARKET)
@@ -330,10 +330,10 @@ def option_buy_to_close_market(symbol, quantity):
 
 def option_buy_to_close_limit(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for a
     buy-to-close limit order.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.LIMIT)
@@ -348,10 +348,10 @@ def option_buy_to_close_limit(symbol, quantity, price):
 
 def option_sell_to_close_market(symbol, quantity):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for a
     sell-to-close market order.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.MARKET)
@@ -361,10 +361,10 @@ def option_sell_to_close_market(symbol, quantity):
 
 def option_sell_to_close_limit(symbol, quantity, price):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` for a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` for a
     sell-to-close limit order.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.LIMIT)
@@ -382,11 +382,11 @@ def option_sell_to_close_limit(symbol, quantity, price):
 def bull_call_vertical_open(
         long_call_symbol, short_call_symbol, quantity, net_debit):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` that opens a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` that opens a
     bull call vertical position. See :ref:`vertical_spreads` for details.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
-    from schwab.orders.common import ComplexOrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import ComplexOrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.NET_DEBIT)
@@ -403,11 +403,11 @@ def bull_call_vertical_open(
 def bull_call_vertical_close(
         long_call_symbol, short_call_symbol, quantity, net_credit):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` that closes a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` that closes a
     bull call vertical position. See :ref:`vertical_spreads` for details.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
-    from schwab.orders.common import ComplexOrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import ComplexOrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.NET_CREDIT)
@@ -426,11 +426,11 @@ def bull_call_vertical_close(
 def bear_call_vertical_open(
         short_call_symbol, long_call_symbol, quantity, net_credit):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` that opens a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` that opens a
     bear call vertical position. See :ref:`vertical_spreads` for details.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
-    from schwab.orders.common import ComplexOrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import ComplexOrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.NET_CREDIT)
@@ -447,11 +447,11 @@ def bear_call_vertical_open(
 def bear_call_vertical_close(
         short_call_symbol, long_call_symbol, quantity, net_debit):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` that closes a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` that closes a
     bear call vertical position. See :ref:`vertical_spreads` for details.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
-    from schwab.orders.common import ComplexOrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import ComplexOrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.NET_DEBIT)
@@ -470,11 +470,11 @@ def bear_call_vertical_close(
 def bull_put_vertical_open(
         long_put_symbol, short_put_symbol, quantity, net_credit):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` that opens a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` that opens a
     bull put vertical position. See :ref:`vertical_spreads` for details.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
-    from schwab.orders.common import ComplexOrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import ComplexOrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.NET_CREDIT)
@@ -491,11 +491,11 @@ def bull_put_vertical_open(
 def bull_put_vertical_close(
         long_put_symbol, short_put_symbol, quantity, net_debit):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` that closes a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` that closes a
     bull put vertical position. See :ref:`vertical_spreads` for details.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
-    from schwab.orders.common import ComplexOrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import ComplexOrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.NET_DEBIT)
@@ -514,11 +514,11 @@ def bull_put_vertical_close(
 def bear_put_vertical_open(
         short_put_symbol, long_put_symbol, quantity, net_debit):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` that opens a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` that opens a
     bear put vertical position. See :ref:`vertical_spreads` for details.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
-    from schwab.orders.common import ComplexOrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import ComplexOrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.NET_DEBIT)
@@ -535,11 +535,11 @@ def bear_put_vertical_open(
 def bear_put_vertical_close(
         short_put_symbol, long_put_symbol, quantity, net_credit):
     '''
-    Returns a pre-filled :class:`~schwab.orders.generic.OrderBuilder` that closes a
+    Returns a pre-filled :class:`~schwaby.orders.generic.OrderBuilder` that closes a
     bear put vertical position. See :ref:`vertical_spreads` for details.
     '''
-    from schwab.orders.common import OptionInstruction, OrderType, OrderStrategyType
-    from schwab.orders.common import ComplexOrderStrategyType
+    from schwaby.orders.common import OptionInstruction, OrderType, OrderStrategyType
+    from schwaby.orders.common import ComplexOrderStrategyType
 
     return (__base_builder()
             .set_order_type(OrderType.NET_CREDIT)
