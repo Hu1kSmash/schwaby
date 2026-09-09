@@ -1079,10 +1079,15 @@ class LongDescriptionTest(unittest.TestCase):
         # description that publishes as blank or near-blank.
         self.assertGreater(len(html), 4000)
 
-        # Prose only. A code block comes back syntax-highlighted, so
+        # Single tokens only. A code block comes back syntax-highlighted, so
         # `pip install schwaby` renders as `pip<span class="w"> </span>install`
-        # -- asserting the literal command against the HTML checks the
-        # highlighter, not the README. The raw file is checked below instead.
+        # -- asserting a multi-word literal against the HTML checks the
+        # highlighter, not the README. An identifier survives because the
+        # highlighter wraps it rather than splitting it, which is why
+        # `easy_client` is here despite appearing only inside code. Anything
+        # with a space in it goes against the raw file instead; see
+        # `test_the_install_command_is_in_the_readme`, where an assertion
+        # written against this HTML went green for exactly this reason.
         for required in ('schwaby', 'schwab-py', 'easy_client'):
             self.assertIn(required, html)
 
