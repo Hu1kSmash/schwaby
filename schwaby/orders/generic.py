@@ -1,6 +1,5 @@
 import decimal
 import math
-import numbers
 
 from enum import Enum
 
@@ -57,6 +56,15 @@ def _build_object(obj):
 def _assert_finite(name, price, *, price_field=False):
     '''Rejects order fields which are not a finite number.
 
+    ``price_field`` says which kind of field is being guarded, because the two
+    take different types and only the caller knows which this is. A price field
+    is a string or a ``decimal.Decimal`` in Schwab's schema; a numeric one --
+    quantity, the offsets, the activation price -- is a number, and takes an
+    ``int`` or a ``float`` and nothing else. Passing a string to a numeric
+    field used to build it straight into the order, so
+    ``set_price_offset('abc')`` produced ``{"priceOffset": "abc"}``; it now
+    raises, and so does every prebuilt template given a string quantity.
+
     NaN and the infinities do not name a price, a size or an offset, and they
     arrive by computation rather than by typing: a limit derived from a quote
     that was missing, a trailing stop offset divided by a size that turned out
@@ -75,8 +83,9 @@ def _assert_finite(name, price, *, price_field=False):
     ``activation_price <= 0.0`` are both False for NaN, so those guards do not
     fire and the value passes straight through them.
 
-    Strings are otherwise passed through untouched, as they always have been.
-    Only the spellings Python reads as non-finite are refused, because
+    On a price field, strings are otherwise passed through untouched, as they
+    always have been; only the spellings Python reads as non-finite are
+    refused, because
     ``str()`` of a computed value is the obvious way to reach here.
     '''
     # Decimal first: float(Decimal('sNaN')) raises ValueError, which the string
@@ -145,7 +154,19 @@ def _assert_finite(name, price, *, price_field=False):
         #    so a bytes passed the old check and was stored as bytes, and
         #    `json.dumps` refuses those -- an order that is not wrong so much
         #    as unsendable, discovered at the point of sending.
-        if not isinstance(price, numbers.Real):
+        #
+        # `(int, float)` rather than `numbers.Real`, and the pair is copied
+        # from `_build_object`'s own first line on purpose: the question this
+        # answers is "can the order carry this", so the right predicate is the
+        # serializer's, not a mathematical one. `numbers.Real` is wider --
+        # `fractions.Fraction` and the numpy scalar types that do not subclass
+        # `int` or `float` are all Real -- and every one of those falls through
+        # to `vars()` in the builder and raises `vars() argument must have
+        # __dict__ attribute`, naming neither the field nor the value. That is
+        # the same ending as the bytes case above, reached by a different
+        # route, and a quantity read off a dataframe column is the realistic
+        # way to arrive at it.
+        if not isinstance(price, (int, float)):
             raise ValueError(
                     '{} must be a number, got {!r}'.format(name, price))
         value = float(price)

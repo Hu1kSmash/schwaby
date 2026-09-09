@@ -2420,12 +2420,19 @@ class _TestClient:
                    side_effect=real) as stopped_early:
             self.client._caller_stacklevel()
 
-        # Two frames unpatched: this function's own, which is internal, then
-        # the caller's, which is not. Asserted as a comparison rather than as
-        # the number 2, because the claim is that one walk ran to the end of
-        # the stack and the other stopped at the first foreign frame.
-        self.assertEqual(2, stopped_early.call_count)
-        self.assertGreater(exhausted.call_count, stopped_early.call_count)
+        # `patch` resolves `schwaby.client.base.os.path.abspath` to the
+        # shared `posixpath` module, since base.py does `import os` -- so this
+        # counts every call in the process during the window, not just this
+        # walk's. An exact count is therefore hostage to anything else running
+        # concurrently: coverage's own canonical_filename calls abspath, and
+        # one newly traced file would break it in CI and nowhere else.
+        #
+        # A bound and a comparison say the same thing without the coupling:
+        # the unpatched walk stops within a frame or two, the patched one runs
+        # to the end of a pytest stack, which is dozens deep.
+        self.assertLess(stopped_early.call_count, 5)
+        self.assertGreater(exhausted.call_count,
+                           stopped_early.call_count + 5)
 
     @no_duplicates
     def test_a_sibling_package_is_not_mistaken_for_ours(self):

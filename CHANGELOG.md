@@ -52,9 +52,28 @@ which are strings in the schema, and the validator could not tell the two kinds
 of field apart. It is now told which it is guarding, the same way it already
 distinguished them for `decimal.Decimal`.
 
-All four now raise a `ValueError` naming the field. The price fields are
-unchanged: they still take a string or a `decimal.Decimal`, and an unparseable
-price string is still left between the caller and Schwab.
+All four now raise a `ValueError` naming the field, and take an `int` or a
+`float` and nothing else. The predicate is `_build_object`'s own, deliberately:
+a `fractions.Fraction` and the numpy scalar types are numbers mathematically
+and still cannot be serialized into an order, so they raise here rather than
+at `build()` with `vars() argument must have __dict__ attribute`.
+
+The price fields are unchanged: they still take a string or a
+`decimal.Decimal`, and an unparseable price string is still left between the
+caller and Schwab.
+
+**This reaches every prebuilt template, which is the breaking part.** The
+templates build their order leg through the same check, so:
+
+```python
+equity_buy_market('AAPL', '10')     # was: {"quantity": "10"}, now raises
+equity_buy_market('AAPL', 10)       # unchanged
+```
+
+A string quantity was serialized as a JSON string where Schwab's schema says
+number. If you pass quantities as strings --- and `'10'` is an easy thing to
+have come out of a config file or a CSV --- this is the line that will move.
+The price arguments to those templates are unaffected.
 
 ### Tests for eighteen statements that had none
 

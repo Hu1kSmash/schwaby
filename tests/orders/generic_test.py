@@ -1,4 +1,5 @@
 import decimal
+import fractions
 import httpx2
 import unittest
 
@@ -1558,10 +1559,20 @@ class NonNumericOrderFieldTest(unittest.TestCase):
     SETTERS = ('set_quantity', 'set_stop_price_offset', 'set_price_offset',
                'set_activation_price')
 
-    # `object()` is in here on purpose: it is the case that answers "no" to
-    # both questions, so a fix which only catches None and lists still passes
-    # for it, and one which only catches the un-floatable still misses bytes.
-    NOT_NUMBERS = (None, [], {}, b'1', object())
+    # Each of these is here for a reason a smaller list would miss:
+    #
+    #  * None and [] answer "no" to `float()` -- the original hole.
+    #  * b'1' answers *yes*: float(b'1') is 1.0, so it passed and was stored
+    #    as bytes, which json.dumps then refuses.
+    #  * object() answers no to both, so a fix keyed on either question alone
+    #    still has to handle it.
+    #  * Fraction is a `numbers.Real`, so a guard written as
+    #    `isinstance(price, numbers.Real)` accepts it -- and it then reaches
+    #    `vars()` in `_build_object` and dies there. The predicate has to be
+    #    the serializer's, `(int, float)`, not a mathematical one. Without
+    #    this entry the two spellings are indistinguishable and the case went
+    #    GREEN under mutation.
+    NOT_NUMBERS = (None, [], {}, b'1', object(), fractions.Fraction(3, 2))
 
     # Strings are refused too, but for a different stated reason -- Schwab
     # types these fields as numbers, so a string is the wrong type rather than
@@ -1636,11 +1647,58 @@ class NonNumericOrderFieldTest(unittest.TestCase):
                 builder.build())
 
     @no_duplicates
-    def test_a_built_order_still_serialises(self):
-        # What the bytes case actually broke. float(b'1') is 1.0, so the guard
-        # passed and the bytes went into the order; the failure was json.
+    def test_the_guard_is_what_keeps_a_built_order_serialisable(self):
+        # This used to build an order out of two good values and assert that
+        # json.dumps worked, which it did before the fix as well -- a test
+        # that passes either way, over a path no bytes ever reached.
+        #
+        # The claim worth making is that the refusal is what prevents the
+        # unserialisable order: b'1' passed the old `float()` check because
+        # float(b'1') is 1.0, went in as bytes, and json.dumps refuses those.
         import json
         builder = OrderBuilder()
         builder.set_quantity(10)
-        builder.set_stop_price_offset(1.5)
-        json.dumps(builder.build(), allow_nan=False)
+
+        with self.assertRaises(ValueError):
+            builder.set_stop_price_offset(b'1')
+
+        # Nothing was stored on the way out, so what is left still serialises.
+        built = builder.build()
+        self.assertEqual({'quantity': 10}, built)
+        json.dumps(built, allow_nan=False)
+
+        # And the positive control: had it been stored, this is what would
+        # have happened.
+        with self.assertRaises(TypeError):
+            json.dumps({'stopPriceOffset': b'1'})
+
+    @no_duplicates
+    def test_the_prebuilt_templates_refuse_a_string_quantity_too(self):
+        # `__add_order_leg` calls the same validator, so this reaches every
+        # template in the package -- which is the most-used entry point here
+        # and the part of this change that is actually breaking.
+        # `equity_buy_market('AAPL', '10')` built `{"quantity": "10"}` and
+        # sent a string where Schwab's schema says number.
+        from schwaby.orders.equities import (
+                equity_buy_market, equity_sell_limit)
+
+        with self.assertRaises(ValueError) as ctx:
+            equity_buy_market('AAPL', '10')
+        self.assertIn('quantity', str(ctx.exception))
+
+        with self.assertRaises(ValueError):
+            equity_sell_limit('AAPL', '10', '25.50')
+
+        with self.assertRaises(ValueError):
+            equity_buy_market('AAPL', None)
+
+    @no_duplicates
+    def test_the_prebuilt_templates_still_take_a_number(self):
+        # The control. Everything above passes against a template that refuses
+        # every quantity, and the price stays a string -- that half is
+        # unchanged and is the reason the two kinds of field are told apart.
+        from schwaby.orders.equities import equity_sell_limit
+
+        built = equity_sell_limit('AAPL', 10, '25.50').build()
+        self.assertEqual(10, built['orderLegCollection'][0]['quantity'])
+        self.assertEqual('25.50', built['price'])
