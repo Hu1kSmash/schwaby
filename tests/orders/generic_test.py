@@ -1753,8 +1753,36 @@ class AcceptedTypesTableTest(unittest.TestCase):
     which is exactly the shape a single sentence gets wrong.
     """
 
-    SETTERS = ('set_price', 'set_stop_price', 'set_activation_price',
-               'set_quantity', 'set_price_offset', 'set_stop_price_offset')
+    @staticmethod
+    def validated_setters():
+        """Every OrderBuilder setter that runs a type validator.
+
+        Derived from the call sites rather than listed. A hardcoded tuple is
+        sized against the setters that existed when it was written -- add a
+        numeric one later and it is absent from this list *and* from the
+        documented table, and nothing fails while the page claims to be
+        complete. The docs say that table cannot quietly stop being true, so
+        the list it is checked against has to come from the code.
+        """
+        import ast
+        path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(
+                    os.path.abspath(__file__)))),
+                'schwaby', 'orders', 'generic.py')
+        with open(path, encoding='utf-8') as f:
+            tree = ast.parse(f.read())
+        cls = next(n for n in tree.body
+                   if isinstance(n, ast.ClassDef) and n.name == 'OrderBuilder')
+        found = []
+        for item in cls.body:
+            if not isinstance(item, ast.FunctionDef) \
+                    or not item.name.startswith('set_'):
+                continue
+            called = {n.func.id for n in ast.walk(item)
+                      if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+            if called & {'_assert_finite', '_require_price_string'}:
+                found.append(item.name)
+        return tuple(sorted(found))
 
     VALUES = {'str': '1.50', 'int': 7, 'float': 6.86,
               'Decimal': decimal.Decimal('1.50'), 'bool': True, 'None': None}
@@ -1788,11 +1816,15 @@ class AcceptedTypesTableTest(unittest.TestCase):
         types, documented = self.documented_table()
 
         # Positive control: the parse must actually have found the table.
-        self.assertEqual(sorted(self.SETTERS), sorted(documented))
+        # The documented table must list exactly the setters that
+        # validate -- neither a row for something that does not, nor a
+        # silent omission of one that does.
+        self.assertEqual(sorted(self.validated_setters()),
+                         sorted(documented))
         self.assertEqual(sorted(self.VALUES), sorted(types))
 
         wrong = []
-        for setter in self.SETTERS:
+        for setter in self.validated_setters():
             for name in types:
                 builder = OrderBuilder()
                 try:
@@ -1820,5 +1852,5 @@ class AcceptedTypesTableTest(unittest.TestCase):
 
         # And bool is refused by every one of them -- True was accepted as a
         # quantity through 4.0.0 and became a silent one-share order.
-        for setter in self.SETTERS:
+        for setter in self.validated_setters():
             self.assertEqual('no', documented[setter]['bool'], setter)

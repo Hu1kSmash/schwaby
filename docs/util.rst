@@ -35,14 +35,16 @@ described in the :ref:`Client documentation <orders-section>`.
 
 .. note::
 
-  **It returns an** ``int``, and order IDs are strings everywhere else --- in
-  ``get_orders_for_account`` responses, in ``ACCT_ACTIVITY`` payloads, and in
-  the ``Location`` header this reads it out of. An ``int`` therefore misses
-  every lookup keyed on the string form, and it misses them silently: the
-  symptom arrives much later, as an order you placed that you have no record
-  of. A consumer running this against funded accounts normalises to ``str`` at
-  the single point every placement passes through. Reported from that
-  deployment, and worth doing if you key anything by order ID.
+  **It returns an** ``int``, and the same order ID reaches you as several
+  types depending on where you read it: a JSON number from
+  ``get_orders_for_account``, a string inside ``ACCT_ACTIVITY``, and a string
+  in the ``Location`` header this parses. Nothing normalises them for you.
+
+  So a dictionary keyed by whatever one call site produced misses lookups from
+  another, and it misses them silently --- the symptom arrives much later, as
+  an order you placed that you have no record of. Pick one representation and
+  convert at every boundary; a consumer running this against funded accounts
+  normalises to ``str`` at the single point every placement passes through.
 
 Every outcome other than success raises, so there is no ``None`` to check for.
 The one worth handling deliberately is

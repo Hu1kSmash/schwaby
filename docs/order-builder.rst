@@ -312,11 +312,24 @@ quietly stop being true. Everything a setter refuses raises immediately and
 names the field, rather than being serialized as the wrong JSON type or
 dropped.
 
-The split is Schwab's rather than this library's invention: the price fields
-are strings in the order payload and the numeric ones are numbers. But it is
-the sort of thing that reads as a mistake in your own code --- passing
-``'1.50'`` to ``set_activation_price`` and ``6.86`` to ``set_price`` are both
-natural things to write, and both are refused.
+**The split is not Schwab's schema.** Schwab types ``price`` and ``stopPrice``
+as ``number($double)`` as well, and this library sends those as strings anyway
+because that is what the venue accepts --- so the schema does not separate the
+two groups and nothing here establishes that it would refuse the other shape.
+
+The two halves have two different reasons. A price takes a string or a
+``Decimal`` because a float cannot carry one exactly, which is what
+:ref:`price_strings` is about. A numeric field takes an ``int`` or a ``float``
+because the four numeric setters used to disagree with each other --- two
+refused a string through a range check and two accepted one because nothing
+downstream compared them --- and agreeing was better than continuing not to.
+
+Worth stating plainly because the reasons are checkable and the schema is not:
+a later reader reconciling these setters "to match Schwab's schema" would be
+working from a premise this page has just contradicted. And the practical
+consequence stands either way --- passing ``'1.50'`` to
+``set_activation_price`` and ``6.86`` to ``set_price`` are both natural things
+to write, and both are refused.
 
 That includes the quantity argument of every prebuilt template, which builds
 its order leg through the same check:

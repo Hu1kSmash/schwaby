@@ -95,6 +95,33 @@ However, **that redaction is not guaranteed to be complete, and checking the
 logs before sharing them is your responsibility.** Never share the contents of
 your token file.
 
+.. warning::
+
+  **Check by listing what is there, not by searching for what you expect.**
+
+  Two people independently redacted a five-frame account-activity capture
+  before it was shared. Both searched it for the account number and the stream
+  key, found them replaced, and called it clean. It also contained this:
+
+  .. code-block:: python
+
+    # illustrative -- the real one carried a real address
+    "TradeTag": "TA_janedoeexamplecom1753922332"
+
+  which is ``jane.doe@example.com`` with the ``@`` and the ``.`` removed ---
+  assembled that way by Schwab, not by the sender. ``grep`` for the address
+  finds nothing. So does any pattern looking for an ``@``. The same file
+  carried a customer ID that outlives the account number, and the holder's
+  state of residence.
+
+  A search can only confirm what you already suspect. Parse the payload, walk
+  every value at every level --- ``MESSAGE_DATA`` is a JSON string, so its
+  contents are one parse deeper than they look --- and read the list. Better
+  still, if you are building a fixture rather than filing a report, emit only
+  the fields the problem needs and drop the rest by construction. Every finding
+  in that capture survived being rebuilt that way, because none of them
+  depended on an identifier.
+
 For completeness, here is this method's documentation:
 
 .. automethod:: schwaby.debug.enable_bug_report_logging

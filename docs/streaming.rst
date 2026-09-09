@@ -1065,9 +1065,13 @@ presence of ``OrderUROutCompleted`` alone to tell a cancel from a rejection.
 
   .. code-block:: python
 
+    # Inside the parsed MESSAGE_DATA, not beside it -- see below, where
+    # MESSAGE_DATA turns out to be a JSON string that has to be parsed a
+    # second time. `EventType` is that inner document's own type field and
+    # is not the same key as the content item's MESSAGE_TYPE.
     {"EventType": "ExecutionCreated",
      "ExecutionInfo": {
-        "ExecutionQuantity": {"lo": "1000000", "signScale": 12},   # decodes to 1.0
+        "ExecutionQuantity": {"lo": "1000000", "signScale": 12},   # decodes to 1
         "ExecutionTransType": "UROut",
         "CancelType": "ClientCancel"}}
 
@@ -1103,11 +1107,25 @@ captured payload:
 
 .. code-block:: python
 
+  import decimal
+
   def decode(field):
-      if 'lo' not in field:          # absent mantissa means zero
-          return 0.0
-      value = int(field['lo']) / 10 ** (field['signScale'] // 2)
-      return -value if field['signScale'] % 2 else value
+      # Not a dict on every frame: the paragraph above has Schwab sending a
+      # bare int where a sibling frame two milliseconds earlier sent a label,
+      # so `'lo' not in field` on its own raises TypeError on the odd one.
+      if not isinstance(field, dict) or 'lo' not in field:
+          return decimal.Decimal(0)       # absent mantissa means zero
+      scale = field.get('signScale', 0)
+      value = decimal.Decimal(field['lo']).scaleb(-(scale // 2))
+      return -value if scale % 2 else value
+
+``Decimal`` rather than a float, deliberately: these are money, and
+:meth:`set_price <schwaby.orders.generic.OrderBuilder.set_price>` has refused a
+float since 2.1.0 for the reason :ref:`price_strings` gives. A value decoded
+into a binary float cannot be fed back into a reprice without going through the
+conversion this library exists to avoid, and accumulating one over a day's
+principal reintroduces exactly the error class that made limit prices a cent
+low. ``scaleb`` shifts the decimal point rather than dividing, so it is exact.
 
 Confirmed against known truth on a 1-share order at a $6.86 limit:
 ``LimitPrice`` ``{"lo": "6860000", "signScale": 12}`` is ``6.86``, and
@@ -1138,7 +1156,9 @@ was recorded in production without the frame being retained and so is attested
 by a note rather than by bytes anyone can still produce. Schwab documents none
 of it.
 
-**The last five belong to resting orders.** They are the lifecycle of a limit or
+**The four tokens in that last group belong to resting orders** ---
+``ORDERMONITORCREATED``, ``ORDERMONITORCOMPLETED``, ``CHANGECREATED`` and
+``CHANGEACCEPTED``. They are the lifecycle of a limit or
 stop order sitting on the book, and a program that places only market orders
 will never see them --- it will meet them the first time a human places an order
 by hand in the same account from Schwab's own interface. That is exactly how

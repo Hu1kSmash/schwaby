@@ -99,11 +99,14 @@ said so:
 | --- | --- | --- |
 | `set_price`, `set_stop_price` | `str`, `Decimal` | unchanged |
 | `set_quantity`, `set_activation_price` | `str` → `TypeError`, `bool` → **accepted** | `int`, `float` |
-| `set_price_offset`, `set_stop_price_offset` | everything except `Decimal` | `int`, `float` |
+| `set_price_offset`, `set_stop_price_offset` | `str`, `int`, `float`, `bool`, `None` | `int`, `float` |
 
-`set_quantity(True)` used to build a **silent one-share order** — `True` is an
-`int` subclass, so it passed every check and serialized as `{"quantity": true}`.
-That is refused now, on all four.
+`set_quantity(True)` used to be accepted, silently: `True` is an `int`
+subclass, so it passed every check. Measured, it serializes as
+`{"quantity": true}` — a JSON boolean, not `1`. What Schwab does with that has
+not been observed, so the claim here is the checkable one: the order was built
+without complaint carrying a value that is not a number in the schema, which is
+unsendable rather than wrong. It is refused now, on all four setters.
 
 The two price setters are unchanged and are deliberately the opposite rule:
 they take a `str` or a `decimal.Decimal` and refuse an `int` or a `float`,
