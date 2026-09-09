@@ -287,12 +287,36 @@ chose, and rendering it here decides nothing:
 
    order.set_price(decimal.Decimal('199.99'))
 
-``Decimal`` is for prices specifically. The other numeric fields --
-``quantity``, ``activationPrice``, ``stopPriceOffset`` and the offset that
-pairs with the price link -- take an ``int`` or a ``float``, and nothing else.
-A ``Decimal``, a ``str``, ``None``, a ``bool`` or any other type raises
-immediately and names the field, rather than being serialized as the wrong
-JSON type or dropped.
+**There are two rules here, not one, and they are close to opposites.** A
+price field takes a string or a ``decimal.Decimal``. A numeric field takes an
+``int`` or a ``float``. Each refuses what the other requires:
+
+.. _accepted_types:
+
+.. table:: What each setter accepts
+   :widths: auto
+
+   ========================= ======= ======= ========= =========== ======== ========
+   setter                    ``str`` ``int`` ``float`` ``Decimal`` ``bool`` ``None``
+   ========================= ======= ======= ========= =========== ======== ========
+   ``set_price``             yes     no      no        yes         no       no
+   ``set_stop_price``        yes     no      no        yes         no       no
+   ``set_activation_price``  no      yes     yes       no          no       no
+   ``set_quantity``          no      yes     yes       no          no       no
+   ``set_price_offset``      no      yes     yes       no          no       no
+   ``set_stop_price_offset`` no      yes     yes       no          no       no
+   ========================= ======= ======= ========= =========== ======== ========
+
+That table is checked against the validators by the test suite, so it cannot
+quietly stop being true. Everything a setter refuses raises immediately and
+names the field, rather than being serialized as the wrong JSON type or
+dropped.
+
+The split is Schwab's rather than this library's invention: the price fields
+are strings in the order payload and the numeric ones are numbers. But it is
+the sort of thing that reads as a mistake in your own code --- passing
+``'1.50'`` to ``set_activation_price`` and ``6.86`` to ``set_price`` are both
+natural things to write, and both are refused.
 
 That includes the quantity argument of every prebuilt template, which builds
 its order leg through the same check:

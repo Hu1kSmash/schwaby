@@ -390,6 +390,26 @@ Instrument Searching and Fundamentals
 Orders
 ++++++
 
+.. warning::
+
+  **The order methods do not take their arguments in the same order.**
+
+  .. code-block:: python
+
+    c.place_order(account_hash, order_spec)
+    c.replace_order(account_hash, order_id, order_spec)
+    c.preview_order(account_hash, order_spec)
+
+    c.cancel_order(order_id, account_hash)      # note the order
+    c.get_order(order_id, account_hash)         # and here
+
+  Both arguments are opaque strings, so swapping them raises nothing locally.
+  It sends a well-formed request naming the wrong account or the wrong order,
+  and you find out from the response --- or from a cancel that quietly did not
+  cancel what you meant. A consumer running this against funded accounts keeps
+  a regression test pinning the argument order of each of these, which is a
+  fair signal of how easy the mistake is.
+
 
 .. _placing_new_orders:
 

@@ -1,4 +1,5 @@
 import decimal
+import os
 import fractions
 import httpx2
 import unittest
@@ -1736,3 +1737,88 @@ class NonNumericOrderFieldTest(unittest.TestCase):
         built = equity_sell_limit('AAPL', 10, '25.50').build()
         self.assertEqual(10, built['orderLegCollection'][0]['quantity'])
         self.assertEqual('25.50', built['price'])
+
+
+class AcceptedTypesTableTest(unittest.TestCase):
+    """The table in `docs/order-builder.rst`, checked against the validators.
+
+    A downstream integrator built their time-in-force handling from an enum and
+    their type handling from a sentence, and both were wrong in ways nothing
+    raised until an order was placed. Their suggestion was the right one: state
+    the accepted types per setter, and generate the statement rather than
+    writing it, so it cannot quietly stop being true.
+
+    The builder has two rules that are close to opposites -- a price field
+    takes a string or a Decimal, a numeric field takes an int or a float --
+    which is exactly the shape a single sentence gets wrong.
+    """
+
+    SETTERS = ('set_price', 'set_stop_price', 'set_activation_price',
+               'set_quantity', 'set_price_offset', 'set_stop_price_offset')
+
+    VALUES = {'str': '1.50', 'int': 7, 'float': 6.86,
+              'Decimal': decimal.Decimal('1.50'), 'bool': True, 'None': None}
+
+    @staticmethod
+    def documented_table():
+        """Parses the simple-table under `.. _accepted_types:` back out."""
+        path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(
+                    os.path.abspath(__file__)))), 'docs', 'order-builder.rst')
+        with open(path, encoding='utf-8') as f:
+            lines = f.read().split('\n')
+        start = next(i for i, l in enumerate(lines)
+                     if l.strip() == '.. _accepted_types:')
+        # A simple-table rule is `===== ==== ====`, so it is `=` and spaces --
+        # not `set(...) == {'='}`, which was the first version and matched
+        # nothing because of the column gaps.
+        rules = [i for i, l in enumerate(lines[start:], start)
+                 if l.strip() and set(l.strip()) <= {'=', ' '}]
+        assert len(rules) >= 3, 'accepted-types table not found'
+        header = lines[rules[0] + 1].split()
+        types = [c.strip('`') for c in header[1:]]
+        table = {}
+        for line in lines[rules[1] + 1:rules[2]]:
+            cells = line.split()
+            table[cells[0].strip('`')] = dict(zip(types, cells[1:]))
+        return types, table
+
+    @no_duplicates
+    def test_the_documented_table_matches_the_validators(self):
+        types, documented = self.documented_table()
+
+        # Positive control: the parse must actually have found the table.
+        self.assertEqual(sorted(self.SETTERS), sorted(documented))
+        self.assertEqual(sorted(self.VALUES), sorted(types))
+
+        wrong = []
+        for setter in self.SETTERS:
+            for name in types:
+                builder = OrderBuilder()
+                try:
+                    getattr(builder, setter)(self.VALUES[name])
+                    actual = 'yes'
+                except Exception:
+                    actual = 'no'
+                if documented[setter][name] != actual:
+                    wrong.append('%s / %s: docs say %s, is %s'
+                                 % (setter, name, documented[setter][name],
+                                    actual))
+        self.assertEqual([], wrong)
+
+    @no_duplicates
+    def test_the_two_rules_really_are_opposites(self):
+        # The claim the prose makes above the table, asserted rather than
+        # asserted-in-prose: a price field refuses what a numeric field needs
+        # and the other way round. If these ever converge the sentence has to
+        # go, and this is what will say so.
+        _, documented = self.documented_table()
+        self.assertEqual('yes', documented['set_price']['str'])
+        self.assertEqual('no', documented['set_price']['float'])
+        self.assertEqual('no', documented['set_quantity']['str'])
+        self.assertEqual('yes', documented['set_quantity']['float'])
+
+        # And bool is refused by every one of them -- True was accepted as a
+        # quantity through 4.0.0 and became a silent one-share order.
+        for setter in self.SETTERS:
+            self.assertEqual('no', documented[setter]['bool'], setter)

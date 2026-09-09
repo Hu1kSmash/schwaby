@@ -89,6 +89,52 @@ their range check, and the two offsets accepted one only because nothing
 downstream compares them to zero. That is an accident of which setters have a
 range check, not a decision anyone made.
 
+### The four numeric setters now agree with each other
+
+Worth stating on its own, because it changes what working integrator code has
+to pass. Through 4.0.0 the builder enforced three different rules and nothing
+said so:
+
+| setter | 4.0.0 accepted | 4.1.0 accepts |
+| --- | --- | --- |
+| `set_price`, `set_stop_price` | `str`, `Decimal` | unchanged |
+| `set_quantity`, `set_activation_price` | `str` → `TypeError`, `bool` → **accepted** | `int`, `float` |
+| `set_price_offset`, `set_stop_price_offset` | everything except `Decimal` | `int`, `float` |
+
+`set_quantity(True)` used to build a **silent one-share order** — `True` is an
+`int` subclass, so it passed every check and serialized as `{"quantity": true}`.
+That is refused now, on all four.
+
+The two price setters are unchanged and are deliberately the opposite rule:
+they take a `str` or a `decimal.Decimal` and refuse an `int` or a `float`,
+because a float cannot carry a price exactly. So the builder has two rules, not
+one. `docs/order-builder.rst` now states the accepted types **per setter**, in
+a table the test suite checks against the validators — in both directions, so
+it fails if the table lies and if a validator drifts from it.
+
+### Documentation, from a consumer running this against funded accounts
+
+Findings that could not have come from reading the library, each measured:
+
+**The account-activity payload.** A cancel emits `ExecutionCreated` carrying a
+non-zero `ExecutionQuantity` on an order that filled nothing — only
+`ExecutionTransType` distinguishes it from a fill, so a consumer reading
+quantities by shape books a phantom fill on every reprice. `ResponseType` and
+`RouteStatus` arrive as *either* the label or its ordinal, two milliseconds
+apart on the same order. Numbers are `{lo, signScale}` and an **odd**
+`signScale` means negative, so a decoder handling only the even case flips the
+sign on every cash-direction field. Timestamps arrive as `{}` rather than null,
+`MESSAGE_DATA` is a JSON string, and content items within one message are not
+in lifecycle order.
+
+**The client surface.** `place_order`, `replace_order` and `preview_order` take
+the account hash first; `cancel_order` and `get_order` take the order ID first.
+Both are opaque strings, so swapping them raises nothing locally.
+`Utils.extract_order_id` returns an `int` where order IDs are strings
+everywhere else. And `easy_client` opens a browser when the token ages out,
+which on a daemon is a window nobody sees — the install page now points
+unattended processes at `client_from_token_file`.
+
 ### Tests for eighteen statements that had none
 
 Reading every uncovered line in the package rather than the percentage. Most

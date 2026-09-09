@@ -1057,6 +1057,87 @@ HTTP status believes the order was accepted.** Re-read the order.
 Note the two sequences differ only by ``ExecutionCreated``, so do not use the
 presence of ``OrderUROutCompleted`` alone to tell a cancel from a rejection.
 
+.. danger::
+
+  **A cancel emits** ``ExecutionCreated`` **carrying a non-zero quantity, on an
+  order that filled nothing.** Measured by placing an unfillable limit against
+  a funded account and cancelling it:
+
+  .. code-block:: python
+
+    {"EventType": "ExecutionCreated",
+     "ExecutionInfo": {
+        "ExecutionQuantity": {"lo": "1000000", "signScale": 12},   # decodes to 1.0
+        "ExecutionTransType": "UROut",
+        "CancelType": "ClientCancel"}}
+
+  A genuine fill carries the *same* ``ExecutionQuantity`` field with
+  ``ExecutionTransType: "Fill"``. **The quantity cannot tell a fill from a
+  cancel. Only the trans-type can.**
+
+  This is the expensive one because of where it lands: an execution algorithm
+  cancels a clip to reprice, many times per parent order, by design. A consumer
+  reading quantities by shape books a phantom fill on every reprice, concludes
+  the clip is done, never places the remainder, and believes it holds a
+  position it does not have. Nothing raises.
+
+  Exclude on any ``UROUT`` / ``CANCEL`` / ``BUST`` / ``REJECT`` signal rather
+  than trying to enumerate every fill label. The error is asymmetric ---
+  under-counting is recoverable from a REST poll, over-counting is not.
+
+**Two enumerated fields arrive as either the label or its ordinal.**
+``ResponseType`` and ``RouteStatus`` were captured as both a string and an
+integer on the *same* order, from two ``ExecutionRequestCompleted`` frames two
+milliseconds apart::
+
+  seq=10   ResponseType='Accepted'   RouteStatus='RouteVenueAccepted'
+  seq=11   ResponseType=8            RouteStatus=8
+
+Not a version difference and not an account difference --- one order, one
+cancel, one capture. Any model declaring these ``str``, or ``int``, breaks on
+the sibling frame.
+
+**Numbers are** ``{"lo": "<mantissa>", "signScale": N}``, **and an odd**
+``signScale`` **means the value is negative.** The rule that reproduces every
+captured payload:
+
+.. code-block:: python
+
+  def decode(field):
+      if 'lo' not in field:          # absent mantissa means zero
+          return 0.0
+      value = int(field['lo']) / 10 ** (field['signScale'] // 2)
+      return -value if field['signScale'] % 2 else value
+
+Confirmed against known truth on a 1-share order at a $6.86 limit:
+``LimitPrice`` ``{"lo": "6860000", "signScale": 12}`` is ``6.86``, and
+``EstimatedPrincipalAmount`` ``{"lo": "6860000", "signScale": 13}`` is
+``-6.86`` --- principal on a *buy*, so cash out. **A decoder that handles only
+the even case flips the sign on every cash-direction field, silently.**
+
+**Timestamp and container fields arrive as** ``{}``, not ``null`` and not
+absent, where the populated form is ``{"DateTimeString": "..."}``. Seen on
+``ExecutionTime``, ``RouteAcknowledgmentTimeStamp``, ``AsOfTimeStamp``,
+``PreferredRoute``, ``EquityOrderLeg`` and others in a single five-frame
+capture. A truthiness check handles it; ``d['ExecutionTime']['DateTimeString']``
+does not.
+
+**``MESSAGE_DATA`` is a JSON string, not an object** --- it has to be parsed a
+second time --- and it is the empty string on the ``SUBSCRIBED`` ack, which is
+not a malformed message and should not be reported as one.
+
+**Content items within one message are not necessarily in lifecycle order.** A
+``CancelAccepted`` naming no symbol was seen arriving ahead of the
+``ExecutionRequested`` for the same order that did name the instrument, so a
+consumer ruling item-by-item makes its verdict depend on Schwab's ordering
+within the batch. Scan the whole batch before classifying any of it.
+
+All of the above was measured against a funded account, by placing an
+unfillable limit order and cancelling it --- except the batch ordering, which
+was recorded in production without the frame being retained and so is attested
+by a note rather than by bytes anyone can still produce. Schwab documents none
+of it.
+
 **The last five belong to resting orders.** They are the lifecycle of a limit or
 stop order sitting on the book, and a program that places only market orders
 will never see them --- it will meet them the first time a human places an order

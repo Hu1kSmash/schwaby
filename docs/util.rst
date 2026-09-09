@@ -33,11 +33,31 @@ described in the :ref:`Client documentation <orders-section>`.
   r = client.place_order(account_hash, order)
   order_id = Utils(client, account_hash).extract_order_id(r)
 
+.. note::
+
+  **It returns an** ``int``, and order IDs are strings everywhere else --- in
+  ``get_orders_for_account`` responses, in ``ACCT_ACTIVITY`` payloads, and in
+  the ``Location`` header this reads it out of. An ``int`` therefore misses
+  every lookup keyed on the string form, and it misses them silently: the
+  symptom arrives much later, as an order you placed that you have no record
+  of. A consumer running this against funded accounts normalises to ``str`` at
+  the single point every placement passes through. Reported from that
+  deployment, and worth doing if you key anything by order ID.
+
 Every outcome other than success raises, so there is no ``None`` to check for.
 The one worth handling deliberately is
 :class:`~schwaby.utils.OrderIdNotFoundError`: Schwab accepted the order and did
 not give back an ID, which means **the order may be live** and you have no
 handle on it.
+
+.. warning::
+
+  Since 3.0.0 this raises where it used to return ``None``, which means
+  **anything between the call and its return value is now skipped** on the
+  failing path rather than running with a ``None`` in hand. In one live
+  deployment that was the bookkeeping which records an order as the program's
+  own, and skipping it made the system report its own orders as manual trades.
+  If you have code in that position, move it or catch around it.
 
 .. code-block:: python
 
