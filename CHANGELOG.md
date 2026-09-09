@@ -22,6 +22,64 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## Unreleased
+
+### An order field that is not a number is refused, and says which field
+
+`OrderBuilder`'s numeric setters --- `set_quantity`, `set_stop_price_offset`,
+`set_price_offset` and `set_activation_price` --- validated by asking whether
+`float()` could parse the value. That is the wrong question in both directions,
+and the two directions failed differently.
+
+**Things that are not numbers answered no, and were let through.**
+`set_quantity(None)` reached `quantity <= 0` and raised
+`TypeError: '<=' not supported between instances of 'NoneType' and 'int'`,
+naming neither the field nor the value. The two offset setters have no
+comparison after the check at all, so they *accepted* it --- and since a `None`
+is dropped when the order is built, `set_stop_price_offset(None)` produced an
+order with no offset on it and no complaint. A trailing stop with no offset is
+a different order from the one that was asked for, placed without an error.
+
+**And things that are not numbers answered yes.** `float(b'1')` is `1.0`, so a
+`bytes` passed the check and was stored as `bytes`; `json.dumps` refuses those,
+so the order was not wrong so much as unsendable, discovered at the point of
+sending it.
+
+**A string on a numeric field was taken as well.**
+`set_price_offset('abc')` built `{"priceOffset": "abc"}` and sent it. Schwab
+types these fields as numbers; the string branch exists for the *price* fields,
+which are strings in the schema, and the validator could not tell the two kinds
+of field apart. It is now told which it is guarding, the same way it already
+distinguished them for `decimal.Decimal`.
+
+All four now raise a `ValueError` naming the field. The price fields are
+unchanged: they still take a string or a `decimal.Decimal`, and an unparseable
+price string is still left between the caller and Schwab.
+
+### Tests for eighteen statements that had none
+
+Reading every uncovered line in the package rather than the percentage. Most
+were input validation that simply had no test --- `OptionSymbol`'s rejection of
+a malformed expiration date, an unknown contract type and a wrong expiration
+*type*, plus its accepted-but-unexercised `datetime.datetime` argument;
+`convert_enum_iterable`'s enforcement arm; `Utils.set_account_hash`, which is
+public and documented and was called by nothing; `_describe_error` on a body
+that is not a JSON object; the token-refresh classifier on a non-string
+description; `set_json_decoder`'s type check; and receiving before `login()`.
+
+One was worth more than the rest. **`client_from_access_functions(asyncio=True)`
+was never called by any test.** Every `client_from_*` entry point funnels into
+that function, and its asyncio branch --- which selects the async session and
+client, and wraps the token writer in an `async def` --- was unreached. The
+line that actually writes the token there carried a `# pragma: no cover`, so it
+was excluded from measurement as well as untested: a write that quietly did
+nothing on the async path would have shown up as neither a failure nor a gap.
+It is tested and measured now, and the pragma is gone.
+
+Coverage went from 98.40% to 99.31%, which is not the point; what changed is
+that fourteen of those statements were reachable from a public method with a
+plausible argument.
+
 ## 4.0.0
 
 **The package you import is now `schwaby`, not `schwab`.**

@@ -8134,6 +8134,34 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIsInstance(self.client.json_decoder, Decoder)
 
     @no_duplicates
+    def test_set_json_decoder_refuses_something_that_is_not_one(self):
+        # The refusal itself, which nothing exercised -- only the accepting
+        # path had a test. The check exists because the alternative is an
+        # AttributeError from deep inside the read loop the first time a frame
+        # arrives, long after the mistake was made.
+        for not_a_decoder in (None, object(), json, lambda raw: raw,
+                              json.JSONDecoder()):
+            with self.subTest(value=not_a_decoder):
+                with self.assertRaises(ValueError) as ctx:
+                    self.client.set_json_decoder(not_a_decoder)
+                self.assertIn('StreamJsonDecoder', str(ctx.exception))
+
+        # And the decoder that was there before is still the one in use.
+        self.assertNotIn(None, [self.client.json_decoder])
+
+    @no_duplicates
+    async def test_receiving_before_login_says_so(self):
+        # `self._socket is None` until login(). Without this the first read
+        # raises AttributeError on None, which names neither the socket nor
+        # login; the message is the whole point of the check.
+        client = StreamClient(client=MagicMock())
+        self.assertIsNone(client._socket)
+
+        with self.assertRaises(ValueError) as ctx:
+            await client._receive_from_socket()
+        self.assertIn('login()', str(ctx.exception))
+
+    @no_duplicates
     def test_a_debug_line_survives_an_unserialisable_frame(self):
         # Cosmetic rather than load-bearing -- logging swallows a formatting
         # failure -- but without it the content of every debug line is replaced

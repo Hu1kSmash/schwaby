@@ -1532,3 +1532,115 @@ class NonFinitePriceTest(unittest.TestCase):
         # reconstructing a historical order rely on that.
         self.order_builder.copy_price(float('nan'))
         self.assertNotEqual(None, self.order_builder.build()['price'])
+
+
+class NonNumericOrderFieldTest(unittest.TestCase):
+    '''The numeric order fields, given something that is not a number.
+
+    `_assert_finite` used to answer "can float() parse it" and return quietly
+    when the answer was no. That is the wrong question in both directions, and
+    the two directions failed differently:
+
+    Things that are not numbers answer no. `set_quantity(None)` then reached
+    `quantity <= 0` and raised a bare TypeError naming neither the field nor
+    the value. The two offset setters have no comparison after the call at all,
+    so they *accepted* it -- and `_build_object` drops a None, so
+    `set_stop_price_offset(None)` built an order with no offset on it and said
+    nothing. A trailing stop with no offset is a different order from the one
+    that was asked for, placed without an error.
+
+    And things that are not numbers answer yes. `float(b'1')` is 1.0, so a
+    bytes passed and was stored as bytes; `json.dumps` refuses those, so the
+    order was not wrong so much as unsendable, discovered at the point of
+    sending it.
+    '''
+
+    SETTERS = ('set_quantity', 'set_stop_price_offset', 'set_price_offset',
+               'set_activation_price')
+
+    # `object()` is in here on purpose: it is the case that answers "no" to
+    # both questions, so a fix which only catches None and lists still passes
+    # for it, and one which only catches the un-floatable still misses bytes.
+    NOT_NUMBERS = (None, [], {}, b'1', object())
+
+    # Strings are refused too, but for a different stated reason -- Schwab
+    # types these fields as numbers, so a string is the wrong type rather than
+    # a missing value -- and by a different branch. Kept separate so a fix to
+    # one branch cannot make the other's assertion pass by accident.
+    NOT_NUMBERS_BUT_STRINGS = ('1.5', 'abc')
+
+    @no_duplicates
+    def test_a_non_number_is_refused_and_the_message_names_the_field(self):
+        for setter in self.SETTERS:
+            for value in self.NOT_NUMBERS:
+                with self.subTest(setter=setter, value=value):
+                    builder = OrderBuilder()
+                    with self.assertRaises(ValueError) as ctx:
+                        getattr(builder, setter)(value)
+                    # The field name is the point. A bare TypeError from the
+                    # comparison two lines later says only that NoneType and
+                    # int do not compare.
+                    field = setter[len('set_'):].replace('_', ' ')
+                    self.assertIn(field, str(ctx.exception))
+
+    @no_duplicates
+    def test_a_string_is_refused_on_a_field_schwab_types_as_a_number(self):
+        # These reached `_assert_finite`'s string branch, which exists for the
+        # price fields and returns quietly for anything it cannot parse. The
+        # offsets have no comparison after the call, so `set_price_offset('abc')`
+        # built `{"priceOffset": "abc"}` and sent it.
+        for setter in self.SETTERS:
+            for value in self.NOT_NUMBERS_BUT_STRINGS:
+                with self.subTest(setter=setter, value=value):
+                    builder = OrderBuilder()
+                    with self.assertRaises(ValueError) as ctx:
+                        getattr(builder, setter)(value)
+                    self.assertIn('not a price string', str(ctx.exception))
+                    self.assertEqual({}, builder.build())
+
+    @no_duplicates
+    def test_the_price_fields_still_take_a_string(self):
+        # The other half of the same change, and the reason `_assert_finite`
+        # takes a flag rather than deciding from the value: a price field is a
+        # string in Schwab's schema and a numeric field is not.
+        builder = OrderBuilder()
+        builder.set_price('12.34')
+        builder.set_stop_price(decimal.Decimal('5.6'))
+        self.assertEqual({'price': '12.34', 'stopPrice': '5.6'},
+                         builder.build())
+
+    @no_duplicates
+    def test_the_offsets_do_not_silently_accept_one(self):
+        # Separate from the assertion above because these two are the ones
+        # that raised nothing at all: the failure was an order that built
+        # cleanly with the field missing, not an exception of the wrong type.
+        for setter in ('set_stop_price_offset', 'set_price_offset'):
+            with self.subTest(setter=setter):
+                builder = OrderBuilder()
+                with self.assertRaises(ValueError):
+                    getattr(builder, setter)(None)
+                self.assertEqual({}, builder.build())
+
+    @no_duplicates
+    def test_numbers_are_still_accepted(self):
+        # The positive control. Every assertion above passes just as well
+        # against a setter that refuses everything.
+        builder = OrderBuilder()
+        builder.set_quantity(10)
+        builder.set_stop_price_offset(1.5)
+        builder.set_price_offset(2)
+        builder.set_activation_price(42.35)
+        self.assertEqual(
+                {'quantity': 10, 'stopPriceOffset': 1.5, 'priceOffset': 2,
+                 'activationPrice': 42.35},
+                builder.build())
+
+    @no_duplicates
+    def test_a_built_order_still_serialises(self):
+        # What the bytes case actually broke. float(b'1') is 1.0, so the guard
+        # passed and the bytes went into the order; the failure was json.
+        import json
+        builder = OrderBuilder()
+        builder.set_quantity(10)
+        builder.set_stop_price_offset(1.5)
+        json.dumps(builder.build(), allow_nan=False)

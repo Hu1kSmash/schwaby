@@ -1,5 +1,6 @@
 import decimal
 import math
+import numbers
 
 from enum import Enum
 
@@ -53,7 +54,7 @@ def _build_object(obj):
         return ret
 
 
-def _assert_finite(name, price):
+def _assert_finite(name, price, *, price_field=False):
     '''Rejects order fields which are not a finite number.
 
     NaN and the infinities do not name a price, a size or an offset, and they
@@ -99,16 +100,55 @@ def _assert_finite(name, price):
                 'Got: {}'.format(name, format(price, 'f')))
 
     if isinstance(price, str):
+        # Same distinction the Decimal branch above draws, for the same
+        # reason. A price field is a string in Schwab's schema and a numeric
+        # field is not, and only the caller knows which one this is -- so it
+        # says, rather than this guessing from the value.
+        #
+        # Without it the two offset setters accepted a string and built it
+        # straight into the order: `set_stop_price_offset('abc')` produced
+        # `{"stopPriceOffset": "abc"}` and sent it. They are the two numeric
+        # setters with no comparison after this call to trip over the type,
+        # which is why they took it silently where `set_quantity` at least
+        # raised something.
+        if not price_field:
+            raise ValueError(
+                    '{} is a number in Schwab\'s schema, not a price string, '
+                    'so it does not take a str. Pass an int or a float. '
+                    'Got: {!r}'.format(name, price))
+
         try:
             value = float(price)
         except ValueError:
             # Not a number at all. That is between the caller and Schwab.
             return
     else:
-        try:
-            value = float(price)
-        except (TypeError, ValueError):
-            return
+        # Asked as "is this a number", not as "can float() parse it". The
+        # second question is the one this used to ask, by catching TypeError
+        # and returning, and it is the wrong question twice over:
+        #
+        #  * things that are not numbers answer no, and returning let them
+        #    through. `set_quantity(None)` then reached `quantity <= 0` and
+        #    raised a bare `TypeError: '<=' not supported between instances of
+        #    'NoneType' and 'int'` -- naming neither the field nor the value,
+        #    which is the failure this function exists to prevent. Worse, the
+        #    two offset setters have no comparison after this call, so they
+        #    *accepted* it: `_build_object` drops a None, so
+        #    `set_stop_price_offset(None)` silently built an order with no
+        #    offset on it and no complaint. That is this function's own stated
+        #    purpose arriving by a route it did not cover -- the docstring
+        #    names a trailing stop offset divided by a size that turned out to
+        #    be zero, which gives NaN and was caught; a lookup that simply
+        #    missed gives None, and was not.
+        #
+        #  * things that are not numbers answer *yes*. `float(b'1')` is 1.0,
+        #    so a bytes passed the old check and was stored as bytes, and
+        #    `json.dumps` refuses those -- an order that is not wrong so much
+        #    as unsendable, discovered at the point of sending.
+        if not isinstance(price, numbers.Real):
+            raise ValueError(
+                    '{} must be a number, got {!r}'.format(name, price))
+        value = float(price)
 
     if math.isnan(value) or math.isinf(value):
         raise ValueError(
@@ -185,7 +225,7 @@ def _require_price_string(name, price):
                 'copy_{} sets the field with no validation at all.'.format(
                     name, price, name.replace(' ', '_')))
 
-    _assert_finite(name, price)
+    _assert_finite(name, price, price_field=True)
     return price
 
 

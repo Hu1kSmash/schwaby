@@ -2392,6 +2392,42 @@ class _TestClient:
             self.assertGreaterEqual(self.client._caller_stacklevel(), 1)
 
     @no_duplicates
+    def test_a_stack_entirely_inside_the_package_still_blames_somebody(self):
+        """The fallback after the walk runs out of frames.
+
+        The docstring on `_caller_stacklevel` says it never returns 0, because
+        `warnings.warn` reads 0 as "blame the frame which called warn" -- this
+        library -- which is the exact failure the function exists to avoid. It
+        names a zipimport or a frozen build as how a frame's `co_filename`
+        stops resolving under the package root.
+
+        Nothing reached the line. Under pytest the stack always contains
+        frames outside the package, so the loop always returns early. A root
+        of '' makes every absolute path look internal, which is the same shape
+        as every frame being unresolvable, and takes the walk to the end.
+        """
+        real = os.path.abspath
+        with patch.object(type(self.client), '_PACKAGE_ROOT', ''):
+            with patch('schwaby.client.base.os.path.abspath',
+                       side_effect=real) as exhausted:
+                self.assertEqual(1, self.client._caller_stacklevel())
+
+        # The return value alone cannot tell the two paths apart: called
+        # straight from a test, the early return is `max(0, 1)`, which is also
+        # 1. What distinguishes them is how far the walk got, so count the
+        # frames it looked at. Unpatched it stops at this file immediately.
+        with patch('schwaby.client.base.os.path.abspath',
+                   side_effect=real) as stopped_early:
+            self.client._caller_stacklevel()
+
+        # Two frames unpatched: this function's own, which is internal, then
+        # the caller's, which is not. Asserted as a comparison rather than as
+        # the number 2, because the claim is that one walk ran to the end of
+        # the stack and the other stopped at the first foreign frame.
+        self.assertEqual(2, stopped_early.call_count)
+        self.assertGreater(exhausted.call_count, stopped_early.call_count)
+
+    @no_duplicates
     def test_a_sibling_package_is_not_mistaken_for_ours(self):
         """A bare prefix test matches '.../schwabytools' against a root of
         '.../schwaby', so frames from an unrelated package are skipped as if
@@ -2647,6 +2683,38 @@ class _TestClient:
         self.assertTrue(cm.exception.refresh_token_invalid)
         self.assertIn('retrying will not help', str(cm.exception))
 
+
+    @no_duplicates
+    def test_a_description_that_is_not_a_string_is_not_terminal(self):
+        # `description` is whatever the exception carries, and the two reads
+        # after this one are `.find('{')` and `.rfind('}')`, which a non-string
+        # does not have. The guard was there and nothing sent it anything to
+        # guard against.
+        #
+        # False is the right answer rather than an exception, for the reason
+        # the docstring gives: a failure wrongly called terminal stops an
+        # application that only needed to retry, and this path runs when the
+        # application is already in trouble.
+        for description in (None, 400, {'error': 'invalid_grant'},
+                            ['invalid_grant'], b'invalid_grant'):
+            with self.subTest(description=description):
+                error = OAuthError(error='some_other_code')
+                error.description = description
+                self.mock_session.get.side_effect = error
+
+                with self.assertRaises(TokenRefreshError) as cm:
+                    self.client.get_quote(SYMBOL)
+                self.assertFalse(cm.exception.refresh_token_invalid)
+
+    @no_duplicates
+    def test_a_string_description_is_still_read(self):
+        # The positive control. Every assertion above is satisfied by a
+        # classifier that returns False for everything, including the observed
+        # dead-token response the two tests around this one exist for.
+        self.mock_session.get.side_effect = self.OBSERVED_DEAD_REFRESH_TOKEN
+        with self.assertRaises(TokenRefreshError) as cm:
+            self.client.get_quote(SYMBOL)
+        self.assertTrue(cm.exception.refresh_token_invalid)
 
     @no_duplicates
     def test_standard_placement_is_also_recognized(self):

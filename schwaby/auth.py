@@ -808,8 +808,13 @@ def client_from_access_functions(api_key, app_secret, token_read_func,
     wrapped_token_write_func = metadata.wrapped_token_write_func()
 
     if asyncio:
+        # Not `# pragma: no cover`, which is what this said. The exclusion
+        # was honest when nothing reached it, and it meant the one line that
+        # actually writes the token on the async path was hidden from
+        # measurement as well as untested -- so a write that quietly did
+        # nothing here would have shown up as neither a failure nor a gap.
         async def oauth_client_update_token(t, *args, **kwargs):
-            wrapped_token_write_func(t, *args, **kwargs)  # pragma: no cover
+            wrapped_token_write_func(t, *args, **kwargs)
         session_class = AsyncOAuth2Client
         client_class = AsyncClient
     else:

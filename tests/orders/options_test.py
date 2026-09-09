@@ -644,3 +644,79 @@ class VerticalTemplatesTest(unittest.TestCase):
             3, '30.60').build()))
 
 
+
+
+class OptionSymbolInputTest(unittest.TestCase):
+    '''`OptionSymbol`'s rejections, and its one accepted-but-untested type.
+
+    None of this was exercised. The class turns four arguments into a string
+    that names a tradeable contract, and the failure mode when it gets one of
+    them wrong is a symbol for a *different* contract rather than an error --
+    which is why the argument checking here matters more than the line count
+    suggests.
+    '''
+
+    EXPIRY = datetime.date(2024, 5, 10)
+
+    @no_duplicates
+    def test_an_unparseable_expiration_string_is_refused(self):
+        # The format is %y%m%d, so these are wrong in the ways a caller
+        # actually gets it wrong: the four-digit year, the ISO date, the
+        # month and day swapped past 12, and something that is not a date.
+        for expiration in ('2024-05-10', '20240510', '240532', 'next friday',
+                           '', '2405'):
+            with self.subTest(expiration=expiration):
+                with self.assertRaises(ValueError) as ctx:
+                    OptionSymbol('AAPL', expiration, 'C', '100')
+                self.assertIn('expiration date must follow format',
+                              str(ctx.exception))
+
+    @no_duplicates
+    def test_a_valid_expiration_string_is_still_accepted(self):
+        # The positive control for the loop above, which passes just as well
+        # against a parser that refuses everything.
+        op = OptionSymbol('AAPL', '240510', 'C', '100')
+        self.assertEqual(datetime.date(2024, 5, 10), op.expiration_date)
+
+    @no_duplicates
+    def test_a_datetime_expiration_is_narrowed_to_its_date(self):
+        # Accepted, documented, and previously untested. The time of day is
+        # dropped rather than refused, and the symbol must come out the same
+        # as it does for the equivalent date.
+        moment = datetime.datetime(2024, 5, 10, 15, 47, 3)
+        op = OptionSymbol('AAPL', moment, 'C', '100')
+        self.assertEqual(datetime.date(2024, 5, 10), op.expiration_date)
+        self.assertNotIsInstance(op.expiration_date, datetime.datetime)
+        self.assertEqual(
+                OptionSymbol('AAPL', self.EXPIRY, 'C', '100').build(),
+                op.build())
+
+    @no_duplicates
+    def test_an_expiration_of_the_wrong_type_is_refused(self):
+        for expiration in (None, 20240510, 1715385600.0, ['2024', '05', '10']):
+            with self.subTest(expiration=expiration):
+                with self.assertRaises(ValueError) as ctx:
+                    OptionSymbol('AAPL', expiration, 'C', '100')
+                self.assertIn('expiration_date must be', str(ctx.exception))
+
+    @no_duplicates
+    def test_an_unknown_contract_type_is_refused(self):
+        # 'CALL' and 'PUT' are accepted alongside 'C' and 'P', so the wrong
+        # cases worth checking are the near misses rather than nonsense.
+        for contract_type in ('c', 'p', 'call', 'put', 'CALLS', 'X', '', None):
+            with self.subTest(contract_type=contract_type):
+                with self.assertRaises(ValueError) as ctx:
+                    OptionSymbol('AAPL', self.EXPIRY, contract_type, '100')
+                self.assertIn('Contract type must be', str(ctx.exception))
+
+    @no_duplicates
+    def test_the_accepted_contract_types_still_work(self):
+        # Positive control, and it checks the normalisation rather than just
+        # the absence of an exception: 'CALL' has to become 'C', because that
+        # is the letter that goes into the symbol.
+        for given, expected in (('C', 'C'), ('CALL', 'C'),
+                                ('P', 'P'), ('PUT', 'P')):
+            with self.subTest(contract_type=given):
+                op = OptionSymbol('AAPL', self.EXPIRY, given, '100')
+                self.assertEqual(expected, op.contract_type)
+                self.assertIn(expected, op.build())

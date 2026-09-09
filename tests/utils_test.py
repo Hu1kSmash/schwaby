@@ -25,7 +25,7 @@ from schwaby.utils import (
     UnsuccessfulOrderException,
     Utils,
 )
-from schwaby.utils import EnumEnforcer
+from schwaby.utils import EnumEnforcer, _describe_error
 from .utils import no_duplicates, MockResponse
 
 import enum
@@ -58,6 +58,124 @@ class EnumEnforcerTest(unittest.TestCase):
         t = self.TestClass(enforce_enums=True)
         with self.assertRaises(ValueError):
             t.test_enforcement(123)
+
+
+class ConvertEnumIterableTest(unittest.TestCase):
+    """`convert_enum_iterable`, which had no test for the rejecting branch.
+
+    `convert_enum` next to it was covered both ways. This one was covered only
+    where every element was already the right enum, so the arm that refuses a
+    wrong element -- the reason `enforce_enums` exists -- was never taken.
+    """
+
+    class TestClass(EnumEnforcer):
+        def convert(self, values):
+            return self.convert_enum_iterable(
+                    values, ConvertEnumIterableTest.TestEnum)
+
+    class TestEnum(enum.Enum):
+        VALUE_1 = 1
+        VALUE_2 = 2
+
+    def test_a_wrong_element_is_refused_and_the_message_suggests_the_member(
+            self):
+        t = self.TestClass(enforce_enums=True)
+        with self.assertRaisesRegex(
+                ValueError, 'tests.utils_test.TestEnum.VALUE_1'):
+            t.convert([self.TestEnum.VALUE_2, 'VALUE_1'])
+
+    def test_a_wrong_element_is_refused_even_without_a_suggestion(self):
+        t = self.TestClass(enforce_enums=True)
+        with self.assertRaises(ValueError):
+            t.convert([123])
+
+    def test_a_string_matching_no_member_gets_no_did_you_mean(self):
+        # `type_error` only offers a suggestion when the string appears in
+        # some member's full name. Every existing test passed a string that
+        # did, so the branch where nothing matches -- which is the common case
+        # for a genuine typo -- was never taken, and a broken suggestion
+        # builder would have gone unnoticed for exactly those callers.
+        t = self.TestClass(enforce_enums=True)
+        with self.assertRaises(ValueError) as ctx:
+            t.convert(['nothing_like_a_member_name'])
+
+        self.assertNotIn('Did you mean', str(ctx.exception))
+        # Still says what was wrong, which is the part that has to survive.
+        self.assertIn('TestEnum', str(ctx.exception))
+        self.assertIn('str', str(ctx.exception))
+
+    def test_the_same_element_passes_through_when_enforcement_is_off(self):
+        # The control that makes the two above mean something: they must fail
+        # because enforcement rejected the value, not because the value could
+        # never get through at all.
+        t = self.TestClass(enforce_enums=False)
+        self.assertEqual([2, 'VALUE_1'],
+                         t.convert([self.TestEnum.VALUE_2, 'VALUE_1']))
+
+    def test_correct_elements_are_converted(self):
+        t = self.TestClass(enforce_enums=True)
+        self.assertEqual([1, 2],
+                         t.convert([self.TestEnum.VALUE_1,
+                                    self.TestEnum.VALUE_2]))
+
+
+class DescribeErrorTest(unittest.TestCase):
+    """`_describe_error` against a body that is not an object.
+
+    It runs on the failure path, where a formatter that raises would replace a
+    useful exception with a useless one -- so it yields no suffix rather than
+    an error of its own. `[1,2,3]`, `"a string"` and `null` are all valid JSON
+    and all raise AttributeError on `.get`, which is the shape the guard is
+    for and which nothing sent it.
+    """
+
+    def test_a_body_that_is_not_an_object_yields_no_suffix(self):
+        for payload in ([1, 2, 3], 'a string', None, 42, True):
+            with self.subTest(payload=payload):
+                self.assertEqual(
+                        '', _describe_error(MockResponse(payload, 400)))
+
+    def test_an_object_body_still_yields_its_message(self):
+        # Positive control. Every assertion above is satisfied by a function
+        # that returns '' unconditionally.
+        described = _describe_error(
+                MockResponse({'message': 'Account not found'}, 400))
+        self.assertIn('Account not found', described)
+
+
+class SetAccountHashTest(unittest.TestCase):
+    """`Utils.set_account_hash`, which no test called.
+
+    Public, documented on the util page with `automethod`, and reached by
+    nothing -- so whether it takes effect on the next call was unverified.
+    """
+
+    def test_the_new_hash_is_the_one_used_afterwards(self):
+        client = MagicMock()
+        u = Utils(client, '0xf1rsth45h')
+        self.assertEqual('0xf1rsth45h', u.account_hash)
+
+        u.set_account_hash('0x53c0ndh45h')
+        self.assertEqual('0x53c0ndh45h', u.account_hash)
+
+    def test_it_is_the_hash_a_later_call_actually_sends(self):
+        # The assertion above only checks the attribute. This checks that the
+        # value is the one that leaves the process, which is the thing a
+        # caller switching accounts is relying on.
+        client = MagicMock()
+        u = Utils(client, '0xf1rsth45h')
+        u.set_account_hash('0x53c0ndh45h')
+
+        # A real response rather than a MagicMock: `extract_order_id`
+        # starts with `if place_order_response.is_error`, and every attribute
+        # of a MagicMock is truthy, so a mock takes the rejection path no
+        # matter what is set on it.
+        response = MockResponse(
+                None, 201,
+                {'Location':
+                 'https://api.schwabapi.com/trader/v1/accounts/'
+                 '0x53c0ndh45h/orders/123456789'})
+        self.assertEqual(123456789, u.extract_order_id(response))
 
 
 class UtilsTest(unittest.TestCase):

@@ -8,6 +8,7 @@ from .utils import (
 from unittest.mock import patch, ANY, MagicMock
 from unittest.mock import ANY as _
 
+import asyncio
 import inspect
 import contextlib
 import json
@@ -776,6 +777,66 @@ class ClientFromAccessFunctionsTest(unittest.TestCase):
         update_token = session_call[2]['update_token']
 
         update_token(self.raw_token)
+        self.assertEqual([{
+            'creation_timestamp': TOKEN_CREATION_TIMESTAMP,
+            'token': self.raw_token
+        }], token_writes)
+
+    @no_duplicates
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.AsyncClient')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    def test_asyncio_builds_an_async_client_and_still_writes_the_token(
+            self, async_session, sync_session, async_client, client):
+        """The asyncio branch of this function, which nothing reached.
+
+        Every `client_from_*` entry point funnels into here, and four tests
+        called it -- all four with the default `asyncio=False`. So the branch
+        that picks `AsyncOAuth2Client` and `AsyncClient` was never taken, and
+        neither was the `async def` it wraps the token writer in. That inner
+        line carries a `# pragma: no cover`, so the body was excluded from
+        measurement as well as unreached: a token write that quietly did
+        nothing on the async path would have looked exactly like this.
+
+        `client_from_received_url(asyncio=True)` is covered elsewhere and is a
+        different function; this is the one every path goes through.
+        """
+        token_read_func = MagicMock()
+        token_read_func.return_value = self.token
+
+        token_writes = []
+
+        async_client.return_value = 'returned async client'
+        self.assertEqual('returned async client',
+                         auth.client_from_access_functions(
+                             API_KEY,
+                             APP_SECRET,
+                             token_read_func,
+                             lambda token: token_writes.append(token),
+                             asyncio=True))
+
+        # The async pair, and not the synchronous one.
+        async_client.assert_called_once()
+        client.assert_not_called()
+        async_session.assert_called_once_with(
+                API_KEY,
+                client_secret=APP_SECRET,
+                token=self.raw_token,
+                token_endpoint=_,
+                update_token=_,
+                leeway=_)
+        sync_session.assert_not_called()
+
+        # And the update_token handed to the async session still reaches the
+        # caller's write function. It is an `async def` here rather than the
+        # plain callable the synchronous branch passes, so awaiting it is the
+        # only way the write happens at all.
+        update_token = async_session.mock_calls[0][2]['update_token']
+        self.assertTrue(inspect.iscoroutinefunction(update_token))
+
+        asyncio.new_event_loop().run_until_complete(
+                update_token(self.raw_token))
         self.assertEqual([{
             'creation_timestamp': TOKEN_CREATION_TIMESTAMP,
             'token': self.raw_token
