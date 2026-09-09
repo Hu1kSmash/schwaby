@@ -23,10 +23,27 @@ import schwaby                      # was: import schwab
 from schwaby.auth import easy_client
 ```
 
-Nothing else changed. Every method, argument, enum and return value is what
-3.0.3 shipped; the only edit to any of them is the name at the front of the
-import line. A project-wide find and replace of `schwab` with `schwaby` in
-import statements is the whole migration.
+Every method, argument, enum and return value is what 3.0.3 shipped. No
+behaviour changed and nothing was added or removed from the API.
+
+**Two things beyond the import line carry the name, and a find-and-replace over
+imports alone will miss both.**
+
+*Loggers are now `schwaby.*`.* They were `schwab.auth`, `schwab.client.base`,
+`schwab.streaming` and `schwab.debug`, and they are now the same names under
+`schwaby`. Anything configuring or filtering on them needs updating --- which
+includes the incantation this project's own help page recommends:
+
+```python
+logging.getLogger('schwaby').setLevel(logging.DEBUG)   # was: 'schwab'
+```
+
+A log filter that silently stops matching is the failure worth calling out
+here: it does not raise, and the symptom is an absence.
+
+*Fully-qualified class names in a few error messages* now read `schwaby.…`.
+Anything matching on those strings needs the same treatment. They are
+diagnostics rather than an interface, but a test asserting on one will fail.
 
 ### Why
 
