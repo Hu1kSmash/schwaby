@@ -103,12 +103,12 @@ your token file.
   before it was shared. Both searched it for the account number and the stream
   key, found them replaced, and called it clean. It also contained this:
 
-  .. code-block:: python
+  .. code-block:: json
 
-    # illustrative -- the real one carried a real address
-    "TradeTag": "TA_janedoeexamplecom1753922332"
+    {"TradeTag": "TA_janedoeexamplecom1753922332"}
 
-  which is ``jane.doe@example.com`` with the ``@`` and the ``.`` removed ---
+  --- illustrative here, the real one carried a real address --- which is
+  ``jane.doe@example.com`` with the ``@`` and the ``.`` removed ---
   assembled that way by Schwab, not by the sender. ``grep`` for the address
   finds nothing. So does any pattern looking for an ``@``. The same file
   carried a customer ID that outlives the account number, and the holder's
