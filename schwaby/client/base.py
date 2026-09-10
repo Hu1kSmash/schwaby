@@ -417,6 +417,35 @@ class BaseClient(EnumEnforcer):
             PENDING_RECALL = 'PENDING_RECALL'
             UNKNOWN = 'UNKNOWN'
 
+        #: The ``Status`` values after which an order's ``status`` stops
+        #: changing.
+        #:
+        #: Values, not members. ``Status`` is a plain ``Enum``, so
+        #: ``Status.FILLED == 'FILLED'`` is False, and a set of members would
+        #: report the raw string a REST response carries in
+        #: ``order['status']`` as not terminal -- silently, with no error.
+        #: These are that string, derived from the members so the two
+        #: cannot drift apart.
+        #:
+        #: Schwab's documentation lists every status and never says which are
+        #: terminal, so this is a reading rather than a contract. ``FILLED``,
+        #: ``CANCELED`` and ``REJECTED`` have been observed ending an order.
+        #: ``EXPIRED`` and ``REPLACED`` are
+        #: :ref:`Unconfirmed <confidence_tags>`: included by reading, and
+        #: never captured.
+        #:
+        #: ``REPLACED`` is terminal for *that order id*. The order continues
+        #: under a new id, so anything tracking the old one sees it end while
+        #: the work goes on.
+        #:
+        #: This describes the REST ``status`` field. The ``MESSAGE_TYPE``
+        #: tokens on ``ACCT_ACTIVITY`` are a different vocabulary and do not
+        #: map onto these one for one: the same token ends both a cancel and
+        #: a rejection.
+        TERMINAL_STATUSES = frozenset(status.value for status in (
+            Status.FILLED, Status.REJECTED, Status.CANCELED,
+            Status.EXPIRED, Status.REPLACED))
+
     def _make_order_query(self,
                           *,
                           max_results=None,

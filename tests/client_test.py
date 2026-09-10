@@ -2833,6 +2833,48 @@ class _TestClient:
             self.assertIn('may be transient', str(cm.exception))
 
 
+class OrderTerminalStatusesTest(unittest.TestCase):
+    """The REST order statuses after which an order stops changing."""
+
+    TERMINAL = ('FILLED', 'REJECTED', 'CANCELED', 'EXPIRED', 'REPLACED')
+
+    @no_duplicates
+    def test_a_raw_status_string_tests_directly(self):
+        # The reason the set holds values. `Status` is a plain Enum, so
+        # `Status.FILLED == 'FILLED'` is False, and a set of members would
+        # call the string a REST response carries not terminal, silently.
+        for status in self.TERMINAL:
+            with self.subTest(status=status):
+                self.assertIn(status, Client.Order.TERMINAL_STATUSES)
+
+    @no_duplicates
+    def test_a_working_order_is_not_terminal(self):
+        # The other side. A set that contained everything would pass the test
+        # above, so membership has to be shown to discriminate.
+        for status in ('WORKING', 'QUEUED', 'ACCEPTED', 'NEW',
+                       'PENDING_CANCEL', 'PENDING_REPLACE', 'AWAITING_UR_OUT'):
+            with self.subTest(status=status):
+                self.assertNotIn(status, Client.Order.TERMINAL_STATUSES)
+
+    @no_duplicates
+    def test_it_is_exactly_the_five(self):
+        # Pinned on purpose. Unlike a set that mirrors other code, this is a
+        # judgement about which statuses end an order, so widening it should
+        # be a decision someone makes here rather than a side effect.
+        self.assertEqual(set(self.TERMINAL),
+                         set(Client.Order.TERMINAL_STATUSES))
+
+    @no_duplicates
+    def test_every_value_is_a_status_schwab_defines(self):
+        values = {status.value for status in Client.Order.Status}
+        self.assertLessEqual(Client.Order.TERMINAL_STATUSES, values)
+
+    @no_duplicates
+    def test_one_definition_serves_both_clients(self):
+        self.assertIs(Client.Order.TERMINAL_STATUSES,
+                      AsyncClient.Order.TERMINAL_STATUSES)
+
+
 class ClientTest(_TestClient, unittest.TestCase):
     """
     Subclass set to use Client and MagicMock

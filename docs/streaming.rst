@@ -1009,13 +1009,20 @@ you get depends on the message:
 ``Symbol`` is the tradeable ticker, and is an OCC option string for an option
 leg. The other two are fallbacks for shapes that carry only those.
 
-**Statuses observed to be terminal**:
+**Order statuses that end an order** are exported as
+:attr:`Client.Order.TERMINAL_STATUSES
+<schwaby.client.Client.Order.TERMINAL_STATUSES>`:
 
 .. code-block:: python
 
   ('FILLED', 'REJECTED', 'CANCELED', 'EXPIRED', 'REPLACED')
 
-Note ``CANCELED`` with one L.
+Note ``CANCELED`` with one L. These are values of the REST ``status`` field ---
+what :meth:`get_order <schwaby.client.Client.get_order>` returns --- and the
+``MESSAGE_TYPE`` tokens below are a different vocabulary that does not map onto
+them one for one. ``FILLED``, ``CANCELED`` and ``REJECTED`` have been observed
+ending an order. ``EXPIRED`` and ``REPLACED`` are
+:ref:`Unconfirmed <confidence_tags>`: included by reading, and never captured.
 
 **``MESSAGE_TYPE`` tokens observed.** These are the tokens **as they appear on
 the wire**, and most of them are CamelCase. ``SUBSCRIBED`` is a genuine
