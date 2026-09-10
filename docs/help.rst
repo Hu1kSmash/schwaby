@@ -105,7 +105,7 @@ your token file.
 
   .. code-block:: json
 
-    {"TradeTag": "TA_janedoeexamplecom1753922332"}
+    {"TradeTag": "TA_janedoeexamplecom1234567890"}
 
   --- illustrative here, the real one carried a real address --- which is
   ``jane.doe@example.com`` with the ``@`` and the ``.`` removed ---
