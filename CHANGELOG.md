@@ -77,6 +77,36 @@ and none of them is a field, so reporting anything merely missing from the
 table would log four lines per message — a flood, which hides the one line
 that matters.
 
+### A service or a channel this version does not know is now reported
+
+A new *field* still reaches your handler. A new **service** cannot — there is
+no handler to route it to and no field table to relabel it with — and a
+**channel** this version does not read is a whole compartment of the frame
+nobody looks in. In both cases the messages are dropped, and until now they
+were dropped without a word.
+
+Both now go through the same path as every other message this client cannot
+use: a `WARNING`, and an `UnusableMessage` through `add_error_handler`,
+counted per kind and coalesced after the first few so a systematic change
+cannot turn into a log flood. The name that appeared is on the exception's
+`.message`.
+
+Two deliberate quiet cases. A service you registered no handler for is **not**
+reported — that is your own choice, and a line per message on a feed you
+ignored on purpose is noise. A `notify` frame that names no service is not
+reported either; it is not required to name one.
+
+The frame is not dropped over an unread channel. The compartments that *are*
+understood still hold real data, and refusing the whole frame would turn an
+addition into an outage — which is the failure this whole group of changes
+exists to avoid.
+
+`_KNOWN_SERVICES` is a declared set rather than something derived, because two
+walks over the same ground disagree. A test holds it against the subscribe
+methods and the handler registrations, so a service added to those without
+being added here fails rather than being reported as unknown on the very
+traffic it was added to receive.
+
 ## 4.2.0
 
 *2026-09-09*

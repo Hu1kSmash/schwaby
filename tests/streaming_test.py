@@ -1,4 +1,5 @@
 import schwaby
+import re
 import urllib.parse
 import asyncio
 import contextlib
@@ -8791,6 +8792,125 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         handler.assert_called_once()
         self.assertIsNotNone(self.client._socket)
 
+    # ---- Something Schwab added that this version cannot route ----------
+    #
+    # A field it does not recognise still reaches a handler. A *service* it
+    # does not recognise cannot: there is nowhere to put the message, so it
+    # is dropped -- and a dropped message is what `_absorb` is for. Going
+    # quiet here means a whole feed can appear without anyone learning it
+    # exists.
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_service_this_version_does_not_know_is_reported(
+            self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+        errors = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: errors.append((service, exc)))
+
+        # Two messages: _absorb queues the report and the drain runs at the
+        # top of the next handle_message, so no user code runs while the read
+        # lock is held. The second frame is ordinary traffic.
+        socket.recv.side_effect = [
+                json.dumps({'data': [{
+                    'service': 'BRAND_NEW_SERVICE', 'command': 'SUBS',
+                    'content': [{'key': 'F', '1': 1.0}]}]}),
+                json.dumps(self.streaming_entry('LEVELONE_EQUITIES', 'SUBS'))]
+        self.client.add_level_one_equity_handler(lambda msg: None)
+        await self.client.handle_message()
+        await self.client.handle_message()
+
+        self.assertEqual(1, self.client._absorbed)
+        self.assertEqual(1, len(errors))
+        service, exc = errors[0]
+        self.assertEqual('BRAND_NEW_SERVICE', service)
+        self.assertIsInstance(exc, schwaby.streaming.UnusableMessage)
+        self.assertIn('does not know', str(exc))
+        # The offending value rides on `.message`, which is what a consumer
+        # reads to learn *which* service appeared.
+        self.assertEqual('BRAND_NEW_SERVICE', exc.message)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_known_service_without_a_handler_stays_quiet(
+            self, ws_connect):
+        # Registering no handler for a service is the caller's own choice and
+        # is not news. Reporting it would put a line on every message of a
+        # feed somebody deliberately ignored.
+        socket = await self.login_and_get_socket(ws_connect)
+        errors = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: errors.append(exc))
+
+        socket.recv.side_effect = [
+                json.dumps(self.streaming_entry('CHART_FUTURES', 'SUBS')),
+                json.dumps(self.streaming_entry('CHART_FUTURES', 'SUBS'))]
+        await self.client.handle_message()
+        await self.client.handle_message()
+
+        self.assertEqual(0, self.client._absorbed)
+        self.assertEqual([], errors)
+
+        # Positive control: the same path does report an unknown one, so the
+        # empty list above is not an empty list for want of ever arriving.
+        socket.recv.side_effect = [
+                json.dumps({'data': [{
+                    'service': 'BRAND_NEW_SERVICE', 'command': 'SUBS',
+                    'content': [{'key': 'F'}]}]}),
+                json.dumps(self.streaming_entry('CHART_FUTURES', 'SUBS'))]
+        await self.client.handle_message()
+        await self.client.handle_message()
+        self.assertEqual(1, len(errors))
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_notify_frame_naming_no_service_stays_quiet(
+            self, ws_connect):
+        # A notify frame is not required to name a service, and that is
+        # documented rather than unexpected.
+        socket = await self.login_and_get_socket(ws_connect)
+        errors = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: errors.append(exc))
+
+        socket.recv.side_effect = [
+                json.dumps({'notify': [{'heartbeat': '1234'}]}),
+                json.dumps({'notify': [{'content': {'code': 0}}]})]
+        await self.client.handle_message()
+        await self.client.handle_message()
+
+        self.assertEqual(0, self.client._absorbed)
+        self.assertEqual([], errors)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_channel_this_version_does_not_read_is_reported(
+            self, ws_connect):
+        # A whole compartment, not one field: every message in it is being
+        # dropped. Reported, and then carried on past, because the channels
+        # that *are* understood still hold real data.
+        socket = await self.login_and_get_socket(ws_connect)
+        errors = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: errors.append(exc))
+        delivered = []
+        self.client.add_level_one_equity_handler(delivered.append)
+
+        entry = self.streaming_entry('LEVELONE_EQUITIES', 'SUBS')
+        entry['brandNewChannel'] = [{'anything': 1}]
+        socket.recv.side_effect = [
+                json.dumps(entry),
+                json.dumps(self.streaming_entry('LEVELONE_EQUITIES', 'SUBS'))]
+        await self.client.handle_message()
+        await self.client.handle_message()
+
+        self.assertEqual(1, len(errors))
+        self.assertIn('does not read', str(errors[0]))
+        self.assertEqual(['brandNewChannel'], errors[0].message)
+        # And the data beside it still reached its handler.
+        self.assertEqual(2, len(delivered))
+
 
 class LevelOneOptionStrikeFieldTest(IsolatedAsyncioTestCase):
     """Field 20 of LEVELONE_OPTIONS is documented by Schwab as "Strike Price".
@@ -8923,3 +9043,36 @@ class UnknownStreamFieldTest(IsolatedAsyncioTestCase):
         self.assertEqual('brand new', got[0]['content'][0]['99'])
         # Nothing was absorbed and nothing was reported as a failure.
         self.assertEqual(0, client._absorbed)
+
+
+class KnownServiceSetTest(IsolatedAsyncioTestCase):
+    """`_KNOWN_SERVICES` is declared, so it can go stale.
+
+    This is what stops it.
+    """
+
+    @no_duplicates
+    def test_the_known_service_set_matches_the_code_that_uses_it(self):
+        """The set is declared, so it can go stale. This is what stops it.
+
+        Two other places name every service: the subscribe methods, which
+        pass one to `_service_op`, and the handler registrations. A service
+        added to those without being added here would be reported as unknown
+        on the very traffic it was added to receive.
+        """
+        source = open(schwaby.streaming.__file__).read()
+        subscribed = set(re.findall(
+                r"_service_op\(\s*[^)]*?'([A-Z][A-Z_0-9]+)'", source, re.S))
+        registered = set(re.findall(r"_handlers\['([A-Z_0-9]+)'\]", source))
+
+        # Non-empty, or two typos in a regex would make this pass by matching
+        # nothing at all.
+        self.assertEqual(13, len(subscribed))
+        self.assertEqual(13, len(registered))
+        self.assertEqual(subscribed, registered)
+
+        known = schwaby.streaming._KNOWN_SERVICES
+        self.assertEqual(set(), subscribed - known)
+        # ADMIN is request/response only and never reaches a handler, so it
+        # is in the set and in neither of the two walks above.
+        self.assertEqual({'ADMIN'}, known - subscribed)

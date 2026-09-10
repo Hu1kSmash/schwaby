@@ -1280,6 +1280,28 @@ nowhere official.
   and nothing failed. It is a change in the venue, which is an operator's
   concern rather than a caller's.
 
+.. warning::
+
+  **A whole service, or a whole channel, that this version does not know is
+  a different matter: the messages are dropped.** There is no handler to
+  route an unknown service to and no field table to relabel it with, and a
+  channel this version does not read is a compartment of the frame nobody
+  looks in.
+
+  Both are reported the way every other dropped message is --- a ``WARNING``,
+  and an :class:`UnusableMessage` through :func:`add_error_handler
+  <schwaby.streaming.StreamClient.add_error_handler>`, counted per kind and
+  coalesced after the first few so a systematic change cannot become a log
+  flood. The name that appeared is on the exception's ``message``.
+
+  A service you simply registered no handler for is **not** reported. That is
+  your own choice, and a line per message on a feed you deliberately ignored
+  is noise rather than news.
+
+  The frame is not dropped over an unread channel --- the compartments that
+  *are* understood still hold real data, and refusing the whole frame would
+  turn an addition into an outage.
+
 **The sign is not the side.** Fill quantities and prices arrive positive, with
 an even ``signScale``; buy versus sell comes from ``BuySellCode``. The odd
 branch exists so a genuinely negative field does not decode positive, and the

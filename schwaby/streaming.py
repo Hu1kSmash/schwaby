@@ -78,6 +78,36 @@ class _BaseFieldEnum(Enum):
                 _report_unknown_field(cls, old_key)
 
 
+#: Every service this version knows how to route, and ``ADMIN``, which is
+#: request/response only and never reaches a handler. A name outside this set
+#: is something Schwab added, and the client has nowhere to put the message.
+#:
+#: Held as a declared set with a test that it matches the subscribe methods
+#: and the handler registrations, rather than derived from either: two walks
+#: over the same ground disagree, and the one that decides what a service *is*
+#: should be a single place a reader can look at.
+_KNOWN_SERVICES = frozenset((
+    'ACCT_ACTIVITY',
+    'ADMIN',
+    'CHART_EQUITY',
+    'CHART_FUTURES',
+    'LEVELONE_EQUITIES',
+    'LEVELONE_FOREX',
+    'LEVELONE_FUTURES',
+    'LEVELONE_FUTURES_OPTIONS',
+    'LEVELONE_OPTIONS',
+    'NASDAQ_BOOK',
+    'NYSE_BOOK',
+    'OPTIONS_BOOK',
+    'SCREENER_EQUITY',
+    'SCREENER_OPTION',
+))
+
+#: The compartments a frame is made of. Anything else at the top level is a
+#: channel this version does not read, which means a whole class of message
+#: is being dropped rather than one field being unnamed.
+_KNOWN_CHANNELS = frozenset(('response', 'data', 'notify'))
+
 #: How many distinct (field table, field id) pairs to name before giving up.
 #: The set never shrinks and what goes into it is the venue's to choose.
 _MAX_REPORTED_FIELDS = 64
@@ -1451,6 +1481,24 @@ class StreamClient(EnumEnforcer):
                          frame=msg)
             return
 
+        if service is not None and service not in _KNOWN_SERVICES:
+            # Schwab added a service. There is no handler to route it to and
+            # no field table to relabel it with, so the message is dropped --
+            # which is the point: a dropped message is exactly what _absorb
+            # is for, and going quiet here means a whole feed can appear
+            # without anyone learning it exists.
+            #
+            # `service is not None` because a notify frame is not required to
+            # name one, and that is documented rather than unexpected.
+            #
+            # The counted `what` is a fixed string with the name in the
+            # offender, not in the key: `_absorbed_kinds` is a dict keyed on
+            # `what`, and putting a value the venue chooses into that key
+            # makes it grow without bound.
+            self._absorb('a message for a service this version does not know',
+                         service, frame=msg, service=service)
+            return
+
         relabel_failed = False
 
         for handler in handlers:
@@ -1557,6 +1605,20 @@ class StreamClient(EnumEnforcer):
         if not _is_mapping(msg):
             self._absorb('a message which is not an object', msg)
             return
+
+        unknown_channels = set(msg) - _KNOWN_CHANNELS
+        if unknown_channels:
+            # A whole compartment this version does not read. Every message in
+            # it is being dropped, which is a bigger thing than an unnamed
+            # field and deserves the same treatment as any other message this
+            # client cannot use.
+            #
+            # Reported and then carried on past: the channels that *are*
+            # understood still hold real data, and refusing the frame over an
+            # unread compartment would turn an addition into an outage.
+            self._absorb(
+                    'a frame carrying a channel this version does not read',
+                    sorted(map(str, unknown_channels)), frame=msg)
 
         # response
         if 'response' in msg:
