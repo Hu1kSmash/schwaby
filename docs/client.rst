@@ -266,6 +266,14 @@ list of the most interesting bits:
 * Positions
 * Order history
 
+.. note::
+
+   ``cashAvailableForTrading`` **is present as** ``0.0`` **when an account is
+   fully invested**, not omitted. It sits under
+   ``securitiesAccount.currentBalances`` in :meth:`get_account
+   <schwaby.client.Client.get_account>`'s response. That was observed on a live
+   account. A check for the key being absent is not a check for zero.
+
 See the official documentation for each method for a complete response schema.
 
 .. _account_hashes_method:
@@ -304,6 +312,17 @@ to read the documentation below to learn how much data is available.
    accounts --- it has been reported disregarding the range, and measured
    honouring it.
 
+.. note::
+
+   **A longer range does not reach further back.** Asked for thirty-minute
+   candles starting 400 days back, and again about 1,014 days back,
+   :meth:`get_price_history_every_thirty_minutes
+   <schwaby.client.Client.get_price_history_every_thirty_minutes>` returned
+   identical candles, beginning about 260 days before the request. That was
+   measured once, on one day, without extended hours, and the number of candles
+   differed by symbol. Check the first candle you get back rather than assuming
+   it is the start you asked for.
+
 
 .. automethod:: schwaby.client.Client.get_price_history_every_minute
 .. automethod:: schwaby.client.Client.get_price_history_every_five_minutes
@@ -325,6 +344,15 @@ history endpoint, in all its complexity.
 ++++++++++++++
 Current Quotes
 ++++++++++++++
+
+.. note::
+
+   **Quote requests can be rate-limited.** :meth:`get_quotes
+   <schwaby.client.Client.get_quotes>` has returned HTTP 429 in four separate
+   minutes of live use, while price history and account requests on the same
+   token in those minutes did not. Schwab publishes no rate for market data, no
+   ``Retry-After`` header was recorded, and four minutes are not enough to
+   infer one. Expect a 429 from any quote call.
 
 .. automethod:: schwaby.client.Client.get_quote
 .. automethod:: schwaby.client.Client.get_quotes

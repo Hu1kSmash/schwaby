@@ -1193,6 +1193,27 @@ the market at execution, and the fill carries no bid or ask to compare with
 instead, so the check cannot settle it. Do not multiply it or divide it by the
 quantity until you have checked it against a fill of your own.
 
+**A fill carries two timestamps, and they are never the same moment.** Under
+``BaseEvent/OrderFillCompletedEventOrderLegQuantityInfo/ExecutionInfo``, both
+``ExecutionTimeStamp/DateTimeString`` and
+``VenuExecutionTimeStamp/DateTimeString`` (Schwab's spelling) were present on
+all 218 fill items in a production archive, and they differed on every one, by
+under a second. Both are strings of the form ``YYYY-MM-DD HH:MM:SS.fff`` with
+no offset. ``ExecutionTimeStamp`` is market time: read as Eastern, 106 of 106
+fills landed within a minute of the placing program's own zoned clock, and read
+as UTC none did. That was measured in summer only, so whether it follows
+daylight saving is not established. The venue stamp's time zone was not
+measured.
+
+**Charges are reported on each fill, and a zero charge is present rather than
+omitted.** ``ActualChargedCommissionAmount`` sits directly under the same
+``ExecutionInfo``. ``SECFees``, ``TAF`` and ``ORF`` sit one level down, under
+``ActualChargedFeesCommissionAndTax``. All four were present on all 163
+distinct fills in that archive, and a zero charge arrived as a decimal object
+carrying only ``signScale``, which ``decode_decimal`` reads as zero.
+``RouteName`` was a non-empty string on all 163. ``ExecutionBroker`` was absent
+on 2, so treat it as optional.
+
 **Two enumerated fields arrive as either the label or its ordinal.**
 ``ResponseType`` and ``RouteStatus`` were captured as both a string and an
 integer on the *same* order, from two ``ExecutionRequestCompleted`` frames two
@@ -1528,6 +1549,12 @@ malformed message and should not be reported as one.
   to tell you something. Parse it defensively and treat a failure as "this one
   is a notice", not as a broken frame.
 
+  That notice arrives as an ordinary ``data``-channel content item whose
+  ``MESSAGE_TYPE`` is the empty string, so a handler that dispatches on the
+  type has nothing to dispatch on. It recurs: it was seen on at least 69 days
+  across about three months of one production feed, most often around 00:30
+  Eastern, and also around 18:00 and 21:00.
+
 .. warning::
 
   **A re-subscribe can replay recent activity in a stripped shape.**
@@ -1651,8 +1678,10 @@ item that marks it.
 ``MESSAGE_TYPE`` and ``MESSAGE_DATA``. A content item carrying none of those is
 a ``notify``-channel item, which this library forwards unchanged --- see the
 warning under :ref:`Data Field Relabeling <data_field_relabeling>` above.
-Observed values there include an activity token of ``orderfill`` and a benign
-notice reading ``feature not supported``.
+Observed values there include an activity token of ``orderfill``. A notice
+reading ``feature not supported`` was also listed here, but over about three
+months of one production feed that notice arrived only on the ``data`` channel,
+as ``MESSAGE_DATA`` text, and never on ``notify``.
 
 If you learn something this list gets wrong, a pull request correcting it is
 more useful than a private patch.
