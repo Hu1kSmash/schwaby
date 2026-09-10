@@ -466,7 +466,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.recv.side_effect = [json.dumps(response)]
 
         with self.assertRaisesRegex(schwaby.streaming.UnexpectedResponse,
-                                    'unexpected service: NOT_ADMIN'):
+                                    "unexpected service: 'NOT_ADMIN'"):
             await self.client.login()
 
 
@@ -486,7 +486,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.recv.side_effect = [json.dumps(response)]
 
         with self.assertRaisesRegex(schwaby.streaming.UnexpectedResponse,
-                                    'unexpected command: NOT_LOGIN'):
+                                    "unexpected command: 'NOT_LOGIN'"):
             await self.client.login()
 
 
@@ -9218,15 +9218,23 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 # one reused across the loop stops matching its own replies.
                 self.setUp()
                 socket = await self.login_and_get_socket(ws_connect)
-                # The reply this subscribe will actually wait for, so the
-                # client stops reading rather than exhausting the mock.
-                nxt = self.client.request_number + 1
+                # The reply this subscribe will actually wait for. There
+                # are two counters and only one goes into `requestid`:
+                # `_request_id` is the request's, `request_number` is the
+                # receive counter behind the debug lines. Reading the wrong
+                # one made the "good" frame a mismatched id, so every case
+                # passed down the id-mismatch path instead of the one it
+                # names -- red under mutation either way, and testing
+                # something else.
                 good = ('{"response":[{"requestid":"%d",'
                         '"service":"LEVELONE_EQUITIES","command":"SUBS",'
-                        '"content":{"code":0,"msg":"ok"}}]}' % nxt)
+                        '"content":{"code":0,"msg":"ok"}}]}'
+                        % self.client._request_id)
                 socket.recv.side_effect = [bad % literal, good]
-                with self.assertRaises(schwaby.streaming.UnexpectedResponse):
-                    await self.client.level_one_equity_subs(['F'])
+                # The bad frame is absorbed and the real answer arrives
+                # behind it, so the subscribe *succeeds*. That is the whole
+                # claim: an unusable requestid must not end the loop.
+                await self.client.level_one_equity_subs(['F'])
                 # Released, so the client is still usable.
                 self.assertFalse(self.client._read_lock.locked())
                 self.assertFalse(self.client._request_lock.locked())
@@ -9313,6 +9321,136 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             await self.client.handle_message()
         self.assertIn('Ignoring', '\n'.join(got.output))
         self.assertEqual(1, self.client._absorbed)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_mapping_that_cannot_be_enumerated_still_dispatches(
+            self, ws_connect):
+        """`_is_mapping` is structural on purpose; the channel check was not.
+
+        Its docstring says the test is `get` + `__contains__` and nothing
+        about iteration, *because* "a lightweight mapping-like object worked
+        before the type checks were added and would have had every frame
+        dropped afterwards". `set(msg)` requires iteration. So the channel
+        check -- added by this series -- ended the receive loop with a
+        non-SchwabError on shapes 4.2.0 handled, through a documented public
+        extension point.
+        """
+        payload = {'data': [{'service': 'LEVELONE_EQUITIES',
+                             'command': 'SUBS',
+                             'content': [{'key': 'F', '1': 13.71}]}]}
+
+        class NoIter:
+            def get(self, key, default=None):
+                return payload.get(key, default)
+
+            def __contains__(self, key):
+                return key in payload
+
+        class IterRaises(dict):
+            def __iter__(self):
+                raise RuntimeError('no iter')
+
+        class UnhashableKeys(dict):
+            def __iter__(self):
+                return iter([['a', 'list']])
+
+        for label, obj in (('get+contains only', NoIter()),
+                           ('__iter__ raises', IterRaises(payload)),
+                           ('unhashable keys', UnhashableKeys(payload)),
+                           ('plain dict', dict(payload))):
+            with self.subTest(shape=label):
+                self.setUp()
+                socket = await self.login_and_get_socket(ws_connect)
+                delivered = []
+                self.client.add_level_one_equity_handler(delivered.append)
+
+                class Decoder(streaming.StreamJsonDecoder):
+                    def decode_json_string(self, raw):
+                        return obj
+
+                self.client.set_json_decoder(Decoder())
+                socket.recv.side_effect = ['{}']
+                await self.client.handle_message()
+                self.assertEqual(1, len(delivered))
+
+        # Positive control: the check itself still fires on a real dict, so
+        # the tolerance above did not simply disable it.
+        self.setUp()
+        socket = await self.login_and_get_socket(ws_connect)
+        self.client.add_level_one_equity_handler(lambda m: None)
+        frame = dict(payload, brandNew=[{'x': 1}])
+        socket.recv.side_effect = [json.dumps(frame)]
+        await self.client.handle_message()
+        self.assertEqual(1, self.client._absorbed)
+
+    @no_duplicates
+    def test_every_validate_response_message_is_bounded_and_quoted(self):
+        # Four venue-controlled formats in one function. One was swept and
+        # the three above it were not -- a `service` of 100,000 characters
+        # made a 100,000-character exception where the line twenty rows
+        # below caps at 200, and a newline in one reached whatever the
+        # caller logs unescaped.
+        for field, frame in (
+                # An int, not a digit string: `mismatched_id` is what
+                # `int()` returned, and `int()` refuses a 100,000-character
+                # string outright. A decoder can hand one over directly.
+                ('requestid', {'response': [{'requestid': 10 ** 5000,
+                                             'service': 'S', 'command': 'C',
+                                             'content': {'code': 0}}]}),
+                ('service', {'response': [{'requestid': '1',
+                                           'service': 'X' * 100000,
+                                           'command': 'C',
+                                           'content': {'code': 0}}]}),
+                ('command', {'response': [{'requestid': '1', 'service': 'S',
+                                           'command': 'X' * 100000,
+                                           'content': {'code': 0}}]})):
+            with self.subTest(field=field):
+                exc = self.client._validate_response(frame, 1, 'S', 'C')
+                self.assertLess(len(str(exc)), 400)
+
+        forged = 'EVIL\nWARNING:schwaby.streaming:the stream is healthy'
+        exc = self.client._validate_response(
+                {'response': [{'requestid': '1', 'service': forged,
+                               'command': 'C', 'content': {'code': 0}}]},
+                1, 'S', 'C')
+        self.assertNotIn('\nWARNING', str(exc))
+        # Positive control: an ordinary mismatch still names the value.
+        exc = self.client._validate_response(
+                {'response': [{'requestid': '1', 'service': 'WRONG',
+                               'command': 'C', 'content': {'code': 0}}]},
+                1, 'S', 'C')
+        self.assertIn('WRONG', str(exc))
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_an_absorbed_cause_does_not_name_its_type_twice(
+            self, ws_connect):
+        # `_safe_value` reprs, which is right where a value stands alone and
+        # wrong beside an explicit type name: `Cause: TypeError:
+        # TypeError("...")`. That degrades the line this module calls the
+        # complete record.
+        socket = await self.login_and_get_socket(ws_connect)
+        self.client.add_level_one_equity_handler(lambda m: None)
+        socket.recv.side_effect = [json.dumps({'data': [{
+            'service': 'LEVELONE_EQUITIES', 'command': 'SUBS',
+            'content': 5}]})]
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            await self.client.handle_message()
+        line = '\n'.join(got.output)
+        self.assertIn('Cause:', line)
+        for name in ('TypeError', 'AttributeError'):
+            self.assertLessEqual(line.count(name), 1)
+
+        # And the same guard the value side has: a cause whose `str` raises
+        # must not take the line with it.
+        class Boom(Exception):
+            def __str__(self):
+                raise RuntimeError('no str')
+
+        self.assertEqual('<unprintable>', streaming._safe_str(Boom()))
+        self.assertLessEqual(len(streaming._safe_str('A' * 10000)), 200)
+        self.assertEqual('plain', streaming._safe_str('plain'))
 
     # ---- Something Schwab added that this version cannot route ----------
     #

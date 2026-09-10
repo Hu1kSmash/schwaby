@@ -284,15 +284,18 @@ It is called for four things: a stream handler which raised, a late rejection of
 a request nobody was waiting on, a connection which failed to close after logout,
 and a message this client cannot use at all. :meth:`add_error_handler
 <schwaby.streaming.StreamClient.add_error_handler>` below enumerates that last
-group; it is deliberately the only place that does, because this page and two
-docstrings each carried their own copy and only one of the three was widened
-when the list grew. That last group arrives as ``UnusableMessage``, whose ``message``
+group; it is the canonical one, because this page and two docstrings each
+carried their own copy and only one of the three was widened when the list
+grew. :class:`UnusableMessage`'s own docstring describes the type rather than
+the list, and says so. That group arrives as ``UnusableMessage``, whose
+``message``
 attribute is the offending value as it arrived --- the sorted list of names,
 for an unread channel --- alongside ``cause`` (the
 exception which made it unusable, where there was one) and ``count``/``total``
 as integers.
 
-Those last ones are **coalesced**: the first three on a connection, then powers
+Those last ones are **coalesced**: the first three *of each kind* on a
+connection, then powers
 of ten, with the running count in the message. A systematically malformed
 channel produces one per element per tick, so reporting every one would be a
 log-volume incident on top of the data outage — and they share a bounded queue

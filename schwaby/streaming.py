@@ -156,6 +156,21 @@ _reported_fields = set()
 _MAX_REPORTED_SHAPES = 64
 
 
+def _safe_str(value):
+    """`str` of a value whose type name is already being printed.
+
+    `_safe_value` reprs, which is right where the value stands alone and
+    wrong beside an explicit `type(x).__name__` -- that read
+    `Cause: TypeError: TypeError("...")`, degrading the line this module
+    calls the complete record.
+    """
+    try:
+        text = str(value)
+    except Exception:
+        text = '<unprintable>'
+    return text if len(text) <= 200 else text[:197] + '...'
+
+
 def _safe_value(value):
     """`repr` of a venue-controlled value, bounded and unable to raise.
 
@@ -281,15 +296,16 @@ class UnusableMessage(SchwabError):
 
     Distinct from :class:`UnparsableMessage`, which means the JSON itself did
     not decode and carries the parse exception. Here the JSON is fine and
-    this client cannot use it -- a frame which is not an object, an element
-    of ``data`` which is not an object, a ``service`` which is not a name, a
-    ``service`` which *is* a name this version does not know, or a frame
-    carrying a whole channel it does not read. The last two are additions at
-    Schwab's end rather than anything malformed; the rest are shapes the
-    protocol does not allow. Reusing ``UnparsableMessage`` would make one
-    type mean two
-    shapes, with ``json_parse_exception`` set for one of them and ``None`` for
-    the other.
+    this client cannot use the message --- either its structure is not what
+    the protocol allows, or Schwab added something this version does not
+    know. :meth:`add_error_handler
+    <schwaby.streaming.StreamClient.add_error_handler>` enumerates the
+    categories and this docstring deliberately does not: it carried its own
+    copy, and that copy went stale while the other grew.
+
+    Reusing ``UnparsableMessage`` would make one type mean two shapes, with
+    ``json_parse_exception`` set for one of them and ``None`` for the
+    other.
 
     ``message`` is the offending value, exactly as it arrived --- except for
     an unread channel, where it is the sorted list of channel names, since
@@ -752,7 +768,7 @@ class StreamClient(EnumEnforcer):
             # venue rather than at this library.
             return UnexpectedResponse(
                 resp, 'malformed response frame: {}: {}'.format(
-                    type(exc).__name__, exc))
+                    type(exc).__name__, _safe_value(exc)))
 
         # Built outside the try above, which exists to turn *reads* of a
         # malformed frame into a clean error. Constructing the exception in
@@ -762,17 +778,20 @@ class StreamClient(EnumEnforcer):
         # narrow to avoid.
         if mismatched_id is not None:
             return UnexpectedResponse(
-                resp, 'unexpected requestid: {}'.format(mismatched_id))
+                resp, 'unexpected requestid: {}'.format(
+                    _safe_value(mismatched_id)))
 
         # Validate service
         if resp_service != service:
             return UnexpectedResponse(
-                resp, 'unexpected service: {}'.format(resp_service))
+                resp, 'unexpected service: {}'.format(
+                    _safe_value(resp_service)))
 
         # Validate command
         if resp_command != command:
             return UnexpectedResponse(
-                resp, 'unexpected command: {}'.format(resp_command))
+                resp, 'unexpected command: {}'.format(
+                    _safe_value(resp_command)))
 
         # `msg` is read with .get: a rejection which carries a code but no
         # message is still a rejection, and reporting it as an unreadable
@@ -975,7 +994,8 @@ class StreamClient(EnumEnforcer):
 
         The name goes through `_safe_name`: it is venue-controlled, `str()`
         of it can raise, and it is bounded because this set never shrinks.
-        Formatted with `%r` for the same reason `_absorb` does -- a newline
+        Formatted with `%r` for the same reason `_absorb` goes through
+        `_safe_value` -- a newline
         in a service name would otherwise forge a second log line
         indistinguishable from a real one.
         """
@@ -1044,7 +1064,7 @@ class StreamClient(EnumEnforcer):
                 self._absorbed,
                 '' if cause is None
                 else ' Cause: {}: {}'.format(
-                    type(cause).__name__, _safe_value(cause)))
+                    type(cause).__name__, _safe_str(cause)))
 
         # Reported on the same schedule as the log, not on every occurrence.
         # These share _pending_reports with the late rejections, which is a
@@ -1061,7 +1081,7 @@ class StreamClient(EnumEnforcer):
                         what, n, self._absorbed,
                         '' if cause is None
                         else ': {}: {}'.format(
-                            type(cause).__name__, _safe_value(cause))),
+                            type(cause).__name__, _safe_str(cause))),
                     cause=cause, count=n, total=self._absorbed),
                 # Usually None -- a message whose shape could not be read has
                 # no service name to be had -- but not always: a relabeling
@@ -1804,7 +1824,17 @@ class StreamClient(EnumEnforcer):
             self._absorb('a message which is not an object', msg)
             return
 
-        unknown_channels = set(msg) - _KNOWN_CHANNELS
+        try:
+            unknown_channels = set(msg) - _KNOWN_CHANNELS
+        except Exception:
+            # `_is_mapping` is structural on purpose -- `get` and
+            # `__contains__`, nothing about iteration -- so a decoder may
+            # hand back a mapping this cannot enumerate, or one whose keys
+            # are unhashable. Skipping the check is what happened before the
+            # check existed; letting it out ends the receive loop with a
+            # non-SchwabError, which is the failure this whole series exists
+            # to remove, introduced against a documented extension point.
+            unknown_channels = set()
         if unknown_channels:
             # A whole compartment this version does not read. Every message in
             # it is being dropped, which is a bigger thing than an unnamed

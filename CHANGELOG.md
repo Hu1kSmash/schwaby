@@ -107,6 +107,19 @@ and none of them is a field, so reporting anything merely missing from the
 table would log four lines per message — a flood, which hides the one line
 that matters.
 
+### A custom `StreamJsonDecoder` keeps working
+
+`set_json_decoder` promises only "the decoded JSON", and `_is_mapping` is
+deliberately structural — `get` and `__contains__`, nothing about iteration —
+so that a lightweight mapping-like object keeps working. The unread-channel
+check added in this release used `set(msg)`, which requires iteration, and so
+ended the receive loop with a non-`SchwabError` on shapes 4.2.0 handled
+fine — including a mapping that is not iterable, one whose `__iter__` raises,
+and one with unhashable keys.
+
+Not reachable from Schwab: `json.loads` produces only dicts. It is a
+regression against a documented extension point, found before release.
+
 ### A non-finite `requestid` no longer ends the receive loop
 
 Not part of the schema-drift work — found while reviewing it, and present
