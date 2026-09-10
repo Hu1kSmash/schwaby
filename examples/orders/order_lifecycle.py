@@ -26,11 +26,16 @@ from schwaby.utils import (
     OrderIdNotFoundError,
     UnsuccessfulOrderException,
     Utils,
+    find_account_hash,
 )
 
 API_KEY = 'XXXXXX'
 APP_SECRET = 'XXXXXX'
 TOKEN_PATH = './token.json'
+
+# The account to trade, as a string. A token can cover several accounts, and
+# the order of the account list does not tell you which one you mean.
+ACCOUNT_NUMBER = 'XXXXXXXX'
 
 # Deliberately far from the market so this does not fill while you read it.
 SYMBOL = 'AAPL'
@@ -104,7 +109,7 @@ def main():
 
     accounts = client.get_account_numbers()
     accounts.raise_for_status()
-    account_hash = accounts.json()[0]['hashValue']
+    account_hash = find_account_hash(accounts.json(), ACCOUNT_NUMBER)
 
     order_id = place(client, account_hash)
 
