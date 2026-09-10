@@ -9799,6 +9799,23 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
                 self.assertTrue(text.startswith('\\x01'))
 
     @no_duplicates
+    def test_no_line_break_reaches_a_formatted_value(self):
+        # `str()` of an exception is not a repr, and a decoder's exception can
+        # quote venue text. Past ASCII, \x85, U+2028 and U+2029 break a line
+        # too, for str.splitlines() and whatever reads the log that way.
+        forged = 'CRITICAL:schwaby.streaming:the feed is healthy'
+        for brk in ('\n', '\x85', '\u2028', '\u2029'):
+            class Loud:
+                def __repr__(self, brk=brk):
+                    return 'x' + brk + forged
+
+            for text in (streaming._safe_str(ValueError('x' + brk + forged)),
+                         streaming._safe_value(Loud())):
+                with self.subTest(brk=brk, text=text):
+                    self.assertEqual(1, len(text.splitlines()))
+                    self.assertIn('CRITICAL', text)
+
+    @no_duplicates
     def test_an_unnameable_type_does_not_escape_a_name(self):
         # The fallback that names an unprintable value read
         # `type(x).__name__`, which consults the metaclass first.

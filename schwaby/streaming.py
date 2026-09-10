@@ -169,7 +169,8 @@ def _safe_str(value):
     except Exception:
         text = '<unprintable>'
     text = str.__str__(text)   # a plain str; `_safe_value` says why
-    return text if len(text) <= 200 else text[:197] + '...'
+    # An exception's own message can quote venue text, line breaks and all.
+    return _printable(text if len(text) <= 200 else text[:197] + '...', 200)
 
 
 def _printable(text, bound):
