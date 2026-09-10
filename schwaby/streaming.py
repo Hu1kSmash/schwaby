@@ -140,12 +140,17 @@ _reported_fields = set()
 #: Services and channels count separately from fields, and against their own
 #: budget. Sharing one made a category that cannot starve itself starve the
 #: other: 254 declared field ids across 14 tables against 64 slots, and one
-#: frame of unknown ids left a new service unnamed -- the very defect
-#: `_report_new_shape` was added to close, with the *lesser* event having
+#: frame of unknown ids left a new service unnamed -- the very defect the
+#: per-name report was added to close, with the *lesser* event having
 #: consumed the whole budget.
+#:
+#: Held per client rather than module-wide, unlike `_reported_fields`. The
+#: field report is log-only, so process-level dedup is right for it -- the
+#: log is process-wide. This one drives `add_error_handler`, which is per
+#: client, so a second client in the same process has its own handlers and
+#: must hear about a dropped service for itself. Measured before this: it
+#: heard about three of five.
 _MAX_REPORTED_SHAPES = 64
-
-_reported_shapes = set()
 
 
 def _safe_name(value):
@@ -161,51 +166,6 @@ def _safe_name(value):
     except Exception:
         text = '<{} that cannot be named>'.format(type(value).__name__)
     return text if len(text) <= 64 else text[:61] + '...'
-
-
-def _report_new_shape(what, name):
-    """Name a thing Schwab added, once, and say so through both channels.
-
-    Returns True the first time a given (kind, name) is seen, which the
-    caller passes to `_absorb` as `force` so the callback names it too.
-
-    A separate bounded set rather than `_absorb`'s counters, because those
-    are keyed on a fixed `what` string -- deliberately, so a value the venue
-    chooses cannot grow the dict -- which means every unknown *service*
-    shares one counter and `_absorb`'s coalescing applies across names.
-    Measured: five new services on one connection, and the fourth and fifth
-    were never named, in no log line and no callback. Which ones lost was
-    arbitrary.
-
-    That is the wrong way round. A dropped service is a worse event than an
-    unnamed field, and the field path already guarantees a line per distinct
-    id. This gives services and channels the same guarantee, alongside the
-    `_absorb` accounting rather than instead of it: `_absorb` still counts
-    the drops and still coalesces everything after the first sighting.
-
-    Its own budget, not the fields' -- see `_MAX_REPORTED_SHAPES`. And the
-    name is truncated, because unlike a field id it is not `isdigit`-bounded
-    and this set never shrinks.
-    """
-    seen = (what, str(name)[:64] if not isinstance(name, str) else name[:64])
-    if seen in _reported_shapes:
-        return False
-    if len(_reported_shapes) >= _MAX_REPORTED_SHAPES:
-        return False
-    _reported_shapes.add(seen)
-    if len(_reported_shapes) >= _MAX_REPORTED_SHAPES:
-        get_logger().warning(
-                'That is %d distinct services and channels schwaby does not '
-                'know, which is as many as it will name. Any further ones '
-                'are dropped the same way and are not reported.',
-                _MAX_REPORTED_SHAPES)
-    get_logger().warning(
-            'Schwab sent a %s this version of schwaby does not know: %s. '
-            'Messages for it are dropped -- there is no handler to route '
-            'them to -- and this is reported once, not per message. Please '
-            'open an issue at https://github.com/Hu1kSmash/schwaby/issues.',
-            what, seen[1])
-    return True
 
 
 def _report_unknown_field(field_enum_type, field_id):
@@ -228,6 +188,14 @@ def _report_unknown_field(field_enum_type, field_id):
             or len(_reported_fields) >= _MAX_REPORTED_FIELDS):
         return
     _reported_fields.add(seen)
+    if len(_reported_fields) >= _MAX_REPORTED_FIELDS:
+        # Said out loud, like the shapes cap. Going quiet at a cap is
+        # indistinguishable from nothing new arriving, which is the one
+        # reading an operator must not be left to make.
+        get_logger().warning(
+                'That is %d distinct unknown field ids, which is as many as '
+                'schwaby will name. Any further ones are delivered the same '
+                'way and are not reported.', _MAX_REPORTED_FIELDS)
     get_logger().warning(
             'Schwab sent field %s on a %s message, which this version of '
             'schwaby has no name for. The field is delivered to your handler '
@@ -526,6 +494,7 @@ class StreamClient(EnumEnforcer):
         # a different one; the total keeps the log line honest about scale.
         self._absorbed = 0
         self._absorbed_kinds = defaultdict(int)
+        self._reported_shapes = set()
 
         # Logging-related fields
         self.logger = get_logger()
@@ -957,6 +926,47 @@ class StreamClient(EnumEnforcer):
 
             yield response, code, content
 
+    def _report_new_shape(self, what, name):
+        """Name a thing Schwab added, once, and say so through both channels.
+
+        Returns True the first time this client sees a given (kind, name),
+        which the caller passes to `_absorb` as `force` so the callback names
+        it too -- `_absorb` coalesces on a counter keyed per kind, so without
+        that a fourth new service arriving beside three others reaches no
+        handler at all. Bounded: a first sighting happens at most
+        `_MAX_REPORTED_SHAPES` times per client.
+
+        Per client, and not reset by `login` or `close`. A reconnect does not
+        re-report, because the handlers are the same ones that already heard;
+        a *different* client has different handlers and hears for itself.
+
+        The name goes through `_safe_name`: it is venue-controlled, `str()`
+        of it can raise, and it is bounded because this set never shrinks.
+        Formatted with `%r` for the same reason `_absorb` does -- a newline
+        in a service name would otherwise forge a second log line
+        indistinguishable from a real one.
+        """
+        seen = (what, _safe_name(name))
+        if seen in self._reported_shapes:
+            return False
+        if len(self._reported_shapes) >= _MAX_REPORTED_SHAPES:
+            return False
+        self._reported_shapes.add(seen)
+        if len(self._reported_shapes) >= _MAX_REPORTED_SHAPES:
+            self.logger.warning(
+                    'That is %d distinct services and channels schwaby does '
+                    'not know, which is as many as it will name. Any further '
+                    'ones are dropped the same way and are not reported.',
+                    _MAX_REPORTED_SHAPES)
+        self.logger.warning(
+                'Schwab sent a %s this version of schwaby does not know: %r. '
+                'Messages for it are dropped -- there is no handler to route '
+                'them to -- and this is reported once, not per message. '
+                'Please open an issue at '
+                'https://github.com/Hu1kSmash/schwaby/issues.',
+                what, seen[1])
+        return True
+
     def _absorb(self, what, offender, frame=None, service=None,
                 cause=None, force=False):
         """Records a message this client cannot use.
@@ -1386,19 +1396,27 @@ class StreamClient(EnumEnforcer):
           itself succeeded;
         * a message this client cannot use at all -- a frame which is not an
           object, an element of ``data`` or ``notify`` which is not an object,
-          a ``service`` which is not a name, a ``service`` which *is* a name
-          this version does not know, or a frame carrying a whole channel it
-          does not read. The last two are messages this client is dropping
-          because Schwab added something, rather than because anything is
-          malformed, and they are the ones a consumer cannot see any other
-          way: no handler of theirs fires for either. **Every distinct
-          service or channel name reaches this callback at least once**,
-          which the coalescing below would otherwise prevent -- it counts
-          per kind, so without that guarantee a fourth new service arriving
-          beside three others would never be reported at all. These arrive
-          as
-          :class:`UnusableMessage`, whose ``message`` is the offending value as
-          it arrived. These are *coalesced*: the first three on a connection,
+          a ``service`` which is not a name, a channel or a ``response``
+          whose value is not a list, an unparseable element of a
+          ``response``, a message which could not be relabeled --- the only
+          category that populates ``cause`` and ``service`` --- and, since
+          Schwab may add to this protocol at any time, a ``service`` which
+          *is* a name this version does not know, or a frame carrying a
+          whole channel it does not read. Those last two are messages this
+          client drops because Schwab added something rather than because
+          anything is malformed, and they are the ones a consumer cannot see
+          any other way: no handler of theirs fires for either. **Every distinct
+          service or channel name reaches this callback at least once**, up
+          to the first 64 of them on this client, which the coalescing below
+          would otherwise prevent -- it counts per kind, so without that
+          guarantee a fourth new service arriving beside three others would
+          never be reported at all. Past 64 a new name is reported nowhere,
+          and a line says so when the cap is reached. These arrive as
+          :class:`UnusableMessage`, whose ``message`` is the offending value
+          as it arrived --- except for an unread channel, where it is the
+          sorted list of channel names, since what offends is which
+          compartments appeared rather than any one value inside them. These
+          are *coalesced*: the first three on a connection,
           then powers of ten, with the running count in the message. A
           systematically malformed channel produces one of these per element
           per tick, which would otherwise be a log-volume incident on top of
@@ -1628,7 +1646,7 @@ class StreamClient(EnumEnforcer):
             # Named once per service beside the absorb, which coalesces
             # across every unknown service because its counter is keyed on
             # the fixed string above.
-            first = _report_new_shape('service', service)
+            first = self._report_new_shape('service', service)
             self._absorb('a message for a service this version does not know',
                          service, frame=msg, service=service, force=first)
             return
@@ -1751,7 +1769,8 @@ class StreamClient(EnumEnforcer):
             # understood still hold real data, and refusing the frame over an
             # unread compartment would turn an addition into an outage.
             names = sorted(_safe_name(c) for c in unknown_channels)
-            first = any([_report_new_shape('channel', n) for n in names])
+            first = any([self._report_new_shape('channel', n)
+                         for n in names])
             self._absorb(
                     'a frame carrying a channel this version does not read',
                     names, frame=msg, force=first)
