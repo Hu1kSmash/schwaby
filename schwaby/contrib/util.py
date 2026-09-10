@@ -69,6 +69,10 @@ _BARE_NUMBER = re.compile(
 #: :func:`_report_unknown_keys` for why that direction rather than refusing.
 _DECIMAL_KEYS = frozenset(('lo', 'mid', 'hi', 'signScale'))
 
+#: The mantissa side of that. Named because an absent mantissa and an absent
+#: scale are different questions once an unrecognised key is in play.
+_MANTISSA_KEYS = frozenset(('lo', 'mid', 'hi'))
+
 #: How many distinct unknown keys to name in the log before giving up. A cap
 #: rather than an unbounded set, because the thing being counted is attacker-
 #: or corruption-controlled and this set never shrinks.
@@ -97,13 +101,32 @@ def _report_unknown_keys(unknown):
     as a logged unknown key on the very first message.
 
     Reported once per distinct key rather than once per message: this fires
-    on a live feed, where a per-message line is a log flood and a
-    per-connection line is what an operator can act on.
+    on a live feed, where a per-message line is a flood and a flood is its own
+    way of hiding the message.
+
+    Once per *process*, not per connection: the set is module-level and is not
+    cleared by `login` or `close`, which do clear the absorbed counters. That
+    is deliberate --- a key Schwab added is a fact about the venue, not about
+    one socket --- and it means two clients in one process share the
+    suppression.
     """
-    fresh = unknown - _reported_keys
-    if not fresh or len(_reported_keys) >= _MAX_REPORTED_KEYS:
+    room = _MAX_REPORTED_KEYS - len(_reported_keys)
+    if room <= 0:
+        return
+    # Normalised to `str` on the way in so a non-string key cannot slip the
+    # dedup by being unequal to its own spelling, and truncated to the room
+    # left rather than after the fact: the cap is justified by input nobody
+    # here controls, and `update` before the check let one object carrying
+    # 500 unknown keys put all 500 in a set bounded at 32.
+    fresh = sorted({str(k) for k in unknown} - _reported_keys)[:room]
+    if not fresh:
         return
     _reported_keys.update(fresh)
+    if len(_reported_keys) >= _MAX_REPORTED_KEYS:
+        get_logger().warning(
+                'That is %d distinct unknown keys, which is as many as '
+                'schwaby will name. Any further ones decode the same way and '
+                'are not reported.', _MAX_REPORTED_KEYS)
     get_logger().warning(
             'Schwab sent %s inside a decimal object, which this version of '
             'schwaby does not know about. The value still decodes -- the '
@@ -113,7 +136,7 @@ def _report_unknown_keys(unknown):
             'https://github.com/Hu1kSmash/schwaby/issues so the field can be '
             'documented: it is undocumented publicly and a capture is the '
             'only way anyone learns what it means.',
-            ', '.join(repr(k) for k in sorted(map(str, fresh))))
+            ', '.join(repr(k) for k in fresh))
 
 
 class UnusableDecimalScale(SchwabError, ValueError):
@@ -342,9 +365,40 @@ def decode_decimal(value):
     if not isinstance(value, dict):
         return _decode_bare(value)
 
-    unknown = value.keys() - _DECIMAL_KEYS
+    # `set(value)`, not `value.keys() - ...`: a mapping whose `keys()` does
+    # not return a set view makes the difference operator raise a bare
+    # TypeError, and this module promises every failure is a SchwabError.
+    keys = set(value)
+    unknown = keys - _DECIMAL_KEYS
     if unknown:
-        if not value.keys() & _DECIMAL_KEYS:
+        known = keys & _DECIMAL_KEYS
+        if known and (not known & _MANTISSA_KEYS or 'signScale' not in known):
+            # An unknown key beside a *missing* component is ambiguous: the
+            # unknown key may be that component, renamed. Both directions are
+            # a silent wrong number if guessed at, and they are not
+            # symmetric in cost:
+            #
+            #   {"lo": "6860000", "SignScale": 12}
+            #
+            # has no `signScale`, so the absent-scale rule would read it at
+            # scale 0 and turn a $6.86 limit price into $6,860,000. The
+            # mirror, a renamed mantissa beside a real scale, reads as zero.
+            # Refusing is the only answer that is not a confident wrong
+            # number, and it catches a rename on the first message.
+            #
+            # This costs something and the cost is the right way round: if
+            # Schwab *adds* a key, objects that legitimately omit a component
+            # -- an AskSize with no scale, a $0 commission with no mantissa --
+            # raise until the key is known, while every complete object still
+            # decodes and names the new key in the log immediately.
+            raise UnusableDecimalScale(
+                    'decimal object is missing its {} and carries {}, which '
+                    'may be that component under a new name: {}'.format(
+                        'mantissa' if not known & _MANTISSA_KEYS
+                        else 'signScale',
+                        ', '.join(sorted(map(str, unknown))),
+                        _safe_repr(value)))
+        if not known:
             # None of the four. Not a decimal object at all -- a PascalCase
             # `{"Lo": ..., "SignScale": ...}`, or an unrelated object
             # entirely -- and it would otherwise fall straight through the

@@ -54,10 +54,21 @@ class _BaseFieldEnum(Enum):
     def relabel_message(cls, old_msg, new_msg):
         # Make a copy of the items so we can modify the dict during iteration
         for old_key, value in list(old_msg.items()):
-            if old_key in cls.key_mapping():
-                new_key = cls.key_mapping()[old_key]
+            # Compared as text, because a key is not guaranteed to be one.
+            # `StreamJsonDecoder` is a public extension point that parses the
+            # whole frame, and a decoder normalising numeric field keys to
+            # ints is a plausible thing to write. Keyed on the raw object,
+            # such a message went unrelabeled -- and once the check below
+            # existed, `.isdigit()` raised AttributeError on it, which the
+            # relabel guard absorbed, so a message 4.2.0 delivered was
+            # dropped instead. That is the exact direction this change exists
+            # to prevent, and reporting field 1 as one schwaby "has no name
+            # for" would have been a wrong warning besides.
+            text_key = str(old_key)
+            if text_key in cls.key_mapping():
+                new_key = cls.key_mapping()[text_key]
                 new_msg[new_key] = new_msg.pop(old_key)
-            elif old_key.isdigit():
+            elif text_key.isdigit():
                 # A numeric key this table does not have is a field Schwab
                 # added. It is delivered verbatim either way -- that is
                 # deliberate, and it is why a new field reaches a handler
@@ -75,7 +86,7 @@ class _BaseFieldEnum(Enum):
                 # test the loop already performs: only a key that missed the
                 # table is examined, and in a normal message that is the four
                 # names above.
-                _report_unknown_field(cls, old_key)
+                _report_unknown_field(cls, text_key)
 
 
 #: Every service this version knows how to route, and ``ADMIN``, which is

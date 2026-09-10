@@ -44,11 +44,24 @@ which `enable_bug_report_logging` now collects. An object carrying **none** of
 those four is still refused: that is not a decimal object, and the
 mantissa-less rule would decode it as a genuine zero.
 
-One shape is knowingly given up: a mantissa under a name this library does not
-know, beside a valid `signScale` — `{"low": 1, "signScale": 12}` — still reads
-as zero. A serializer does not typo, so that means a rename rather than
-corruption, and a rename is visible in the same log line on the first message
-that carries it.
+An unrecognised key beside a **missing** component is refused rather than
+ignored, because the unknown key may be that component under a new name. The
+first version of this ignored it, and enumerated only one of the two ways that
+goes wrong:
+
+    {"Lo": "6860000", "signScale": 12}    # mantissa renamed -> read as 0
+    {"lo": "6860000", "SignScale": 12}    # scale renamed    -> read as 6860000
+
+The second is the one that matters. With no `signScale` the absent-scale rule
+applies, so a **$6.86 limit price decodes as $6,860,000** — six orders of
+magnitude, silently, on the field this feed exists to carry. Both are refused
+now, and a rename is caught on the first message that carries it.
+
+The cost is real and is the right way round: a payload that legitimately omits
+a component — an `AskSize` with no scale, a $0 commission with no mantissa —
+raises while an added key is still unknown, rather than being guessed at. Every
+complete object still decodes and names the new key in the log immediately, so
+the fix is one release away, and `UnusableDecimalScale` is catchable per field.
 
 If you see that warning, please [open an
 issue](https://github.com/Hu1kSmash/schwaby/issues) with the field. The

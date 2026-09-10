@@ -1252,13 +1252,30 @@ nowhere official.
   money and quantity value on the feed at once, which is a far worse outcome
   than not knowing what the new key means.
 
-  What is *not* safe to ignore is an object carrying **none** of those four.
-  That is not a decimal object, and the mantissa-less rule above would decode
-  it as a genuine zero.
+  Two things are *not* safe to ignore. An object carrying **none** of those
+  four is not a decimal object at all, and the mantissa-less rule above would
+  decode it as a genuine zero. And an unrecognised key beside a **missing**
+  component is ambiguous --- the unknown key may be that component, renamed:
 
-  ``decode_decimal`` does both: it ignores an added key and logs it once per
-  key on ``schwaby.contrib.util``, and refuses an object with none of the
-  four. If you see that log line, please `open an issue
+  .. code-block:: python
+
+    {"lo": "6860000", "SignScale": 12}    # scale renamed, and no signScale
+
+  Read with the absent-scale rule that is ``6860000``, so a $6.86 limit price
+  becomes **$6,860,000**. The mirror --- a renamed mantissa beside a real
+  scale --- reads as zero. Both are confident wrong numbers, and refusing is
+  the only answer that is not one.
+
+  ``decode_decimal`` does all three: it ignores an added key on an otherwise
+  complete object and logs it once per key on ``schwaby.contrib.util``,
+  refuses an object with none of the four, and refuses one whose missing
+  component could be the key it does not recognise. The cost of the last is
+  that a payload legitimately omitting a component --- an ``AskSize`` with no
+  scale, a $0 commission with no mantissa --- raises while the added key is
+  unknown, which is a loud failure one release from a fix rather than a
+  silent one nobody finds.
+
+  If you see that log line, please `open an issue
   <https://github.com/Hu1kSmash/schwaby/issues>`__ with the field --- the
   encoding is undocumented publicly and a capture is the only way anyone
   learns what a new key means.
@@ -1292,7 +1309,8 @@ nowhere official.
   and an :class:`UnusableMessage` through :func:`add_error_handler
   <schwaby.streaming.StreamClient.add_error_handler>`, counted per kind and
   coalesced after the first few so a systematic change cannot become a log
-  flood. The name that appeared is on the exception's ``message``.
+  flood. What appeared is on the exception's ``message`` --- the service
+  name for a service, and the sorted list of channel names for a channel.
 
   A service you simply registered no handler for is **not** reported. That is
   your own choice, and a line per message on a feed you deliberately ignored

@@ -396,8 +396,8 @@ class DecodeDecimalTest(unittest.TestCase):
         util._reported_keys.clear()
         for value, expected in (
                 ({'lo': '13720000', 'signScale': 12, 'flags': 0}, '13.72'),
-                ({'lo': '19200', 'flags': 0}, '19200'),
-                ({'signScale': 12, 'flags': 0}, '0'),
+                ({'lo': '705032704', 'mid': 1, 'signScale': 12, 'f': 0},
+                 '5000'),
                 ({'lo': '6860000', 'signScale': 13, 'IsNeg': True}, '-6.86')):
             with self.subTest(value=value):
                 self.assertEqual(decimal.Decimal(expected),
@@ -429,22 +429,75 @@ class DecodeDecimalTest(unittest.TestCase):
             decode_decimal({'lo': '1', 'signScale': 12, 'k%d' % i: 0})
         self.assertLessEqual(len(util._reported_keys),
                              util._MAX_REPORTED_KEYS)
+
+        # One key per call is a fixture sized to the guard rather than to the
+        # thing the guard names. The cap is justified by input nobody here
+        # controls, so the case that matters is one object carrying more keys
+        # than the cap: checking the cap and *then* calling `update` let all
+        # of them in.
+        util._reported_keys.clear()
+        crowded = {'lo': '1', 'signScale': 12}
+        crowded.update({'k%d' % i: 0
+                        for i in range(util._MAX_REPORTED_KEYS * 20)})
+        decode_decimal(crowded)
+        self.assertLessEqual(len(util._reported_keys),
+                             util._MAX_REPORTED_KEYS)
         # And it still decodes after the cap is reached.
         self.assertEqual(decimal.Decimal('0.000001'),
                          decode_decimal({'lo': '1', 'signScale': 12,
                                          'one more': 0}))
         util._reported_keys.clear()
 
-    def test_the_residual_gap_is_a_rename_and_it_is_visible(self):
-        # A mantissa under a name this library does not know, beside a valid
-        # signScale, still reads as zero -- the one shape the looser guard
-        # gives up. A serializer does not typo, so this means a rename, and a
-        # rename is visible: the unknown key is logged on the first message.
+    def test_a_renamed_key_is_refused_in_either_direction(self):
+        # An unknown key beside a *missing* component is ambiguous: the
+        # unknown key may be that component under a new name. Both directions
+        # were once decoded, and they are not symmetric in cost.
+        #
+        # A renamed mantissa read as zero. A renamed *scale* was far worse:
+        # with no signScale the absent-scale rule applies, so a $6.86 limit
+        # price decoded as $6,860,000 -- a confident wrong number six orders
+        # of magnitude out, on the field this feed exists to carry. The
+        # analysis that introduced this enumerated only the zero half.
+        for value in ({'lo': '6860000', 'SignScale': 12},   # scale renamed
+                      {'lo': '6860000', 'signscale': 12},   # ... or recased
+                      {'lo': '6860000', 'Scale': 12},
+                      {'Lo': '6860000', 'signScale': 12},   # mantissa renamed
+                      {'low': 6860000, 'signScale': 12}):
+            with self.subTest(value=value):
+                util._reported_keys.clear()
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal(value)
         util._reported_keys.clear()
-        with self.assertLogs(util.get_logger(), level='WARNING') as caught:
-            value = decode_decimal({'low': 6860000, 'signScale': 12})
-        self.assertEqual(decimal.Decimal(0), value)   # the gap, stated
-        self.assertIn("'low'", caught.output[0])      # and not silent
+
+    def test_an_added_key_costs_the_objects_that_omit_a_component(self):
+        """What the refusal above costs, stated rather than discovered.
+
+        The serializer omits what is zero, so a real payload can arrive with
+        no scale (`AskSize`) or no mantissa (a $0 commission). Once an
+        unrecognised key is also present those become ambiguous, and they
+        raise until the key is known.
+
+        That is the right way round -- every complete object still decodes
+        and names the new key immediately, so the fix is one release away,
+        and `UnusableDecimalScale` is catchable per field -- but it is a real
+        cost and it should fail loudly here if anyone changes their mind.
+        """
+        for value in ({'lo': '19200', 'flags': 0},        # no scale
+                      {'signScale': 12, 'flags': 0}):     # no mantissa
+            with self.subTest(value=value):
+                util._reported_keys.clear()
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal(value)
+        # Positive control: the same objects without the added key are fine,
+        # and a complete object with the added key is fine.
+        util._reported_keys.clear()
+        self.assertEqual(decimal.Decimal(19200),
+                         decode_decimal({'lo': '19200'}))
+        self.assertEqual(decimal.Decimal(0), decode_decimal({'signScale': 12}))
+        self.assertEqual(
+                decimal.Decimal('13.72'),
+                decode_decimal({'lo': '13720000', 'signScale': 12,
+                                'flags': 0}))
         util._reported_keys.clear()
 
     def test_a_dict_subclass_whose_get_and_getitem_disagree_is_catchable(self):

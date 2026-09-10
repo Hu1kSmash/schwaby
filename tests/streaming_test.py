@@ -8641,15 +8641,25 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         socket.recv.side_effect = [json.dumps({'data': None}),
                                    json.dumps({'notify': None}),
-                                   json.dumps({'command': 'nothing here'})]
+                                   json.dumps({'data': []})]
         await self.client.handle_message()
         await self.client.handle_message()
         await self.client.handle_message()
 
-        # Two absorbed, and the frame with neither channel is not one of them.
+        # Two absorbed. The third frame is a well-formed empty channel and is
+        # not one of them.
+        #
+        # It used to be `{'command': 'nothing here'}`, chosen as a frame
+        # carrying neither channel -- which the channel guard now reports,
+        # correctly and for a different reason. That made this test pass while
+        # its own comment was false, and only because there is no fourth
+        # handle_message to drain the queued report. An empty `data` list
+        # tests what this was written to test without overlapping the newer
+        # guard; the guard has its own tests.
         self.assertEqual(2, len(errors))
         for exc in errors:
             self.assertIsInstance(exc, schwaby.streaming.UnusableMessage)
+        self.assertEqual(2, self.client._absorbed)
 
     @no_duplicates
     def test_the_report_queue_is_bounded(self):
@@ -8791,6 +8801,32 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         handler.assert_called_once()
         self.assertIsNotNone(self.client._socket)
+
+
+    @no_duplicates
+    def test_a_non_string_field_key_is_relabeled_not_dropped(self):
+        # `StreamJsonDecoder` is a public extension point that parses the
+        # whole frame, so a decoder normalising numeric field ids to ints is
+        # a plausible thing for a consumer to write. Such a message went
+        # unrelabeled, and once the unknown-field check existed, `.isdigit()`
+        # raised AttributeError on it -- absorbed by the relabel guard, so a
+        # message that used to be delivered was dropped instead.
+        streaming._reported_fields.clear()
+        fields = streaming.StreamClient.LevelOneEquityFields
+        raw = {'key': 'F', 1: 13.71, 2: 13.72}
+        new = copy.deepcopy(raw)
+        with self.assertNoLogs(streaming.get_logger(), level='WARNING'):
+            fields.relabel_message(raw, new)
+        # Relabeled, not merely survived, and not reported as unknown --
+        # schwaby does have a name for field 1.
+        self.assertEqual({'key': 'F', 'BID_PRICE': 13.71, 'ASK_PRICE': 13.72},
+                         new)
+        # Positive control: an int id it genuinely has no name for still
+        # reports, so the assertNoLogs above is not vacuous.
+        raw = {'key': 'F', 99: 'brand new'}
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            fields.relabel_message(raw, copy.deepcopy(raw))
+        streaming._reported_fields.clear()
 
     # ---- Something Schwab added that this version cannot route ----------
     #
@@ -9060,15 +9096,19 @@ class KnownServiceSetTest(IsolatedAsyncioTestCase):
         added to those without being added here would be reported as unknown
         on the very traffic it was added to receive.
         """
-        source = open(schwaby.streaming.__file__).read()
+        with open(schwaby.streaming.__file__) as f:
+            source = f.read()
         subscribed = set(re.findall(
                 r"_service_op\(\s*[^)]*?'([A-Z][A-Z_0-9]+)'", source, re.S))
         registered = set(re.findall(r"_handlers\['([A-Z_0-9]+)'\]", source))
 
         # Non-empty, or two typos in a regex would make this pass by matching
-        # nothing at all.
-        self.assertEqual(13, len(subscribed))
-        self.assertEqual(13, len(registered))
+        # nothing at all. A floor rather than the exact count: pinning 13 made
+        # *correctly* adding a service fail, with a message pointing at
+        # nothing wrong, which is a check that punishes the thing it exists to
+        # support.
+        self.assertGreater(len(subscribed), 10)
+        self.assertGreater(len(registered), 10)
         self.assertEqual(subscribed, registered)
 
         known = schwaby.streaming._KNOWN_SERVICES
