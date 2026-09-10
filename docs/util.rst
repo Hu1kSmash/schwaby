@@ -201,13 +201,16 @@ deliberately does not.
   Below 500, whatever the status, the token response is parsed as JSON, and
   what comes out of the call depends on the body:
 
-  - a JSON object that is not a usable token --- one carrying an ``error``
-    key, or any other object without an access token --- raises
+  - a JSON object carrying an ``error`` key is Schwab rejecting the refresh,
+    and raises :class:`~schwaby.utils.TokenRefreshError`;
+  - any other JSON that is not a usable bearer token --- an object without an
+    access token, a list, a string, ``null`` --- also raises
     :class:`~schwaby.utils.TokenRefreshError`. Nothing is stored, and the next
     call tries the refresh again;
-  - JSON that is not an object raises ``TypeError``;
   - a body that is not JSON at all, such as an empty body or an HTML page,
-    raises ``json.JSONDecodeError``.
+    raises a ``ValueError`` --- usually ``json.JSONDecodeError``, or
+    ``UnicodeDecodeError`` for a body that is not UTF-8 --- and nothing is
+    stored either.
 
   What Schwab's token endpoint sends in the last two cases has not been
   observed.

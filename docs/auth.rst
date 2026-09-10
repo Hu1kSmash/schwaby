@@ -298,9 +298,10 @@ token-shaped:
 Not every failure to refresh arrives as ``TokenRefreshError``. A server error
 from the token endpoint raises :class:`~schwaby.utils.HTTPStatusError`, a
 dropped connection raises one of ``httpx2``'s transport errors, and a response
-body that is not a JSON object raises ``json.JSONDecodeError`` or ``TypeError``
---- :class:`~schwaby.utils.HTTPStatusError` sets out which is which. An
-unattended program that means to retry has to catch those as well.
+body that is not JSON at all raises a ``ValueError``, usually
+``json.JSONDecodeError`` --- :class:`~schwaby.utils.HTTPStatusError` sets out
+which is which. An unattended program that means to retry has to catch those
+as well.
 
 .. autoclass:: schwaby.utils.TokenRefreshError
 
@@ -333,7 +334,8 @@ have retried through is worse off than one which retried a little too long.
    nesting, so this is one account on one day rather than a specification.
    Both placements are accepted, in case it is ever corrected.
 
-Only a refusal by the token endpoint is reported this way. A connection failure
+Only a refusal or an unusable answer from the token endpoint, or a stored token
+that cannot be refreshed, is reported this way. A connection failure
 while refreshing raises the ``httpx2`` exception it always did, because a
 connection failure while refreshing and one while fetching a quote are the same
 problem and cannot be told apart from inside the library.

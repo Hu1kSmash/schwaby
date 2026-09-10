@@ -152,6 +152,12 @@ class BaseClient(EnumEnforcer):
         before any HTTP call, when the stored token has no refresh token or is
         otherwise unusable. Nothing about those improves with time, so they are
         reported as needing a new login rather than as something to retry.
+
+        Nor does ``unusable_token_response``, which this library raises itself
+        when the token endpoint answers with something that is not a usable
+        token, so that it is refused before authlib stores it. That one is
+        reported as retryable: nothing was stored, and the next call refreshes
+        again.
         '''
         try:
             yield

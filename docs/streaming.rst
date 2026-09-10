@@ -1425,10 +1425,11 @@ reason enough: do not infer direction from the sign of anything.
 
   **A quote's** ``Mid`` **decoded negative on every sell order checked.** Its
   magnitude is exactly ``(Bid + Ask) / 2`` from the same quote, 563 times of
-  563, but its sign followed the order's side. On the 182 quotes whose message
-  also carried ``BuySellCode``, every buy had an even ``signScale`` and every
-  sell an odd one --- 88 and 94 of them, with no exceptions. That is the
-  opposite way round from the amounts above, and Schwab documents neither.
+  563, and wherever the order's side was checked its sign followed it. On the
+  182 quotes whose message also carried ``BuySellCode``, every buy had an even
+  ``signScale`` and every sell an odd one --- 88 and 94 of them, with no
+  exceptions. That is the opposite way round from the amounts above, and Schwab
+  documents neither.
 
   ``Mid`` arrives in three containers: ``QuoteOnOrderAcceptance`` on
   ``OrderCreated`` and ``ChangeCreated``, ``QuoteOnOrderEntry`` on

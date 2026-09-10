@@ -425,7 +425,7 @@ instead of creating your own order specs.
   with no error. While a placement is still in flight, not recognising an id
   does not mean the order is not yours.
 
-  :ref:`Seen once, not reproduced <confidence_tags>`. The ordering is what the
+  :ref:`Seen once, not reproduced <confidence_tags>`. The ordering is what a
   consumer observed, not a measurement of when Schwab sent each message, and
   how often it happens is not known.
 

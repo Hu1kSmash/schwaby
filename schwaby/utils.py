@@ -291,7 +291,9 @@ class AccountHashMismatchException(SchwabError, ValueError):
 
 class TokenRefreshError(SchwabError):
     '''
-    Raised when Schwab rejects an attempt to refresh the OAuth token.
+    Raised when a refresh of the OAuth token fails: Schwab rejects it, the
+    token endpoint answers with something that is not a usable token, or the
+    stored token cannot be refreshed at all.
 
     Every request refreshes the token first if it is close to expiring, so this
     surfaces from an ordinary call rather than from anything token-shaped. It
@@ -316,12 +318,14 @@ class TokenRefreshError(SchwabError):
     It is ``False`` for everything else, *including* failures this library did
     not recognize -- the conservative direction, since treating a recoverable
     failure as terminal would stop an application which only needed to try
-    again.
+    again. Seen once: Schwab answered a refresh with ``unsupported_token_type``
+    and no nested ``invalid_grant``, and it recovered without a new login.
 
     Not every failed refresh is one of these. A server error from the token
-    endpoint raises :class:`~schwaby.utils.HTTPStatusError`, and a response
-    that is not a JSON object raises ``json.JSONDecodeError`` or
-    ``TypeError``.
+    endpoint raises :class:`~schwaby.utils.HTTPStatusError`, a dropped
+    connection raises one of ``httpx2``'s transport errors, and a response
+    that is not JSON at all raises a ``ValueError``, usually
+    ``json.JSONDecodeError``.
     '''
 
     def __init__(self, message, *, token_age=None, refresh_token_invalid=False):
