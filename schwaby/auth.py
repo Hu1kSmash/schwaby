@@ -5,11 +5,13 @@ from authlib.oauth2.rfc6749 import OAuth2Token
 import collections
 import collections.abc
 import contextlib
+import decimal
 import httpx2
 import importlib
 import json
 import logging
 import math
+import numbers
 import os
 import queue
 import sys
@@ -298,12 +300,31 @@ def __normalize_credential(value, name):
                 stacklevel=3)
     return stripped
 
+def _is_finite(number):
+    '''Whether a real number is finite when read as a float, which a Decimal
+    and a numpy scalar both can be. An int too large for a float is refused
+    along with infinity; no timestamp comes near that size.'''
+    try:
+        return math.isfinite(number)
+    except (ValueError, OverflowError):
+        # A signalling NaN raises rather than converting.
+        return False
+
+
 def __token_loader(token_path):
     def load_token():
         get_logger().info('Loading token from file %s', token_path)
 
         with open(token_path, 'rb') as f:
-            return json.load(f)
+            try:
+                return json.load(f)
+            except RecursionError:
+                # Nesting past the interpreter's depth is not a token this
+                # library wrote, and fails like any other file that is not.
+                raise ValueError(
+                        'The token file is nested too deeply to be a token '
+                        'this library wrote. Delete it and create a new '
+                        'one.') from None
     return load_token
 
 
@@ -362,22 +383,24 @@ class TokenMetadata:
                     'was created. Please delete it and create a new one.')
 
         # The creation time decides how much of the seven days is left, so a
-        # value that is not a number is refused here, rather than failing
-        # later inside token_age() with an error about subtraction.
+        # value that is not a finite number is refused here, rather than
+        # failing later inside token_age() with an error about subtraction.
+        # Any real number works there, including the Decimal a token store
+        # such as DynamoDB hands back.
         creation_timestamp = token['creation_timestamp']
         if (isinstance(creation_timestamp, bool)
-                or not isinstance(creation_timestamp, (int, float))
-                or (isinstance(creation_timestamp, float)
-                    and not math.isfinite(creation_timestamp))):
+                or not isinstance(creation_timestamp,
+                                  (numbers.Real, decimal.Decimal))
+                or not _is_finite(creation_timestamp)):
             raise ValueError(
-                    'The token\'s creation_timestamp is not a number, so its '
-                    'age cannot be known. Delete the token file and create a '
-                    'new one.')
+                    'The token\'s creation_timestamp is not a finite number, '
+                    'so its age cannot be known. If it came from a token '
+                    'file, delete the file and create a new one.')
         if 'token' not in token:
             raise ValueError(
                     'The token has no "token" entry, so it is not a token '
-                    'this library wrote. Delete the token file and create a '
-                    'new one.')
+                    'this library wrote. If it came from a token file, delete '
+                    'the file and create a new one.')
 
         return TokenMetadata(
                 token['token'],
@@ -429,10 +452,11 @@ def token_file_age(token_path):
 
     :param token_path: Path to a token file this library wrote.
     :raises ValueError: The file is not a token in the format this library
-                        writes: not JSON, not a JSON object, written before
-                        the creation timestamp was stored, without a
-                        ``token`` entry, or with a creation timestamp that is
-                        not a number.
+                        writes: not JSON, nested too deeply to read, not a
+                        JSON object, written before the creation timestamp
+                        was stored, without a ``token`` entry, or with a
+                        creation timestamp that is not a finite number a
+                        float can hold.
     :raises OSError: The file cannot be read.
     '''
     return TokenMetadata.from_loaded_token(

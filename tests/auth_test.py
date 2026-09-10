@@ -1407,12 +1407,17 @@ class TokenFileAgeTest(unittest.TestCase):
         for text, message in (
                 ('{"creation_timestamp": 1613745000}', 'no "token" entry'),
                 ('{"creation_timestamp": "1613745000", "token": {}}',
-                 'not a number'),
-                ('{"creation_timestamp": null, "token": {}}', 'not a number'),
-                ('{"creation_timestamp": true, "token": {}}', 'not a number'),
-                ('{"creation_timestamp": NaN, "token": {}}', 'not a number'),
+                 'not a finite number'),
+                ('{"creation_timestamp": null, "token": {}}',
+                 'not a finite number'),
+                ('{"creation_timestamp": true, "token": {}}',
+                 'not a finite number'),
+                ('{"creation_timestamp": NaN, "token": {}}',
+                 'not a finite number'),
                 ('{"creation_timestamp": 1e400, "token": {}}',
-                 'not a number')):
+                 'not a finite number'),
+                ('{"creation_timestamp": 1%s, "token": {}}' % ('0' * 400),
+                 'not a finite number')):
             with self.subTest(text=text):
                 self.write(text)
                 with self.assertRaisesRegex(ValueError, message):
@@ -1420,6 +1425,57 @@ class TokenFileAgeTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     auth.client_from_token_file(
                             self.token_path, API_KEY, APP_SECRET)
+
+    @no_duplicates
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    def test_a_decimal_or_other_real_timestamp_is_accepted(self):
+        # A token store such as DynamoDB hands numbers back as Decimal, and
+        # token_age() has always worked with one.
+        import decimal
+        import fractions
+        for stamp in (decimal.Decimal(TOKEN_CREATION_TIMESTAMP),
+                      fractions.Fraction(TOKEN_CREATION_TIMESTAMP),
+                      float(TOKEN_CREATION_TIMESTAMP)):
+            with self.subTest(stamp=repr(stamp)):
+                token = {'token': {'access_token': 'a', 'refresh_token': 'r',
+                                   'token_type': 'Bearer',
+                                   'expires_at': MOCK_NOW + 1800},
+                         'creation_timestamp': stamp}
+                client = auth.client_from_access_functions(
+                        API_KEY, APP_SECRET, lambda: token,
+                        lambda *args, **kwargs: None)
+                self.assertEqual(MOCK_NOW - TOKEN_CREATION_TIMESTAMP,
+                                 client.token_age())
+
+    @no_duplicates
+    def test_a_non_finite_decimal_timestamp_is_refused(self):
+        import decimal
+        for stamp in ('NaN', 'sNaN', 'Infinity', '-Infinity'):
+            with self.subTest(stamp=stamp):
+                with self.assertRaisesRegex(ValueError, 'not a finite number'):
+                    auth.TokenMetadata.from_loaded_token(
+                            {'token': {}, 'creation_timestamp':
+                                decimal.Decimal(stamp)}, None)
+
+    @no_duplicates
+    def test_a_timestamp_that_is_not_a_real_number_is_refused(self):
+        # float() alone accepts this, and token_age() would then fail on the
+        # subtraction.
+        class Floaty:
+            def __float__(self):
+                return float(TOKEN_CREATION_TIMESTAMP)
+
+        with self.assertRaisesRegex(ValueError, 'not a finite number'):
+            auth.TokenMetadata.from_loaded_token(
+                    {'token': {}, 'creation_timestamp': Floaty()}, None)
+
+    @no_duplicates
+    def test_a_token_file_nested_too_deeply_raises_valueerror(self):
+        self.write('[' * 1000000 + ']' * 1000000)
+        with self.assertRaisesRegex(ValueError, 'nested too deeply'):
+            auth.token_file_age(self.token_path)
+        with self.assertRaisesRegex(ValueError, 'nested too deeply'):
+            auth.client_from_token_file(self.token_path, API_KEY, APP_SECRET)
 
     @no_duplicates
     def test_a_missing_file_raises_oserror(self):
