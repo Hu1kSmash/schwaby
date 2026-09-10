@@ -518,7 +518,7 @@ class ClientFromTokenFileTest(unittest.TestCase):
         session_call = sync_session.mock_calls[0]
         update_token = session_call[2]['update_token']
 
-        updated_token = {'updated': 'token'}
+        updated_token = {'access_token': 'updated', 'token_type': 'Bearer'}
         update_token(updated_token)
         with open(self.token_path, 'r') as f:
             self.assertEqual(json.load(f), {
@@ -549,7 +549,7 @@ class ClientFromTokenFileTest(unittest.TestCase):
 
         auth.client_from_token_file(self.token_path, API_KEY, APP_SECRET)
         update_token = sync_session.mock_calls[0][2]['update_token']
-        update_token({'updated': 'token'})
+        update_token({'access_token': 'updated', 'token_type': 'Bearer'})
 
         mode = stat.S_IMODE(os.stat(self.token_path).st_mode)
         self.assertEqual(mode, 0o600)
@@ -572,7 +572,8 @@ class ClientFromTokenFileTest(unittest.TestCase):
             pass
 
         with self.assertRaises(TypeError):
-            update_token({'updated': Unserializable()})
+            update_token({'access_token': 'updated', 'token_type': 'Bearer',
+                          'updated': Unserializable()})
 
         # The original token survived the failed write ...
         with open(self.token_path, 'r') as f:
@@ -604,7 +605,7 @@ class ClientFromTokenFileTest(unittest.TestCase):
 
         auth.client_from_token_file(self.token_path, API_KEY, APP_SECRET)
         update_token = sync_session.mock_calls[0][2]['update_token']
-        update_token({'updated': 'token'})
+        update_token({'access_token': 'updated', 'token_type': 'Bearer'})
 
         self.assertFalse(
                 os.path.exists(stale),
@@ -634,7 +635,7 @@ class ClientFromTokenFileTest(unittest.TestCase):
 
         auth.client_from_token_file(self.token_path, API_KEY, APP_SECRET)
         update_token = sync_session.mock_calls[0][2]['update_token']
-        update_token({'updated': 'token'})
+        update_token({'access_token': 'updated', 'token_type': 'Bearer'})
 
         self.assertTrue(
                 os.path.exists(fresh),
@@ -663,7 +664,7 @@ class ClientFromTokenFileTest(unittest.TestCase):
 
         auth.client_from_token_file(self.token_path, API_KEY, APP_SECRET)
         update_token = sync_session.mock_calls[0][2]['update_token']
-        update_token({'updated': 'token'})
+        update_token({'access_token': 'updated', 'token_type': 'Bearer'})
 
         for path in bystanders:
             self.assertTrue(os.path.exists(path),
@@ -688,7 +689,7 @@ class ClientFromTokenFileTest(unittest.TestCase):
         auth.client_from_token_file(link_path, API_KEY, APP_SECRET)
         update_token = sync_session.mock_calls[0][2]['update_token']
 
-        updated_token = {'updated': 'token'}
+        updated_token = {'access_token': 'updated', 'token_type': 'Bearer'}
         update_token(updated_token)
 
         self.assertTrue(os.path.islink(link_path))
@@ -734,7 +735,9 @@ class ClientFromAccessFunctionsTest(unittest.TestCase):
 
 
     def setUp(self):
-        self.raw_token = {'token': 'yes'}
+        # A usable token: the write callback refuses one without an access
+        # token and its type.
+        self.raw_token = {'access_token': 'yes', 'token_type': 'Bearer'}
         self.token = {
                 'token': self.raw_token,
                 'creation_timestamp': TOKEN_CREATION_TIMESTAMP
@@ -1674,3 +1677,18 @@ class ParentSideImportTest(unittest.TestCase):
                     auth.easy_client(
                             API_KEY, APP_SECRET, 'https://127.0.0.1:8182',
                             token_path)
+
+
+class UsableTokenTest(unittest.TestCase):
+    '''What may replace the stored token after a refresh.'''
+
+    @no_duplicates
+    def test_a_token_needs_an_access_token_and_its_type(self):
+        self.assertTrue(auth._is_usable_token(
+                {'access_token': 'a', 'token_type': 'Bearer'}))
+        for token in ({'message': 'Unauthorized'}, {'access_token': 'a'},
+                      {'token_type': 'Bearer'},
+                      {'access_token': '', 'token_type': 'Bearer'},
+                      None, [], 'token'):
+            with self.subTest(token=token):
+                self.assertFalse(auth._is_usable_token(token))

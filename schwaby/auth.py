@@ -1,3 +1,4 @@
+from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client, OAuth2Client
 
 import collections
@@ -163,6 +164,21 @@ def __sweep_stale_token_temp_files(directory):
         except OSError:  # pragma: no cover
             # Vanished under us, or not ours to delete. Either way, fine.
             pass
+
+
+def _is_usable_token(token):
+    '''Whether a token response can replace the stored token.
+
+    Only the two fields the session needs to use a token at all are required.
+    A stricter test would refuse a real token over a field Schwab might
+    omit, and a refused refresh stops an application that had a working
+    token a moment ago.
+    '''
+    try:
+        return (bool(token.get('access_token'))
+                and bool(token.get('token_type')))
+    except Exception:
+        return False
 
 
 def __make_update_token_func(token_path):
@@ -806,6 +822,27 @@ def client_from_access_functions(api_key, app_secret, token_read_func,
     register_redactions(token)
 
     wrapped_token_write_func = metadata.wrapped_token_write_func()
+    session = None   # bound below; the callback only runs once it exists
+
+    def checked_token_write_func(t, *args, **kwargs):
+        # authlib takes any JSON object the token endpoint returns without an
+        # `error` key as the new token, sets it on the session, and only then
+        # calls this. Measured with a mocked endpoint: a body such as
+        # {"message": "Unauthorized"} was written to the token file and kept
+        # in memory, so every call after it failed locally without
+        # contacting Schwab -- after a restart too -- until a new login.
+        #
+        # So a response that is not a usable token is neither written nor
+        # kept. The session goes back to the last good token, which has
+        # expired, so the next call refreshes again; and the failure is the
+        # OAuthError the client already presents as TokenRefreshError.
+        if not _is_usable_token(t):
+            session.token = metadata.token
+            raise OAuthError(
+                    error='unusable_token_response',
+                    description='the token endpoint answered with something '
+                                'that is not a token, so it was not stored')
+        wrapped_token_write_func(t, *args, **kwargs)
 
     if asyncio:
         # Not `# pragma: no cover`, which is what this said. The exclusion
@@ -814,22 +851,23 @@ def client_from_access_functions(api_key, app_secret, token_read_func,
         # measurement as well as untested -- so a write that quietly did
         # nothing here would have shown up as neither a failure nor a gap.
         async def oauth_client_update_token(t, *args, **kwargs):
-            wrapped_token_write_func(t, *args, **kwargs)
+            checked_token_write_func(t, *args, **kwargs)
         session_class = AsyncOAuth2Client
         client_class = AsyncClient
     else:
-        oauth_client_update_token = wrapped_token_write_func
+        oauth_client_update_token = checked_token_write_func
         session_class = OAuth2Client
         client_class = Client
 
+    session = session_class(api_key,
+                            client_secret=app_secret,
+                            token=token,
+                            token_endpoint=TOKEN_ENDPOINT,
+                            update_token=oauth_client_update_token,
+                            leeway=300)
     return client_class(
         api_key,
-        session_class(api_key,
-                      client_secret=app_secret,
-                      token=token,
-                      token_endpoint=TOKEN_ENDPOINT,
-                      update_token=oauth_client_update_token,
-                      leeway=300),
+        session,
         token_metadata=metadata,
         enforce_enums=enforce_enums)
 

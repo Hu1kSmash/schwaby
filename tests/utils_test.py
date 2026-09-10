@@ -56,10 +56,13 @@ class HTTPStatusErrorTest(unittest.TestCase):
                 lambda *args, **kwargs: None)
         client.session._transport = httpx2.MockTransport(
                 lambda request: httpx2.Response(status, request=request))
+        # A proxy variable routes requests through mounts, not `_transport`,
+        # which would send this test to the network.
+        client.session._mounts = {}
         return client
 
     @staticmethod
-    def _refreshing_client(token_response):
+    def _refreshing_client(token_response, writes=None):
         # An access token that has already expired, so the session refreshes
         # it on the way past -- through the real authlib path, which is what
         # the documented behaviour depends on.
@@ -79,8 +82,10 @@ class HTTPStatusErrorTest(unittest.TestCase):
         client = client_from_access_functions(
                 'api-key', 'app-secret',
                 lambda: {'creation_timestamp': 9999999999, 'token': token},
-                lambda *args, **kwargs: None)
+                (lambda *args, **kwargs: None) if writes is None
+                else (lambda written, *args, **kwargs: writes.append(written)))
         client.session._transport = httpx2.MockTransport(handler)
+        client.session._mounts = {}   # see `_client`
         return client, requests
 
     @no_duplicates
@@ -101,11 +106,42 @@ class HTTPStatusErrorTest(unittest.TestCase):
     def test_a_refresh_rejected_with_an_error_body_is_a_refresh_error(self):
         import httpx2
         from schwaby.utils import TokenRefreshError
-        client, _ = self._refreshing_client(
+        client, requests = self._refreshing_client(
                 lambda request: httpx2.Response(
                     400, json={'error': 'invalid_grant'}, request=request))
-        with self.assertRaises(TokenRefreshError):
+        with self.assertRaises(TokenRefreshError) as caught:
             client.get_quote('F')
+        # Schwab's rejection, translated -- not a token that failed locally,
+        # and not a call that never reached the endpoint.
+        self.assertTrue(caught.exception.refresh_token_invalid)
+        self.assertEqual(['/v1/oauth/token'], requests)
+
+    @no_duplicates
+    def test_a_refresh_response_that_is_not_a_token_is_not_stored(self):
+        # authlib takes any JSON object without an `error` key as the new
+        # token. {"message": "Unauthorized"} was written and kept, so every
+        # call after it failed locally without contacting Schwab, until a new
+        # login. Now it is neither: the next call refreshes again, and
+        # recovers once the endpoint does.
+        import httpx2
+        from schwaby.utils import TokenRefreshError
+        answers = [(401, {'message': 'Unauthorized'}),
+                   (200, {'access_token': 'NEW', 'refresh_token': 'r2',
+                          'token_type': 'Bearer', 'expires_in': 1800})]
+        writes = []
+        client, requests = self._refreshing_client(
+                lambda request: httpx2.Response(
+                    answers[0][0], json=answers.pop(0)[1], request=request),
+                writes=writes)
+        with self.assertRaises(TokenRefreshError) as caught:
+            client.get_quote('F')
+        self.assertFalse(caught.exception.refresh_token_invalid)
+        self.assertEqual([], writes)
+        self.assertEqual(200, client.get_quote('F').status_code)
+        self.assertEqual(['/v1/oauth/token', '/v1/oauth/token',
+                          '/marketdata/v1/F/quotes'], requests)
+        self.assertEqual(1, len(writes))
+        self.assertEqual('NEW', writes[0]['token']['access_token'])
 
     @no_duplicates
     def test_a_refresh_rejected_without_a_json_body_is_neither(self):
