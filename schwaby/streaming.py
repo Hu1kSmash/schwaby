@@ -201,6 +201,11 @@ def _safe_name(value):
         text = str(value)
     except Exception:
         text = '<{} that cannot be named>'.format(type(value).__name__)
+    # A plain `str`: `str()` hands back a subclass untouched when `__str__`
+    # returns one. Measured on a `MESSAGE_TYPE`: one returning itself kept its
+    # own `casefold`, which raised and absorbed the whole element, and its own
+    # `__len__`, which reported 0 and kept a megabyte in the report set.
+    text = str.__str__(text)
     return text if len(text) <= 64 else text[:61] + '...'
 
 
@@ -267,7 +272,9 @@ def _report_unknown_message_type(name):
     so a process may see each of those once; a line per message would bury the
     one that names the missing type.
     """
-    folded = name.casefold()
+    # Bounded after folding, not only before it: folding can lengthen a
+    # name -- 'ß' becomes 'ss' -- and the bound is on what is kept.
+    folded = _safe_name(name.casefold())
     if (folded in _reported_message_types
             or len(_reported_message_types) >= _MAX_REPORTED_MESSAGE_TYPES):
         return
@@ -283,7 +290,9 @@ def _report_unknown_message_type(name):
             'types anyone has captured. The message is delivered to your '
             'handler as usual; this is reported once per type, not per '
             'message. Classify these messages by substring rather than by '
-            'exact type. If you see this, please open an issue at '
+            'exact type, and do not read a CANCEL as the order ending: a '
+            'price change retires the old order id the same way. If you see '
+            'this, please open an issue at '
             'https://github.com/Hu1kSmash/schwaby/issues with the type -- '
             'Schwab documents this vocabulary nowhere, and a report is how '
             'the list of observed types grows.',
@@ -2159,8 +2168,10 @@ class StreamClient(EnumEnforcer):
     #: nowhere, and only these have been captured, so an exact match
     #: against it will miss a real message whose type has simply never been
     #: recorded. Classify by substring and case-insensitively, as the
-    #: streaming documentation describes, and use this only to ask whether a
-    #: type is one anyone has seen.
+    #: streaming documentation describes -- remembering that a ``CANCEL``
+    #: also retires the old id of a price change while the order goes on
+    #: working under a new one -- and use this only to ask whether a type is
+    #: one anyone has seen.
     #:
     #: A type outside it is still delivered to your handler, and is logged once
     #: on ``schwaby.streaming``. A buy rejected for buying power and a price
@@ -2393,7 +2404,7 @@ class StreamClient(EnumEnforcer):
         #: :ref:`Unconfirmed <confidence_tags>`: inferred from magnitude on
         #: liquid names, where reading it as lots would put implausibly deep
         #: books at the touch. It has not been checked against a quantity of
-        #: known size; a resting order of known odd size joining the best bid
+        #: known size; a resting round-lot order joining the best bid
         #: would settle it.
         BID_SIZE = 4
 

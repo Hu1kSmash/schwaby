@@ -9706,6 +9706,51 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
                 max(len(t) for t in streaming._reported_message_types), 64)
 
     @no_duplicates
+    def test_the_retained_name_is_bounded_after_folding(self):
+        # Folding can lengthen a name: 'ß' becomes 'ss'. The bound is on what
+        # is kept, not only on what is logged.
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            self.relabel('\u00df' * 64)
+        self.assertEqual(1, len(streaming._reported_message_types))
+        self.assertLessEqual(
+                max(len(t) for t in streaming._reported_message_types), 64)
+
+    @no_duplicates
+    async def test_a_str_subclass_type_is_still_delivered(self):
+        # A custom decoder can hand over a str subclass, and `str()` returns
+        # one untouched when its `__str__` returns itself. Its own `casefold`
+        # then ran unguarded -- raising absorbed the whole element, valid
+        # items with it -- and its own `__len__` passed the length bound.
+        class Type(str):
+            def __str__(self):
+                return self
+
+            def casefold(self):
+                raise RuntimeError('boom')
+
+            def __len__(self):
+                return 0
+
+        client = StreamClient(client=MagicMock())
+        got = []
+        client.add_account_activity_handler(got.append)
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            await client._dispatch_to_handlers(
+                    'ACCT_ACTIVITY',
+                    {'service': 'ACCT_ACTIVITY', 'command': 'SUBS',
+                     'timestamp': 1,
+                     'content': [{'key': 'account', '1': 'account',
+                                  '2': 'OrderCreated', '3': 'data'},
+                                 {'key': 'account', '1': 'account',
+                                  '2': Type('Q' * 100000), '3': 'data'}]},
+                    relabel=True)
+        self.assertEqual(1, len(got))
+        self.assertEqual(2, len(got[0]['content']))
+        self.assertEqual(0, client._absorbed)
+        self.assertLessEqual(
+                max(len(t) for t in streaming._reported_message_types), 64)
+
+    @no_duplicates
     def test_the_vocabulary_is_not_an_enum_member(self):
         # A frozenset in an Enum body silently becomes a member, which would
         # add a fifth field and change key_mapping for every account
