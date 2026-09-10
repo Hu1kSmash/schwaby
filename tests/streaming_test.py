@@ -9706,14 +9706,43 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
                 max(len(t) for t in streaming._reported_message_types), 64)
 
     @no_duplicates
-    def test_the_retained_name_is_bounded_after_folding(self):
-        # Folding can lengthen a name: 'ß' becomes 'ss'. The bound is on what
-        # is kept, not only on what is logged.
-        with self.assertLogs(streaming.get_logger(), level='WARNING'):
-            self.relabel('\u00df' * 64)
-        self.assertEqual(1, len(streaming._reported_message_types))
+    def test_folding_keeps_distinct_types_distinct_and_bounded(self):
+        # Folding can lengthen a name: 'ß' becomes 'ss'. Cutting again after
+        # folding made two different types share one report, so the name is
+        # cut once, before folding, and what is kept is bounded by folding's
+        # own limit of three characters for one.
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            self.relabel('\u00df' * 33 + 'A')
+            self.relabel('\u00df' * 33 + 'B')
+        self.assertEqual(2, len(got.output))
         self.assertLessEqual(
-                max(len(t) for t in streaming._reported_message_types), 64)
+                max(len(t) for t in streaming._reported_message_types), 192)
+
+    @no_duplicates
+    def test_a_value_formatted_for_a_log_line_is_plain_and_bounded(self):
+        # `_safe_value` reprs a whole frame when one is absorbed. A decoder's
+        # str subclass whose `__repr__` returns itself kept its own `__len__`:
+        # raising ended the receive loop with nothing logged, and returning 0
+        # logged the whole frame.
+        class Frame(str):
+            def __repr__(self):
+                return self
+
+            def __len__(self):
+                raise RuntimeError('boom')
+
+        class Quiet(str):
+            def __repr__(self):
+                return self
+
+            def __len__(self):
+                return 0
+
+        for cls in (Frame, Quiet):
+            with self.subTest(frame=cls.__name__):
+                text = streaming._safe_value(cls('x' * 100000))
+                self.assertIs(str, type(text))
+                self.assertLessEqual(len(text), 200)
 
     @no_duplicates
     async def test_a_str_subclass_type_is_still_delivered(self):
@@ -9749,6 +9778,19 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
         self.assertEqual(0, client._absorbed)
         self.assertLessEqual(
                 max(len(t) for t in streaming._reported_message_types), 64)
+
+        # A subclass whose only trick is its length, which the bound would
+        # otherwise take at its word: the logged line stays short.
+        class Long(str):
+            def __str__(self):
+                return self
+
+            def __len__(self):
+                return 0
+
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            self.relabel(Long('R' * 100000))
+        self.assertLess(max(len(line) for line in got.output), 2000)
 
     @no_duplicates
     def test_the_vocabulary_is_not_an_enum_member(self):
