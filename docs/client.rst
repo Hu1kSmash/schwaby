@@ -412,6 +412,23 @@ instead of creating your own order specs.
 
 .. automethod:: schwaby.client.Client.place_order
 
+.. danger::
+
+  **An order can fill --- its whole lifecycle delivered on** ``ACCT_ACTIVITY``
+  **--- before** :meth:`place_order <schwaby.client.Client.place_order>`
+  **returns.** On a live account, a single push carried a market order from
+  ``OrderCreated`` through ``OrderFillCompleted`` before the call that placed
+  it had handed back the order id.
+
+  So a stream handler that decides whether an order is yours by looking its id
+  up among the ids you already hold can file your own fill as someone else's,
+  with no error. While a placement is still in flight, not recognising an id
+  does not mean the order is not yours.
+
+  :ref:`Seen once, not reproduced <confidence_tags>`. The ordering is what the
+  consumer observed, not a measurement of when Schwab sent each message, and
+  how often it happens is not known.
+
 **Testing an order without placing it.** Schwab will tell you whether it would
 accept an order, and what it would become, without sending it to the market.
 That is worth doing the first time you construct an order type programmatically
