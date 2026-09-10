@@ -902,8 +902,10 @@ class FindAccountHashTest(unittest.TestCase):
         # read as "not linked" rather than as a mistake.
         for number in (22222222, 11111111, 11111111.0, None, b'11111111'):
             with self.subTest(number=number):
-                with self.assertRaisesRegex(TypeError, 'must be a str'):
+                with self.assertRaisesRegex(TypeError, 'must be a str') as cm:
                     find_account_hash(self.ACCOUNTS, number)
+                self.assertNotIn('1111111', str(cm.exception))
+                self.assertNotIn('2222222', str(cm.exception))
 
     @no_duplicates
     def test_a_str_subclass_is_read_as_its_text(self):
@@ -947,3 +949,62 @@ class FindAccountHashTest(unittest.TestCase):
                 with self.assertRaises(UnusableAccountNumbersError) as cm:
                     find_account_hash(accounts, '11111111')
                 self.assertNotIn('11111111', str(cm.exception))
+                self.assertNotIn('33333333', str(cm.exception))
+
+    @no_duplicates
+    def test_an_entry_str_subclass_is_read_as_its_text(self):
+        class Liar(str):
+            def __eq__(self, other):
+                return True
+            __hash__ = str.__hash__
+
+        accounts = [{'accountNumber': Liar('22222222'), 'hashValue': 'HASH-B'},
+                    {'accountNumber': '33333333', 'hashValue': 'HASH-C'}]
+        with self.assertRaises(AccountNumberNotFoundError):
+            find_account_hash(accounts, '11111111')
+
+    @no_duplicates
+    def test_an_entry_dict_subclass_is_read_through_dict_itself(self):
+        class Lying(dict):
+            def get(self, key, default=None):
+                return '11111111' if key == 'accountNumber' else dict.get(
+                        self, key, default)
+
+            def __getitem__(self, key):
+                return self.get(key)
+
+        accounts = [Lying(accountNumber='22222222', hashValue='HASH-B')]
+        with self.assertRaises(AccountNumberNotFoundError):
+            find_account_hash(accounts, '11111111')
+
+    @no_duplicates
+    def test_the_hash_returned_is_a_plain_str(self):
+        class Named(str):
+            def __str__(self):
+                return 'HASH-B'
+
+        class Padded(str):
+            def __len__(self):
+                return 8
+
+        result = find_account_hash(
+                [{'accountNumber': '11111111', 'hashValue': Named('HASH-A')}],
+                '11111111')
+        self.assertEqual('HASH-A', result)
+        self.assertIs(str, type(result))
+        with self.assertRaises(UnusableAccountNumbersError):
+            find_account_hash(
+                    [{'accountNumber': '11111111', 'hashValue': Padded('')}],
+                    '11111111')
+
+    @no_duplicates
+    def test_a_list_subclass_is_read_through_list_itself(self):
+        class Hiding(list):
+            def __iter__(self):
+                return iter(list.__getitem__(self, slice(0, 1)))
+
+        accounts = Hiding([
+                {'accountNumber': '11111111', 'hashValue': 'HASH-A'},
+                {'accountNumber': '11111111', 'hashValue': 'HASH-B'}])
+        with self.assertRaises(UnusableAccountNumbersError):
+            find_account_hash(accounts, '11111111')

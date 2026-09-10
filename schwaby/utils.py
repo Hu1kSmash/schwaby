@@ -290,6 +290,15 @@ class AccountHashMismatchException(SchwabError, ValueError):
         self.expected_account_hash = expected_account_hash
 
 
+def _type_name(value):
+    '''A value's type name for a message, read through type's own descriptor
+    so that a metaclass cannot raise inside the message.'''
+    try:
+        return str.__str__(type.__dict__['__name__'].__get__(type(value)))
+    except Exception:
+        return 'object'
+
+
 class AccountNumberNotFoundError(SchwabError):
     '''
     Raised by :func:`find_account_hash` when no account in the response has the
@@ -324,8 +333,9 @@ def find_account_hash(account_numbers, account_number):
     ``client.get_account_numbers().json()``. This makes no request, so it
     serves the synchronous and asynchronous clients alike.
 
-    A token can cover several accounts and nothing orders the list, so taking
-    the first entry's ``hashValue`` picks an account rather than finding one.
+    A token can cover several accounts and Schwab documents no order for the
+    list, so taking the first entry's ``hashValue`` picks an account rather
+    than finding one.
 
     :param account_numbers: The list ``get_account_numbers()`` returns, of
                             ``{"accountNumber": ..., "hashValue": ...}``
@@ -342,25 +352,33 @@ def find_account_hash(account_numbers, account_number):
     if not isinstance(account_number, str):
         raise TypeError(
                 'account_number must be a str, as Schwab types it, not a '
-                '{}'.format(type(account_number).__name__))
+                '{}'.format(_type_name(account_number)))
     account_number = str.__str__(account_number)
 
     if not isinstance(account_numbers, list):
         raise UnusableAccountNumbersError(
                 'expected the list get_account_numbers() returns, not a '
-                '{}'.format(type(account_numbers).__name__))
+                '{}'.format(_type_name(account_numbers)))
 
+    # Read through the built-in types' own methods, and reduce every value to
+    # a plain str, so that what is checked is what is matched and returned. A
+    # subclass could otherwise answer the check one way and the match another.
+    malformed = ('an entry is not an accountNumber and hashValue pair of '
+                 'strings')
     hashes = []
-    for entry in account_numbers:
-        if not (isinstance(entry, dict)
-                and isinstance(entry.get('accountNumber'), str)
-                and isinstance(entry.get('hashValue'), str)
-                and entry['hashValue']):
-            raise UnusableAccountNumbersError(
-                    'an entry is not an accountNumber and hashValue pair of '
-                    'strings')
-        if str.__str__(entry['accountNumber']) == account_number:
-            hashes.append(entry['hashValue'])
+    for entry in list.__getitem__(account_numbers, slice(None)):
+        if not isinstance(entry, dict):
+            raise UnusableAccountNumbersError(malformed)
+        number = dict.get(entry, 'accountNumber')
+        hash_value = dict.get(entry, 'hashValue')
+        if not (isinstance(number, str) and isinstance(hash_value, str)):
+            raise UnusableAccountNumbersError(malformed)
+        number = str.__str__(number)
+        hash_value = str.__str__(hash_value)
+        if not hash_value:
+            raise UnusableAccountNumbersError(malformed)
+        if number == account_number:
+            hashes.append(hash_value)
 
     if not hashes:
         raise AccountNumberNotFoundError(
