@@ -18,7 +18,7 @@ import warnings
 import webbrowser
 
 from schwaby.client import AsyncClient, Client
-from schwaby.utils import SchwabError
+from schwaby.utils import SchwabError, _expiry_authlib_acts_on
 from schwaby.debug import register_redactions
 
 
@@ -198,8 +198,7 @@ def _is_usable_token(token):
         # Built the way authlib will build it. Whatever authlib would raise on
         # here -- expires_in 'abc', say -- refuses the token.
         expires_at = OAuth2Token(dict(token)).get('expires_at')
-        if not (isinstance(expires_at, int)
-                and expires_at <= time.time() + 10 ** 9):
+        if not _expiry_authlib_acts_on(expires_at):
             return False
         if 'refresh_token' in token:
             refresh_token = token['refresh_token']
@@ -241,8 +240,9 @@ def _refuse_unusable_token_response(response):
             error='unusable_token_response',
             description='the token endpoint answered with something that is '
                         'not a usable token, so it was not stored: it needs a '
-                        'string access token, the bearer type, an expiry, '
-                        'and no refresh token that is empty or not a string')
+                        'non-empty string access token, the bearer type, an '
+                        'expiry that will be reached, and no refresh token '
+                        'that is empty or not a string')
 
 
 def _new_session(session_class, api_key, app_secret, token, update_token):

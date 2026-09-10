@@ -2,6 +2,7 @@
 module.'''
 
 import re
+import time
 
 # The class an HTTP error status raises, under a name this library owns.
 #
@@ -289,6 +290,20 @@ class AccountHashMismatchException(SchwabError, ValueError):
         self.expected_account_hash = expected_account_hash
 
 
+def _expiry_authlib_acts_on(expires_at):
+    '''Whether authlib will refresh a token carrying this ``expires_at``.
+
+    authlib's ``OAuth2Token.is_expired`` checks one only when it is an int, and
+    one too far off -- in milliseconds, say -- is never reached. The check on a
+    token response and the classification of a stored token both ask this, so
+    that they cannot disagree. They did: a response with a milliseconds expiry
+    was refused as never reached, while a stored token with the same expiry was
+    reported as retryable on every call.
+    '''
+    return (isinstance(expires_at, int)
+            and expires_at <= time.time() + 10 ** 9)
+
+
 class TokenRefreshError(SchwabError):
     '''
     Raised when a refresh of the OAuth token fails: Schwab rejects it, the
@@ -314,12 +329,12 @@ class TokenRefreshError(SchwabError):
     saying the refresh token is invalid, expired or revoked, and a stored token
     that cannot be used and will not change on its own, which the underlying
     OAuth library reports without contacting Schwab at all -- one with no
-    refresh token, or one it cannot send that has no expiry it acts on, and so
-    is never refreshed.
+    refresh token, or one it cannot send and will never replace by itself: its
+    expiry is missing, not an int, or too far off to be reached, or there is no
+    refresh token to refresh it with.
 
-    A stored token it cannot send that *does* have an expiry is ``False``,
-    although nothing was sent: it is refreshed once that expiry passes. If
-    there is no refresh token to do it with, that refresh reports ``True``.
+    A stored token it cannot send that *will* be refreshed is ``False``,
+    although nothing was sent: it is replaced once its expiry passes.
 
     It is ``False`` for everything else, *including* failures this library did
     not recognize -- the conservative direction, since treating a recoverable

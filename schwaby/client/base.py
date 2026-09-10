@@ -18,7 +18,7 @@ import warnings
 
 from schwaby.orders.generic import OrderBuilder
 
-from ..utils import EnumEnforcer, TokenRefreshError
+from ..utils import EnumEnforcer, TokenRefreshError, _expiry_authlib_acts_on
 
 
 def get_logger():
@@ -77,9 +77,10 @@ class BaseClient(EnumEnforcer):
         Two ways that happens. The stored token may be unusable before anything
         is sent -- authlib raises MissingTokenError or InvalidTokenError
         locally, and those are handled first below. (UnsupportedTokenTypeError
-        is terminal only when the stored token has no expiry, which needs the
-        client to see; ``_translate_token_errors`` decides that one.) Otherwise
-        Schwab may have rejected the grant, which is the rest of this.
+        is terminal only when authlib will not replace the stored token by
+        itself, which only the client can see, so ``_translate_token_errors``
+        decides that one.) Otherwise Schwab may have rejected the grant, which
+        is the rest of this.
 
         RFC 6749 section 5.2 defines ``invalid_grant`` as the token endpoint's
         answer when the grant presented -- here, the refresh token -- is
@@ -157,15 +158,14 @@ class BaseClient(EnumEnforcer):
         reported as needing a new login rather than as something to retry.
 
         UnsupportedTokenTypeError is raised locally too, when the stored token
-        has no access token of a type authlib can send. It is terminal only if
-        that token has no expiry authlib acts on -- none, or one that is not an
-        int: authlib then never refreshes it, and it fails
-        the same way on every call. With an expiry it is refreshed once it
-        lapses, so it stays retryable -- and if there is no refresh token to do
-        that with, the refresh is reported as needing a new login then. It is
-        told apart by class, not by its ``unsupported_token_type`` code, which
-        Schwab uses for its own rejections -- one of those has been seen to
-        recover.
+        has no access token of a type authlib can send. It is terminal unless
+        authlib will replace that token by itself, which takes an expiry it
+        acts on -- an int, near enough to be reached -- and a refresh token to
+        refresh with. Without both, every call fails the same way and nothing
+        is ever sent. With both, the token is refreshed once the expiry passes,
+        so it stays retryable. It is told apart by class, not by its
+        ``unsupported_token_type`` code, which Schwab uses for its own
+        rejections -- one of those has been seen to recover.
 
         ``unusable_token_response`` does not come from Schwab either. This
         library raises it when the token endpoint answers with something that
@@ -188,13 +188,12 @@ class BaseClient(EnumEnforcer):
                     'token\'s age is unknown.')
 
             invalid = self._refresh_token_is_invalid(e)
-            # A token authlib cannot send, raised locally, is terminal only
-            # when the stored token never expires: authlib then never
-            # refreshes it, and every call fails the same way. With an expiry
-            # it is refreshed once it lapses, so retrying can still help.
+            # A token authlib cannot send, raised locally, is terminal unless
+            # authlib will replace it by itself; otherwise every call fails the
+            # same way and nothing is ever sent.
             local = isinstance(e, (MissingTokenError, InvalidTokenError)) or (
                     isinstance(e, UnsupportedTokenTypeError)
-                    and not self._stored_token_expires())
+                    and not self._stored_token_will_be_refreshed())
             if local:
                 invalid = True
                 advice = ('The stored token cannot be used to refresh -- it '
@@ -207,9 +206,9 @@ class BaseClient(EnumEnforcer):
                           'flow has to be completed again.')
             elif isinstance(e, UnsupportedTokenTypeError):
                 advice = ('The stored token cannot be sent as it stands, so '
-                          'nothing was sent to Schwab. It has an expiry, and '
-                          'is refreshed once that passes, so this may clear '
-                          'on its own.')
+                          'nothing was sent to Schwab. It has an expiry and a '
+                          'refresh token, so it is refreshed once that expiry '
+                          'passes, and this may clear on its own.')
             else:
                 advice = ('Schwab did not say the refresh token itself is '
                           'invalid, so this may be transient.')
@@ -220,14 +219,16 @@ class BaseClient(EnumEnforcer):
                     token_age=age,
                     refresh_token_invalid=invalid) from e
 
-    def _stored_token_expires(self):
-        '''Whether the session's token carries an expiry authlib acts on, so
-        that it is refreshed once it lapses. authlib checks an ``expires_at``
-        only when it is an int, so a string there never expires. Taken as yes
-        when the token cannot be read: calling a failure terminal wrongly is
-        the worse mistake.'''
+    def _stored_token_will_be_refreshed(self):
+        '''Whether authlib will replace the session's token by itself. It
+        refreshes one whose expiry it acts on -- asked exactly as the check on
+        a token response asks it -- and only with a refresh token. Taken as
+        yes when the token cannot be read: calling a failure terminal wrongly
+        is the worse mistake.'''
         try:
-            return isinstance(self.session.token.get('expires_at'), int)
+            token = self.session.token
+            return bool(_expiry_authlib_acts_on(token.get('expires_at'))
+                        and token.get('refresh_token'))
         except Exception:
             return True
 

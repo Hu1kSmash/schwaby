@@ -2784,13 +2784,15 @@ class _TestClient:
         # authlib raises UnsupportedTokenTypeError locally with the same error
         # code Schwab uses as its outer wrapper. Without the nested body it is
         # not evidence the refresh token is dead, and must not be read as such
-        # -- while the stored token has an expiry, since authlib refreshes it
-        # once it lapses, and the refresh can replace it.
+        # -- while authlib will replace the stored token by itself: it has an
+        # expiry authlib acts on, and a refresh token to refresh with.
+        import time
         from authlib.integrations.base_client.errors import (
                 UnsupportedTokenTypeError)
 
         self.mock_session.token = {'access_token': 'a', 'token_type': 'mac',
-                                   'expires_at': 9999999999}
+                                   'expires_at': int(time.time()) + 3600,
+                                   'refresh_token': 'r'}
         self.mock_session.get.side_effect = UnsupportedTokenTypeError()
 
         with self.assertRaises(TokenRefreshError) as cm:
@@ -2813,10 +2815,17 @@ class _TestClient:
         self.mock_session.get.side_effect = UnsupportedTokenTypeError()
 
         # authlib checks an expires_at only when it is an int, so a string
-        # there is no expiry either.
+        # there is no expiry either -- and nor is one in milliseconds, which is
+        # never reached. It refreshes only with a refresh token, so a good
+        # expiry without one is never replaced either.
+        import time
         for token in ({'message': 'Unauthorized', 'refresh_token': 'r'},
                       {'access_token': 'a', 'token_type': 'mac',
-                       'expires_at': '1789073203.0', 'refresh_token': 'r'}):
+                       'expires_at': '1789073203.0', 'refresh_token': 'r'},
+                      {'access_token': 'a', 'token_type': 'mac',
+                       'expires_at': 1789073203000, 'refresh_token': 'r'},
+                      {'access_token': 'a', 'token_type': 'mac',
+                       'expires_at': int(time.time()) + 3600}):
             with self.subTest(token=token):
                 self.mock_session.token = token
                 with self.assertRaises(TokenRefreshError) as cm:
