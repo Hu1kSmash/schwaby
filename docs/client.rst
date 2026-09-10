@@ -200,9 +200,10 @@ Account Hashes
 Many methods of this API are parametrized by account. However, the API does not
 accept raw account numbers, but rather account hashes. You can fetch these
 hashes using the ``get_account_numbers`` method :ref:`(link)
-<account_hashes_method>`.  This method provides a mapping from raw account
-number to the account hash that must be passed when referring to that account in
-API calls.
+<account_hashes_method>`. It returns a list pairing each account number the
+token can use with the account hash that must be passed when referring to that
+account in API calls, and :func:`~schwaby.utils.find_account_hash` picks out
+the one you mean.
 
 Here is an example of how to fetch an account hash and use it to place an order:
 
@@ -212,6 +213,7 @@ Here is an example of how to fetch an account hash and use it to place an order:
 
   from schwaby.auth import easy_client
   from schwaby.orders.equities import equity_buy_market
+  from schwaby.utils import find_account_hash
 
   c = easy_client(
           api_key='api-key',
@@ -222,15 +224,15 @@ Here is an example of how to fetch an account hash and use it to place an order:
   resp = c.get_account_numbers()
   assert resp.status_code == httpx2.codes.OK
 
-  # The response has the following structure. If you have multiple linked
-  # accounts, you'll need to inspect this object to find the hash you want:
+  # The response is a list, with one entry per account the token can use:
   # [
   #    {
   #        "accountNumber": "123456789",
   #        "hashValue":"123ABCXYZ"
   #    }
   #]
-  account_hash = resp.json()[0]['hashValue']
+  # Nothing orders it, so find your account rather than taking the first.
+  account_hash = find_account_hash(resp.json(), '123456789')
 
   c.place_order(account_hash, equity_buy_market('AAPL', 1))
 

@@ -12,6 +12,35 @@ Miscellaneous helpers, all presented under the ``Utils`` class:
   .. automethod:: set_account_hash
 
 
+.. _find_account_hash:
+
+-----------------------------------
+Find the hash for an account number
+-----------------------------------
+
+Every account-specific call takes an account hash rather than the account
+number. :meth:`get_account_numbers
+<schwaby.client.Client.get_account_numbers>` lists both for every account the
+token can use, and this finds the one you mean.
+
+.. code-block:: python
+
+  from schwaby.utils import (
+      AccountNumberNotFoundError,
+      find_account_hash,
+  )
+
+  r = client.get_account_numbers()
+  r.raise_for_status()
+  try:
+      account_hash = find_account_hash(r.json(), '123456789')
+  except AccountNumberNotFoundError:
+      # This token does not cover that account.
+      raise
+
+.. autofunction:: schwaby.utils.find_account_hash
+
+
 .. _extract_order_id:
 
 ---------------------------------------
@@ -26,10 +55,11 @@ described in the :ref:`Client documentation <orders-section>`.
 
 .. code-block:: python
 
-  from schwaby.utils import Utils
+  from schwaby.utils import Utils, find_account_hash
 
-  # Assume client and order already exist and are valid
-  account_hash = client.get_account_numbers().json()[0]['hashValue']
+  # Assume client, account_number and order already exist and are valid
+  account_hash = find_account_hash(
+          client.get_account_numbers().json(), account_number)
   r = client.place_order(account_hash, order)
   order_id = Utils(client, account_hash).extract_order_id(r)
 
@@ -239,6 +269,10 @@ deliberately does not.
 .. autoclass:: schwaby.utils.UnrecognizedLocationError
 
 .. autoclass:: schwaby.utils.AccountHashMismatchException
+
+.. autoclass:: schwaby.utils.AccountNumberNotFoundError
+
+.. autoclass:: schwaby.utils.UnusableAccountNumbersError
 
 .. autoclass:: schwaby.orders.common.InvalidOrderException
 

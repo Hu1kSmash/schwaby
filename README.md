@@ -180,8 +180,9 @@ candles = r.json()['candles']
 
 ```python
 from schwaby.orders.equities import equity_buy_limit
+from schwaby.utils import find_account_hash
 
-account_hash = c.get_account_numbers().json()[0]['hashValue']
+account_hash = find_account_hash(c.get_account_numbers().json(), '123456789')
 c.place_order(account_hash, equity_buy_limit('AAPL', 10, '210.50'))
 ```
 
