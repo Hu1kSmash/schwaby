@@ -1,4 +1,5 @@
 import decimal
+import json
 import unittest
 
 from schwaby.contrib.util import (
@@ -23,9 +24,12 @@ class HeuristicJsonDecoderTest(unittest.TestCase):
 class DecodeDecimalTest(unittest.TestCase):
     """The ACCT_ACTIVITY scaled-integer decimal.
 
-    Every case here is a value someone captured off a live account, except the
-    two marked otherwise. The four things this gets right are each a wrong
-    number rather than an error, which is why they are worth pinning.
+    Two kinds of case, and the difference matters when reading a failure.
+    The values are captured off a live account and each pins one of the five
+    things this gets right, every one of which is a wrong number rather than
+    an error. The *corruption* is synthetic, necessarily: a guard against a
+    shape nothing currently sends cannot be tested with what is currently
+    sent. Anything reasoned rather than observed says so on the case.
     """
 
     @no_duplicates
@@ -308,6 +312,10 @@ class DecodeDecimalTest(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(UnusableDecimalScale):
                     decode_decimal(value)
+        # Positive control: the types that legitimately are numbers here.
+        for value in ('12', 12, 12.0, decimal.Decimal(12)):
+            with self.subTest(control=value):
+                self.assertEqual(decimal.Decimal(12), decode_decimal(value))
 
     def test_a_bare_exponent_is_bounded_like_a_scale(self):
         # The dict path is bounded for a measured reason and this one was not.
@@ -389,3 +397,70 @@ class DecodeDecimalTest(unittest.TestCase):
         with self.assertRaises(KeyError):       # the shape being guarded
             odd['signScale']
         self.assertEqual(decimal.Decimal('6.86'), decode_decimal(odd))
+
+    def test_a_corrupt_scale_is_refused_even_with_no_mantissa_to_scale(self):
+        # The mantissa-less shortcut returned before the scale was looked at,
+        # so `{"signScale": "garbage"}` decoded as a clean zero while the
+        # identical corruption one key over raised. No wrong number -- a
+        # mantissa-less object is zero at any scale -- but it discarded the
+        # only signal that the message was corrupt, on a feed where zero is
+        # what a $0 commission and a completed fill look like.
+        for corrupt in ('garbage', 1000000000, 1.9, -1, [1], 65, True, ''):
+            with self.subTest(signScale=corrupt):
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal({'signScale': corrupt})
+                # The same corruption one key over, which always raised.
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal({'lo': '1', 'signScale': corrupt})
+        # Positive control: a sound scale with nothing to scale is still zero.
+        for sound in (0, 12, 13, 64, '12'):
+            with self.subTest(control=sound):
+                self.assertEqual(decimal.Decimal(0),
+                                 decode_decimal({'signScale': sound}))
+
+    def test_a_mantissa_less_object_is_zero_without_a_negative_sign(self):
+        # What the shortcut still does now that the scale above it is
+        # validated either way: falling through would give Decimal('0.000000')
+        # at scale 12 and Decimal('-0.000000') at 13. Both compare equal to
+        # zero, and the second prints as a negative quantity -- on the field
+        # this is most often read for, LeavesQuantity on a completed fill.
+        for scale in (12, 13):
+            with self.subTest(signScale=scale):
+                self.assertEqual(
+                        '0', str(decode_decimal({'signScale': scale})))
+
+    def test_an_explicit_null_is_an_absence_in_every_slot(self):
+        # Schwab omits rather than nulls, so this is reasoned from the rule
+        # the members already follow rather than observed. It is here because
+        # the two halves briefly disagreed: `{"lo": null}` was an absence and
+        # `{"signScale": null}` was corruption.
+        self.assertEqual(
+                decimal.Decimal('0.000001'),
+                decode_decimal(json.loads(
+                    '{"lo": "1", "mid": null, "hi": null, "signScale": 12}')))
+        self.assertEqual(
+                decimal.Decimal('19200'),
+                decode_decimal(json.loads(
+                    '{"lo": "19200", "signScale": null}')))
+        self.assertEqual(
+                decimal.Decimal(0),
+                decode_decimal(json.loads('{"lo": null, "signScale": null}')))
+
+    def test_an_error_message_cannot_raise_on_what_it_describes(self):
+        # `repr` of a dict holding a 5,000-digit int raises ValueError, which
+        # would replace a SchwabError describing corruption with a bare
+        # exception describing nothing -- the escape class this function has
+        # spent four rounds closing, arriving through the error path.
+        for label, value in (('wide lo', {'lo': 10 ** 5000}),
+                             ('wide signScale',
+                              {'lo': '1', 'signScale': 10 ** 5000}),
+                             ('both', {'lo': 10 ** 5000,
+                                       'signScale': 10 ** 5000})):
+            with self.subTest(label):
+                with self.assertRaises(UnusableDecimalScale) as caught:
+                    decode_decimal(value)
+                # The message is produced, and is not the whole integer.
+                self.assertLess(len(str(caught.exception)), 400)
+        with self.assertRaises(UnusableDecimalScale) as caught:
+            decode_decimal(10 ** 5000)
+        self.assertLess(len(str(caught.exception)), 400)

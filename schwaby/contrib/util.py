@@ -81,13 +81,31 @@ class UnusableDecimalScale(SchwabError, ValueError):
     '''
 
 
+def _safe_repr(value):
+    """`repr` that cannot raise on the value it is describing.
+
+    An error message is not the place to hit the integer digit limit:
+    `repr` of a dict containing a 5,000-digit int raises `ValueError`, which
+    would replace a `SchwabError` describing corruption with a bare exception
+    describing nothing. Measured -- `decimal.Decimal(10 ** 10000)` is fine and
+    `str()` of that integer is not, so the hazard is the formatting rather
+    than the arithmetic.
+    """
+    try:
+        text = repr(value)
+    except ValueError:
+        return '<{} that cannot be formatted>'.format(type(value).__name__)
+    return text if len(text) <= 200 else text[:197] + '...'
+
+
 def _decode_bare(value):
     """The other half of the surface, validated the same way as a member.
 
-    The same field does not always arrive in the same shape -- a value that
-    is an object on one message is a bare number or a bare string on the
-    next -- so this path carries exactly the same untrusted text as the
-    mantissa members, and for three review rounds it was the permissive one.
+    This path is defensive: no captured payload has carried a money or
+    quantity field as a bare number or string, and the docstring above says
+    so rather than implying otherwise. It carries the same untrusted text as
+    the mantissa members either way, and for three review rounds it was the
+    permissive one.
     `decimal.Decimal`'s parser accepts more than `int`'s does, so every token
     `_unsigned_32` refuses decoded here instead: ``'1_0'`` as ten,
     ``'\u0663'`` as three, ``' 12 '`` and ``'+12'`` and ``'\uff11\uff12'``
@@ -96,17 +114,20 @@ def _decode_bare(value):
     if isinstance(value, bool) or value is None:
         # `None` is handled by the caller; a bool is not a number here for the
         # same reason it is not one in a mantissa.
-        raise UnusableDecimalScale('not a number: {!r}'.format(value))
+        raise UnusableDecimalScale(
+                'not a number: {}'.format(_safe_repr(value)))
 
     if isinstance(value, decimal.Decimal):
         result = value
     elif isinstance(value, int):
-        # Bounded before conversion. `str()` on a wide integer raises a bare
-        # `ValueError` past `sys.get_int_max_str_digits()`, and so does
-        # `decimal.Decimal(int)` itself -- measured, it is not only the
-        # `str()` that was here before. Neither is a SchwabError. 256 bits is
-        # 78 digits, comfortably past the bound below, so this refuses only
-        # what that would refuse anyway and never reaches the conversion.
+        # Bounded before conversion, cheaply. `decimal.Decimal(int)` is
+        # fine at any width -- measured, and the comment here said otherwise
+        # for one commit; it is `str()` and `repr()` that raise a bare
+        # `ValueError` past `sys.get_int_max_str_digits()`. `_safe_repr`
+        # handles that where it matters, so this is a cheap pre-check rather
+        # than the thing standing between a caller and an escape. 256 bits is
+        # 78 digits, well outside the bound below, so it refuses only what
+        # that would refuse anyway.
         if value.bit_length() > 256:
             # Reported by width rather than by value: formatting the value
             # is the operation being guarded against.
@@ -121,24 +142,27 @@ def _decode_bare(value):
     elif isinstance(value, str):
         if not (value.isascii() and _BARE_NUMBER.match(value)):
             # The empty string reaches here from the SUBSCRIBED ack.
-            raise UnusableDecimalScale('not a number: {!r}'.format(value))
+            raise UnusableDecimalScale(
+                'not a number: {}'.format(_safe_repr(value)))
         result = decimal.Decimal(value)
     else:
-        raise UnusableDecimalScale('not a number: {!r}'.format(value))
+        raise UnusableDecimalScale(
+                'not a number: {}'.format(_safe_repr(value)))
 
     if not result.is_finite():
         # `json.loads` accepts bare NaN and Infinity, and Decimal accepts
         # those and their strings. A NaN quantity is not caught downstream
         # either: `leaves <= 0` is False for NaN, so a corrupt field reads as
         # still outstanding forever.
-        raise UnusableDecimalScale('not a number: {!r}'.format(value))
+        raise UnusableDecimalScale(
+                'not a number: {}'.format(_safe_repr(value)))
 
     exponent = result.as_tuple().exponent
     if not (-MAX_EXPONENT <= exponent
             and result.adjusted() <= MAX_EXPONENT):
         raise UnusableDecimalScale(
-                'exponent is outside +/-{}, so this is not a real value: '
-                '{!r}'.format(MAX_EXPONENT, value))
+                'magnitude is outside 1E+/-{}, so this is not a real '
+                'value: {}'.format(MAX_EXPONENT, _safe_repr(value)))
 
     return result
 
@@ -176,8 +200,8 @@ def _unsigned_32(member, name, value):
         ok = True
     if not ok or not 0 <= member < 2 ** 32:
         raise UnusableDecimalScale(
-                '{} is not an unsigned 32-bit integer: {!r}'.format(
-                    name, value))
+                '{} is not an unsigned 32-bit integer: {}'.format(
+                    name, _safe_repr(value)))
     return member
 
 
@@ -222,9 +246,14 @@ def decode_decimal(value):
       since 2.1.0 for the reason :ref:`price_strings` gives, so a decoded value
       can be fed straight back into a reprice.
 
-    :param value: A decimal object, or a number or string, which is returned
-                  as a :class:`~decimal.Decimal` unchanged --- the same field
-                  does not always arrive in the same shape.
+    :param value: A decimal object, or a number or string. A non-object is
+                  validated and returned as a :class:`~decimal.Decimal`. That
+                  path is defensive rather than observed: every money and
+                  quantity field in the one capture on hand is an object, on
+                  every message. What *is* measured is the empty string,
+                  which arrives as the ``SUBSCRIBED`` ack's ``MESSAGE_DATA``
+                  and reaches here from any consumer decoding fields
+                  generically.
     :raises UnusableDecimalScale: if any member is not an unsigned 32-bit
                                   integer, if the ``signScale`` is outside
                                   ``0..64``, or if the object carries a key
@@ -263,8 +292,46 @@ def decode_decimal(value):
         # field raises at once and says so, instead of a feed quietly
         # reporting zeros.
         raise UnusableDecimalScale(
-                'not a decimal object -- unexpected {}: {!r}'.format(
-                    ', '.join(sorted(set(value) - _DECIMAL_KEYS)), value))
+                'not a decimal object -- unexpected {}: {}'.format(
+                    ', '.join(sorted(map(str, set(value) - _DECIMAL_KEYS))),
+                    _safe_repr(value)))
+
+    # The scale is read, validated and bounded *before* the mantissa-less
+    # shortcut, not after. That shortcut returns without looking at anything
+    # else, so `{"signScale": "garbage"}` -- or 1.9, or -1, or 65 -- decoded
+    # as a clean zero while the identical corruption one key over raised. No
+    # wrong number came of it, since a mantissa-less object is zero at any
+    # scale, but it discarded the only signal that the message was corrupt.
+    #
+    # An absent `signScale` is scale 0, by the same rule as an absent
+    # mantissa member: the serializer omits what is zero. This was a raise
+    # until it was checked against a capture, on the reasoning that a missing
+    # scale could not be told from a lost one -- but `AskSize` and `BidSize`
+    # arrive as `{"lo": "19200"}` with no scale at all, beside an `Ask` of
+    # `{"lo": "13720000", "signScale": 12}` on the same quote. $13.72 and
+    # 19200 shares, which is coherent; 0.0192 shares is not. So the shape is
+    # ordinary traffic, and refusing it cost both sizes on every quote.
+    #
+    # `.get`, not `value['signScale']`, for the same reason the members use
+    # it -- and because a dict subclass whose `get` and `__getitem__`
+    # disagree would otherwise escape as a `KeyError`. An explicit JSON
+    # `null` is an absence here, exactly as it is in the member loop: the two
+    # follow one rule and briefly did not.
+    scale_member = value.get('signScale')
+    scale = _unsigned_32(0 if scale_member is None else scale_member,
+                         'signScale', value)
+
+    # Bounded explicitly rather than left to the arithmetic to refuse.
+    # `10 ** (scale // 2)` on a hostile exponent builds an astronomical integer
+    # and hangs the thread, which a per-item try/except cannot rescue -- but
+    # `scaleb` is not the answer on its own either: its operand limit only
+    # trips far out, and every scale between roughly two million and four
+    # million underflows to a zero that compares equal to zero instead of
+    # raising. Zero is the worst wrong answer available on this feed.
+    if not 0 <= scale <= MAX_SIGN_SCALE:
+        raise UnusableDecimalScale(
+                'signScale {} is outside 0..{}, so it is not a real one: '
+                '{}'.format(scale, MAX_SIGN_SCALE, _safe_repr(value)))
 
     if all(value.get(k) is None for k in ('lo', 'mid', 'hi')):
         # Measured on three fields of one payload: a $0 commission, a market
@@ -275,6 +342,12 @@ def decode_decimal(value):
         # `{"mid": 1, ...}` and keying on `lo` would decode it as zero -- the
         # same slice-reading defect this function exists to fix, in the guard
         # that precedes it.
+        #
+        # Returning `Decimal(0)` rather than falling through is normalisation
+        # and only that, now the scale above is validated either way: falling
+        # through gives `Decimal('0.000000')` at scale 12, and
+        # `Decimal('-0.000000')` at scale 13. Both compare equal to zero, and
+        # the second one *prints* as a negative quantity.
         return decimal.Decimal(0)
 
     # Validated by shape rather than coerced and caught. Three rounds of
@@ -294,31 +367,6 @@ def decode_decimal(value):
         if member is None:
             continue
         mantissa += _unsigned_32(member, name, value) << shift
-    # An absent `signScale` is scale 0, by the same rule as an absent
-    # mantissa member: the serializer omits what is zero. This was a raise
-    # until it was checked against a capture, on the reasoning that a missing
-    # scale could not be told from a lost one -- but `AskSize` and `BidSize`
-    # arrive as `{"lo": "19200"}` with no scale at all, beside an `Ask` of
-    # `{"lo": "13720000", "signScale": 12}` on the same quote. $13.72 and
-    # 19200 shares, which is coherent; 0.0192 shares is not. So the shape is
-    # ordinary traffic, and refusing it cost both sizes on every quote.
-    #
-    # `.get`, not `value['signScale']`, for the same reason the members use
-    # it -- and because a dict subclass whose `get` and `__getitem__`
-    # disagree would otherwise escape as a `KeyError`.
-    scale = _unsigned_32(value.get('signScale', 0), 'signScale', value)
-
-    # Bounded explicitly rather than left to the arithmetic to refuse.
-    # `10 ** (scale // 2)` on a hostile exponent builds an astronomical integer
-    # and hangs the thread, which a per-item try/except cannot rescue -- but
-    # `scaleb` is not the answer on its own either: its operand limit only
-    # trips far out, and every scale between roughly two million and four
-    # million underflows to a zero that compares equal to zero instead of
-    # raising. Zero is the worst wrong answer available on this feed.
-    if not 0 <= scale <= MAX_SIGN_SCALE:
-        raise UnusableDecimalScale(
-                'signScale {} is outside 0..{}, so it is not a real one: '
-                '{!r}'.format(scale, MAX_SIGN_SCALE, value))
 
     # Built from a string, sign included, because every *operation* on a
     # Decimal applies the caller's context and only construction does not.
