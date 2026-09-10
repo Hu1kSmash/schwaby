@@ -1,5 +1,6 @@
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client, OAuth2Client
+from authlib.oauth2.rfc6749 import OAuth2Token
 
 import collections
 import contextlib
@@ -166,31 +167,22 @@ def __sweep_stale_token_temp_files(directory):
             pass
 
 
-def _positive_seconds(value):
-    '''Whether ``expires_in`` is a count of seconds authlib can turn into an
-    expiry. Bounded, because authlib adds it to the clock; the bound also
-    refuses ``inf`` and ``nan``.'''
-    if isinstance(value, bool):
-        return False
-    if isinstance(value, int):
-        return 0 < value <= 10 ** 9
-    if isinstance(value, float):
-        return 1 <= value <= 10 ** 9
-    if isinstance(value, str):
-        return (value.isascii() and value.isdigit() and len(value) <= 10
-                and 0 < int(value) <= 10 ** 9)
-    return False
-
-
 def _is_usable_token(token):
     '''Whether a token response can replace the stored token.
 
     What the session needs to go on using a token: a string access token, the
-    ``bearer`` type it knows how to send, and an ``expires_in`` it can turn
-    into an expiry -- without one, or with ``0``, the token is never refreshed
-    and every call fails once it lapses. A ``refresh_token`` may be absent,
-    and authlib then keeps the stored one; present, it replaces the stored
-    one, so an empty value would erase a refresh token that still works.
+    ``bearer`` type it knows how to send, and an expiry authlib acts on.
+    authlib builds that from an ``expires_at`` it can read, or else from
+    ``expires_in``, and checks it only when the result is an int. Without one
+    the token is never refreshed, and every call fails once it lapses. It is
+    bounded too: a milliseconds ``expires_at``, or a huge ``expires_in``, is
+    never reached. An expiry already past, or inside the session's leeway, is
+    accepted -- that token is refreshed on every call, which works, and
+    refusing it would not stop the refreshes.
+
+    A ``refresh_token`` may be absent, and authlib then keeps the stored one;
+    present, it replaces the stored one, so an empty value would erase a
+    refresh token that still works.
 
     Nothing else is required. A stricter test would refuse a real token over
     a field Schwab might omit, and a refused refresh stops an application that
@@ -203,7 +195,11 @@ def _is_usable_token(token):
                 and isinstance(token_type, str)
                 and token_type.lower() == 'bearer'):
             return False
-        if not _positive_seconds(token.get('expires_in')):
+        # Built the way authlib will build it. Whatever authlib would raise on
+        # here -- expires_in 'abc', say -- refuses the token.
+        expires_at = OAuth2Token(dict(token)).get('expires_at')
+        if not (isinstance(expires_at, int)
+                and expires_at <= time.time() + 10 ** 9):
             return False
         if 'refresh_token' in token:
             refresh_token = token['refresh_token']
@@ -244,7 +240,9 @@ def _refuse_unusable_token_response(response):
     raise OAuthError(
             error='unusable_token_response',
             description='the token endpoint answered with something that is '
-                        'not a token, so it was not stored')
+                        'not a usable token, so it was not stored: it needs a '
+                        'string access token, the bearer type, an expiry, '
+                        'and no refresh token that is empty or not a string')
 
 
 def _new_session(session_class, api_key, app_secret, token, update_token):

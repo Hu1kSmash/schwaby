@@ -139,6 +139,7 @@ class HTTPStatusErrorTest(unittest.TestCase):
         # failed without contacting Schwab. Now none is stored: the call
         # raises, and the next one refreshes again and recovers once the
         # endpoint does.
+        import time
         from schwaby.utils import TokenRefreshError
         usable = {'access_token': 'NEW', 'token_type': 'Bearer',
                   'expires_in': 1800}
@@ -150,7 +151,8 @@ class HTTPStatusErrorTest(unittest.TestCase):
                      {'access_token': 'NEW', 'token_type': 'Bearer'},
                      dict(usable, expires_in=0),
                      dict(usable, expires_in='abc'),
-                     dict(usable, expires_in=float('inf'))):
+                     dict(usable, expires_in=float('inf')),
+                     dict(usable, expires_at=int(time.time()) * 1000)):
             with self.subTest(body=body):
                 answers = [(401, body), (200, self.GOOD_TOKEN)]
                 writes = []

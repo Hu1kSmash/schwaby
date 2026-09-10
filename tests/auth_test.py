@@ -735,7 +735,8 @@ class ClientFromAccessFunctionsTest(unittest.TestCase):
 
 
     def setUp(self):
-        # Shaped like a real token, for the tests that write it.
+        # Enough of a token for the tests that write it. It is never checked
+        # here: the check runs on a token endpoint's response.
         self.raw_token = {'access_token': 'yes', 'token_type': 'Bearer'}
         self.token = {
                 'token': self.raw_token,
@@ -1683,12 +1684,26 @@ class UsableTokenTest(unittest.TestCase):
 
     @no_duplicates
     def test_a_token_needs_an_access_token_and_its_type(self):
+        import time
+        now = int(time.time())
         usable = {'access_token': 'a', 'token_type': 'Bearer',
                   'expires_in': 1800}
+        # authlib takes an expires_at it can read over expires_in, and falls
+        # back to expires_in otherwise. An expiry already past, or inside the
+        # leeway, is refreshed on every call -- which works, and refusing it
+        # would not stop the refreshes.
         for token in (usable, dict(usable, token_type='bearer'),
                       dict(usable, expires_in='1800'),
                       dict(usable, expires_in=1800.0),
-                      dict(usable, refresh_token='r')):
+                      dict(usable, refresh_token='r'),
+                      dict(usable, expires_at=now + 1800),
+                      dict(usable, expires_at=str(now + 1800)),
+                      dict(usable, expires_at='abc'),
+                      dict(usable, expires_at=None),
+                      dict(usable, expires_at=0),
+                      dict(usable, expires_in=60),
+                      {'access_token': 'a', 'token_type': 'Bearer',
+                       'expires_at': now + 1800}):
             with self.subTest(usable=token):
                 self.assertTrue(auth._is_usable_token(token))
         without_expiry = dict(usable)
@@ -1701,11 +1716,17 @@ class UsableTokenTest(unittest.TestCase):
                       dict(usable, token_type='mac'),
                       dict(usable, token_type=['Bearer']),
                       without_expiry,
+                      # authlib stores no expiry for 0, and raises on the
+                      # next three.
                       dict(usable, expires_in=0),
-                      dict(usable, expires_in=True),
                       dict(usable, expires_in='abc'),
                       dict(usable, expires_in=float('inf')),
+                      dict(usable, expires_in=[1800]),
                       dict(usable, expires_in=10 ** 10),
+                      # Milliseconds: never refreshed.
+                      dict(usable, expires_at=now * 1000),
+                      # authlib raises TypeError parsing it, on every call.
+                      dict(usable, expires_at=[now + 1800]),
                       dict(usable, refresh_token=None),
                       dict(usable, refresh_token=''),
                       None, [], 'token'):
