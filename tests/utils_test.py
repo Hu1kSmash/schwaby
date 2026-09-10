@@ -72,8 +72,8 @@ class HTTPStatusErrorTest(unittest.TestCase):
 
     @no_duplicates
     def test_a_successful_call_does_not_raise(self):
-        # Positive control. Without it the test above would also pass if the
-        # stubbed transport raised on every call, whatever the status.
+        # Positive control: the same stub answering 200 does not raise, so the
+        # refusal above comes from the status and not from the stub itself.
         self._client(200).get_quote('F').raise_for_status()
 
     @no_duplicates

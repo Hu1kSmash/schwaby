@@ -186,16 +186,28 @@ deliberately does not.
 
     from schwaby.utils import HTTPStatusError
 
-    response = client.get_quote('AAPL')
     try:
+        response = client.get_quote('AAPL')
         response.raise_for_status()
     except HTTPStatusError as exc:
         status = exc.response.status_code
 
-  Catch it by this name rather than by importing an HTTP package yourself. The
-  client's responses come from ``httpx2``, which shares no exception hierarchy
-  with ``httpx``, so a handler written against the other package never runs ---
-  and nothing reports that it did not.
+  **Keep the call inside the** ``try``, not only ``raise_for_status()``. The
+  session refreshes an expired access token on the way past, and when the
+  token endpoint answers with a server error this class is raised out of the
+  call itself --- with ``exc.response`` describing the token request rather
+  than the one you made. A refresh the endpoint rejects is translated to
+  :class:`~schwaby.utils.TokenRefreshError` instead.
+
+  **It covers HTTP status, not the network.** A timeout or a dropped
+  connection raises one of ``httpx2``'s transport errors ---
+  ``httpx2.TimeoutException``, ``httpx2.ConnectError`` and the rest of
+  ``httpx2.TransportError`` --- which this name does not catch.
+
+  For status errors, catch it by this name rather than by importing an HTTP
+  package yourself. The client's responses come from ``httpx2``, which shares
+  no exception hierarchy with ``httpx``, so a handler written against the other
+  package never runs --- and nothing reports that it did not.
 
 .. autoclass:: schwaby.utils.SchwabError
 

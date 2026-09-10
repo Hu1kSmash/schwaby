@@ -3,7 +3,7 @@ module.'''
 
 import re
 
-# The class a failed HTTP call raises, under a name this library owns.
+# The class an HTTP error status raises, under a name this library owns.
 #
 # `raise_for_status()` on a response from any client call raises
 # `httpx2.HTTPStatusError`. That package shares no exception hierarchy with
