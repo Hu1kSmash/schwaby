@@ -9191,6 +9191,129 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.setUp()
         self.assertEqual(set(names), await drive())
 
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_non_finite_requestid_does_not_end_the_receive_loop(
+            self, ws_connect):
+        """`json.loads` maps `1e999` and `Infinity` to `float('inf')`.
+
+        `int(inf)` raises `OverflowError`, which was in neither guard tuple,
+        so an ordinary JSON number literal ended the receive loop and killed
+        the in-flight request with a bare non-SchwabError, reported nowhere.
+        `NaN` takes the same route and raises `ValueError`, which is why one
+        of the two non-finite spellings was covered and this read as
+        complete.
+
+        This is the framing dependence `_read_and_route`'s own comment says
+        it exists to remove: with nothing pending the same frame was logged
+        and harmless.
+        """
+        bad = ('{"response":[{"requestid":%s,'
+               '"service":"LEVELONE_EQUITIES","command":"SUBS",'
+               '"content":{"code":0,"msg":"ok"}}]}')
+        for literal in ('1e999', 'Infinity', '-Infinity', 'NaN',
+                        '"notanint"', 'null', '{}'):
+            with self.subTest(requestid=literal):
+                # A fresh client each time: the request counter advances, so
+                # one reused across the loop stops matching its own replies.
+                self.setUp()
+                socket = await self.login_and_get_socket(ws_connect)
+                # The reply this subscribe will actually wait for, so the
+                # client stops reading rather than exhausting the mock.
+                nxt = self.client.request_number + 1
+                good = ('{"response":[{"requestid":"%d",'
+                        '"service":"LEVELONE_EQUITIES","command":"SUBS",'
+                        '"content":{"code":0,"msg":"ok"}}]}' % nxt)
+                socket.recv.side_effect = [bad % literal, good]
+                with self.assertRaises(schwaby.streaming.UnexpectedResponse):
+                    await self.client.level_one_equity_subs(['F'])
+                # Released, so the client is still usable.
+                self.assertFalse(self.client._read_lock.locked())
+                self.assertFalse(self.client._request_lock.locked())
+
+    @no_duplicates
+    def test_validate_response_refuses_a_non_finite_requestid_too(self):
+        """The second guard, tested where it is reachable.
+
+        A frame only routes if element 0 carries a usable int, so
+        `_read_and_route` catches the non-finite spellings first and this
+        one never sees them on that path -- which is why the end-to-end test
+        leaves it green. It is a defensive guard: it is what stands between
+        a caller of `_validate_response` and an `OverflowError` if routing
+        ever stops filtering, so it gets the direct case rather than none.
+        """
+        for value in (float('inf'), float('-inf'), float('nan'), 'notanint'):
+            with self.subTest(requestid=value):
+                frame = {'response': [{'requestid': value, 'service': 'X',
+                                       'command': 'SUBS',
+                                       'content': {'code': 0}}]}
+                result = self.client._validate_response(
+                        frame, 1, 'X', 'SUBS')
+                self.assertIsInstance(
+                        result, schwaby.streaming.UnexpectedResponse)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_an_accepted_subscribe_survives_an_unformattable_sibling(
+            self, ws_connect):
+        # The routing-path half. A frame whose element 0 accepts the request
+        # and whose element 1 is a late rejection carrying a value that
+        # cannot be formatted: the subscribe has already succeeded, and the
+        # message built for the rejection beside it raised at the caller.
+        socket = await self.login_and_get_socket(ws_connect)
+
+        class Decoder(streaming.StreamJsonDecoder):
+            def decode_json_string(self, raw):
+                return {'response': [
+                    {'requestid': '1', 'service': 'LEVELONE_EQUITIES',
+                     'command': 'SUBS', 'content': {'code': 0, 'msg': 'ok'}},
+                    {'requestid': '99', 'service': 'LEVELONE_EQUITIES',
+                     'command': 'SUBS',
+                     'content': {'code': 10 ** 5000, 'msg': 'm'}}]}
+
+        self.client.set_json_decoder(Decoder())
+        socket.recv.side_effect = ['{}']
+        await self.client.level_one_equity_subs(['F'])   # must not raise
+
+    @no_duplicates
+    def test_a_formatted_venue_value_keeps_its_content_and_its_bound(self):
+        # Both were green: a `_safe_value` returning '' satisfied every
+        # assertion, and so did one with no length bound. The docstring
+        # claims the content survives *and* that it is bounded.
+        self.assertEqual("'hello'", streaming._safe_value('hello'))
+        self.assertIn('hello', streaming._safe_value('hello'))
+        long_one = streaming._safe_value('A' * 10000)
+        self.assertLessEqual(len(long_one), 200)
+        self.assertIn('AAAA', long_one)
+
+        class Boom:
+            def __repr__(self):
+                raise RuntimeError('no repr')
+
+        self.assertIn('Boom', streaming._safe_value(Boom()))
+        self.assertIn('cannot be formatted', streaming._safe_value(Boom()))
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_an_absorbed_offender_does_not_lose_its_own_log_line(
+            self, ws_connect):
+        # `_absorb`'s line is the complete record and the callback is the
+        # convenience, so losing the line whole is the wrong way round. It
+        # used `%r` on a venue-controlled offender, which logging swallows
+        # when it raises -- the record dropped, the callback still firing.
+        socket = await self.login_and_get_socket(ws_connect)
+
+        class Decoder(streaming.StreamJsonDecoder):
+            def decode_json_string(self, raw):
+                return {'data': 10 ** 5000}
+
+        self.client.set_json_decoder(Decoder())
+        socket.recv.side_effect = ['{}']
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            await self.client.handle_message()
+        self.assertIn('Ignoring', '\n'.join(got.output))
+        self.assertEqual(1, self.client._absorbed)
+
     # ---- Something Schwab added that this version cannot route ----------
     #
     # A field it does not recognise still reaches a handler. A *service* it

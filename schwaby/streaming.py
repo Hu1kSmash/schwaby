@@ -169,7 +169,8 @@ def _safe_value(value):
     try:
         text = repr(value)
     except Exception:
-        text = '<{} that cannot be formatted>'.format(type(value).__name__)
+        text = '<{} that cannot be formatted>'.format(
+                type(value).__name__)
     return text if len(text) <= 200 else text[:197] + '...'
 
 
@@ -741,8 +742,8 @@ class StreamClient(EnumEnforcer):
             resp_command = first['command'] if mismatched_id is None else None
             content = first['content'] if mismatched_id is None else {}
             resp_code = content['code'] if mismatched_id is None else 0
-        except (AttributeError, IndexError, KeyError, TypeError,
-                ValueError) as exc:
+        except (AttributeError, IndexError, KeyError, OverflowError,
+                TypeError, ValueError) as exc:
             # Only the reads are inside the try. Wrapping the whole check
             # would catch a bug of ours -- a signature change missing this
             # call site raises TypeError -- and report it to the caller as a
@@ -857,7 +858,14 @@ class StreamClient(EnumEnforcer):
         # outstanding.
         try:
             response_id = int(frame['response'][0]['requestid'])
-        except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        except (AttributeError, IndexError, KeyError, OverflowError,
+                TypeError, ValueError):
+            # `OverflowError` because `json.loads` maps the bare literals
+            # `1e999` and `Infinity` to `float('inf')`, and `int(inf)` raises
+            # that rather than ValueError. `NaN` takes the same route and
+            # raises ValueError, which is why one of the two non-finite
+            # spellings was covered and this read as complete.
+            #
             # Through _absorb like every other unusable message, so it is
             # counted, coalesced and reported. Logged directly, this was the
             # one such path with no programmatic signal at all -- and it
@@ -1031,10 +1039,12 @@ class StreamClient(EnumEnforcer):
             return
 
         self.logger.warning(
-                'Ignoring %s: %r. (%d of these, %d in all, on this '
-                'connection.)%s', what, offender, n, self._absorbed,
+                'Ignoring %s: %s. (%d of these, %d in all, on this '
+                'connection.)%s', what, _safe_value(offender), n,
+                self._absorbed,
                 '' if cause is None
-                else ' Cause: {}: {}'.format(type(cause).__name__, cause))
+                else ' Cause: {}: {}'.format(
+                    type(cause).__name__, _safe_value(cause)))
 
         # Reported on the same schedule as the log, not on every occurrence.
         # These share _pending_reports with the late rejections, which is a
@@ -1050,7 +1060,8 @@ class StreamClient(EnumEnforcer):
                     'connection){}'.format(
                         what, n, self._absorbed,
                         '' if cause is None
-                        else ': {}: {}'.format(type(cause).__name__, cause)),
+                        else ': {}: {}'.format(
+                            type(cause).__name__, _safe_value(cause))),
                     cause=cause, count=n, total=self._absorbed),
                 # Usually None -- a message whose shape could not be read has
                 # no service name to be had -- but not always: a relabeling
@@ -1430,8 +1441,10 @@ class StreamClient(EnumEnforcer):
           populates ``cause``, though not the only one that populates
           ``service`` --- and, since Schwab may add to this protocol at any
           time, a ``service`` which *is* a name this version does not know,
-          or a frame carrying a whole channel it does not read. Those last
-          two populate ``service`` as well. Those last two are messages this
+          or a frame carrying a whole channel it does not read. An unknown
+          service populates ``service``; an unread channel does not, because
+          a channel is not one --- its names are on ``message`` instead.
+          Those last two are messages this
           client drops because Schwab added something rather than because
           anything is malformed, and they are the ones a consumer cannot see
           any other way: no handler of theirs fires for either. **Every distinct
@@ -1447,8 +1460,10 @@ class StreamClient(EnumEnforcer):
           as it arrived --- except for an unread channel, where it is the
           sorted list of channel names, since what offends is which
           compartments appeared rather than any one value inside them. These
-          are *coalesced*: the first three on a connection,
-          then powers of ten, with the running count in the message. A
+          are *coalesced*: the first three **of each kind** on a
+          connection, then powers of ten, with the running count in the
+          message. Per kind, so a flood of one sort does not silence a
+          different sort arriving beside it. A
           systematically malformed channel produces one of these per element
           per tick, which would otherwise be a log-volume incident on top of
           the outage -- and, because these share a bounded queue with the late

@@ -107,6 +107,30 @@ and none of them is a field, so reporting anything merely missing from the
 table would log four lines per message — a flood, which hides the one line
 that matters.
 
+### A non-finite `requestid` no longer ends the receive loop
+
+Not part of the schema-drift work — found while reviewing it, and present
+since long before this release.
+
+`json.loads` maps the bare JSON literals `1e999` and `Infinity` to
+`float('inf')`, and `int(inf)` raises `OverflowError`. Two guards around
+`int(frame['response'][0]['requestid'])` caught `AttributeError`, `IndexError`,
+`KeyError`, `TypeError` and `ValueError` — not that one. So an ordinary JSON
+number literal in a `requestid`:
+
+- ended the receive loop,
+- killed the in-flight request with an exception that is **not** a
+  `SchwabError`,
+- and reported nothing to `add_error_handler`.
+
+`NaN` takes the same route and raises `ValueError`, which is caught — so one
+of the two non-finite spellings was covered, which is why the guard read as
+complete. Locks were released cleanly, so nothing wedged.
+
+This is the exact failure `_read_and_route` exists to remove: with no request
+outstanding the identical frame was logged and harmless, and the framing
+dependence it was written to close was still there, one exception type wide.
+
 ### A service or a channel this version does not know is now reported
 
 A new *field* still reaches your handler. A new **service** cannot — there is
