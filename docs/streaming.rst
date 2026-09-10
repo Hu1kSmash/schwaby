@@ -1133,6 +1133,7 @@ first attempt is reliably wrong in at least one of the ways below:
   decode_decimal({"lo": "6860000", "signScale": 12})   # Decimal('6.860000')
   decode_decimal({"lo": "6860000", "signScale": 13})   # Decimal('-6.860000')
   decode_decimal({"signScale": 12})                    # Decimal('0')
+  decode_decimal({"lo": "19200"})                      # Decimal('19200')
 
 .. autofunction:: schwaby.contrib.util.decode_decimal
 .. autoclass:: schwaby.contrib.util.UnusableDecimalScale
@@ -1210,11 +1211,36 @@ nowhere official.
   path --- which is the worst combination available on this feed.
 
   **"No mantissa" means none of** ``lo``, ``mid`` **or** ``hi``, not an absent
-  ``lo``. The serializer omits zero members, so a value whose low 32 bits
+  ``lo``. The serializer omits zero members --- including the scale, see
+  below --- so a value whose low 32 bits
   happen to be zero arrives as ``{"mid": 1, "signScale": 12}`` --- which is
   ``4294.967296``, and which a guard keyed on ``lo`` alone reads as zero. That
   is the same slice-reading defect as reading ``lo`` for the mantissa, in the
   guard that runs immediately before it.
+
+.. danger::
+
+  **An absent** ``signScale`` **is scale 0, not a missing scale.** The
+  serializer omits whatever is zero, and that applies to the scale exactly as
+  it applies to a mantissa member. One quote, verbatim, is what settles it:
+
+  .. code-block:: python
+
+    {"Ask":     {"lo": "13720000", "signScale": 12},   # 13.72
+     "AskSize": {"lo": "19200"},                       # 19200 shares
+     "Bid":     {"lo": "13710000", "signScale": 12},   # 13.71
+     "BidSize": {"lo": "4200"},                        # 4200 shares
+     "Mid":     {"lo": "13715000", "signScale": 12}}   # 13.715
+
+  Prices scaled by six places, sizes with no scale at all, in the same object.
+  $13.72 with 19200 on the ask is a coherent quote; 0.0192 shares is not.
+
+  This library *refused* the shape until 4.2.0, on the reasoning that a scale
+  which is missing cannot be told from one that was lost --- which sounds
+  careful and cost both sizes on every quote carrying them. If your decoder
+  treats an absent ``signScale`` as an error, or guesses 12 because that is
+  the common value, ``AskSize`` and ``BidSize`` are what it gets wrong: the
+  second guess is off by a factor of a million with nothing raised.
 
 **The sign is not the side.** Fill quantities and prices arrive positive, with
 an even ``signScale``; buy versus sell comes from ``BuySellCode``. The odd
