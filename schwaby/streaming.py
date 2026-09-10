@@ -2289,10 +2289,17 @@ class StreamClient(EnumEnforcer):
         #: Last trade price
         LAST_PRICE = 3
 
-        #: Size of the highest bid
+        #: Size of the highest bid, in shares rather than round lots.
+        #: :ref:`Unconfirmed <confidence_tags>`: inferred from magnitude on
+        #: liquid names, where reading it as lots would put implausibly deep
+        #: books at the touch. It has not been checked against a quantity of
+        #: known size; a resting order of known odd size joining the best bid
+        #: would settle it.
         BID_SIZE = 4
 
-        #: Size of the lowest ask
+        #: Size of the lowest ask, in shares rather than round lots.
+        #: :ref:`Unconfirmed <confidence_tags>`, for the reason given on
+        #: ``BID_SIZE``.
         ASK_SIZE = 5
 
         #: Exchange ID of the lowest ask
