@@ -1274,6 +1274,28 @@ class ParseMessageDataTest(unittest.TestCase):
                 self.assertNotIn('12345678', str(cm.exception))
 
     @no_duplicates
+    def test_invisible_characters_before_an_object_do_not_make_a_notice(self):
+        for prefix in ('\ufeff', '\u200b', '\u2060', '\u200e', '\x00'):
+            with self.subTest(prefix=prefix):
+                self.assertEqual({'a': 1},
+                                 parse_message_data(prefix + '{"a": 1}'))
+                with self.assertRaises(UnparsableMessageData):
+                    parse_message_data(prefix + '{"a": 1')
+
+    @no_duplicates
+    def test_whitespace_json_does_not_accept_is_still_stripped(self):
+        # str.strip removes U+2028 and U+00A0; JSON does not accept either.
+        for prefix in ('\u2028', '\u00a0'):
+            with self.subTest(prefix=prefix):
+                self.assertEqual({'a': 1},
+                                 parse_message_data(prefix + '{"a": 1}'))
+
+    @no_duplicates
+    def test_a_notice_keeps_its_surrounding_whitespace(self):
+        self.assertEqual('  Feature not supported\n',
+                         parse_message_data('  Feature not supported\n'))
+
+    @no_duplicates
     def test_a_str_subclass_is_read_as_its_text(self):
         class Text(str):
             def strip(self, *args):

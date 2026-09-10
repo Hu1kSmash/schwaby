@@ -3,6 +3,7 @@ import decimal
 import json
 import logging
 import re
+import unicodedata
 from schwaby.streaming import StreamJsonDecoder
 from schwaby.utils import SchwabError
 
@@ -730,7 +731,7 @@ class UnparsableMessageData(SchwabError, ValueError):
 
 def parse_message_data(value):
     '''
-    Returns an ``ACCT_ACTIVITY`` content item's ``MESSAGE_DATA`` as an object.
+    Reads an ``ACCT_ACTIVITY`` content item's ``MESSAGE_DATA``.
 
     ``MESSAGE_DATA`` is a JSON string rather than an object, so it has to be
     parsed a second time, and Schwab also sends it empty, on the ``SUBSCRIBED``
@@ -742,8 +743,9 @@ def parse_message_data(value):
     * the text itself, for anything else. That is a notice, and a notice never
       raises.
 
-    A notice's content item carries an empty ``MESSAGE_TYPE``, so a handler
-    that dispatches on the type has to expect one here.
+    The one notice observed, ``"Feature not supported"``, arrived in a content
+    item whose ``MESSAGE_TYPE`` was empty, so a handler that dispatches on the
+    type should expect notices here.
 
     A ``dict`` is returned as it is, so calling this on a value that has
     already been parsed is harmless.
@@ -765,17 +767,23 @@ def parse_message_data(value):
     stripped = text.strip()
     if not stripped:
         return None
-    if not stripped.startswith('{'):
+    # Invisible characters str.strip leaves in place -- a byte order mark, a
+    # zero-width space, a NUL -- must not turn a payload into a notice.
+    start = 0
+    while (start < len(stripped)
+           and unicodedata.category(stripped[start]) in ('Cf', 'Cc', 'Zs')):
+        start += 1
+    if not stripped.startswith('{', start):
         return text
 
     try:
-        parsed = json.loads(stripped)
+        parsed = json.loads(stripped[start:])
     except (ValueError, RecursionError):
         # ValueError covers JSONDecodeError and UnicodeDecodeError; a payload
         # nested past the interpreter's depth raises RecursionError instead.
         parsed = None
     if not isinstance(parsed, dict):
         raise UnparsableMessageData(
-                'MESSAGE_DATA starts like a JSON object but is not one ({} '
-                'characters)'.format(len(text)))
+                'MESSAGE_DATA starts like a JSON object but could not be read '
+                'as one ({} characters)'.format(len(text)))
     return parsed
