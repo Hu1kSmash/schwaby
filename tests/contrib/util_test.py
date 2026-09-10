@@ -470,10 +470,12 @@ class DecodeDecimalTest(unittest.TestCase):
         util._reported_keys.clear()
 
     def test_every_real_payload_still_decodes(self):
-        # The control on the rule above. Refusing everything would satisfy
-        # it, and these are the shapes a live account actually sends --
+        # The control on the rule above: refusing everything would satisfy
+        # it. All but the last are shapes a live account actually sends,
         # including the two that omit a component, which is what made the
-        # clever version look necessary.
+        # clever version look necessary. The non-zero `mid` is reasoned from
+        # the .NET layout rather than observed -- no captured payload has
+        # carried one, which the streaming docs mark as unconfirmed.
         for value, expected in (({'lo': '13720000', 'signScale': 12}, '13.72'),
                                 ({'lo': '19200'}, '19200'),
                                 ({'signScale': 12}, '0'),
@@ -508,6 +510,42 @@ class DecodeDecimalTest(unittest.TestCase):
                     decode_decimal({'lo': str(i), 'signScale': 12, 'flags': 0})
         self.assertEqual(1, len(caught.output))
         self.assertIn("'flags'", caught.output[0])
+
+        # A *second* distinct key earns its own line. Without this, "report
+        # the first key ever seen and then go permanently silent" passes the
+        # whole suite -- and the report is the entire thing this behaviour
+        # adds over refusing quietly.
+        with self.assertLogs(util.get_logger(), level='WARNING') as caught:
+            with self.assertRaises(UnusableDecimalScale):
+                decode_decimal({'lo': '1', 'signScale': 12, 'scale': 6})
+        self.assertEqual(1, len(caught.output))
+        self.assertIn("'scale'", caught.output[0])
+        self.assertNotIn("'flags'", caught.output[0])
+        util._reported_keys.clear()
+
+    def test_the_wrong_object_does_not_consume_the_report_budget(self):
+        """The report is bounded, module-level and never cleared.
+
+        `decode_decimal`'s own docstring names "any consumer decoding fields
+        generically", and such a caller hands it every nested object it
+        walks. Reported from the not-a-decimal-object branch as well, one
+        real ACCT_ACTIVITY frame filled all 32 slots with `AccountNumber`,
+        `BaseEvent`, `EventType` and the like -- after which a genuine schema
+        addition logged nothing at all, for the life of the process.
+        """
+        util._reported_keys.clear()
+        with self.assertNoLogs(util.get_logger(), level='WARNING'):
+            for value in ({'AccountNumber': '1', 'BaseEvent': {}},
+                          {'EventType': 'OrderCreated'},
+                          {'symbol': 'AAPL', 'quantity': 100}):
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal(value)
+        self.assertEqual(set(), util._reported_keys)
+        # Positive control: the schema-change branch still reports, so the
+        # silence above is not silence everywhere.
+        with self.assertLogs(util.get_logger(), level='WARNING'):
+            with self.assertRaises(UnusableDecimalScale):
+                decode_decimal({'lo': '1', 'signScale': 12, 'brandNew': 1})
         util._reported_keys.clear()
 
     def test_the_unknown_key_report_is_bounded(self):
@@ -531,6 +569,10 @@ class DecodeDecimalTest(unittest.TestCase):
             decode_decimal(crowded)
         self.assertLessEqual(len(util._reported_keys),
                              util._MAX_REPORTED_KEYS)
+        # Positive control. `assertLessEqual(len(...), 32)` holds when the
+        # cap works *and* when the report never ran at all, and nothing else
+        # in this test distinguishes them.
+        self.assertEqual(util._MAX_REPORTED_KEYS, len(util._reported_keys))
         util._reported_keys.clear()
 
     def test_a_key_that_cannot_be_named_does_not_escape(self):

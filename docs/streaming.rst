@@ -283,8 +283,9 @@ an error handler:
 It is called for four things: a stream handler which raised, a late rejection of
 a request nobody was waiting on, a connection which failed to close after logout,
 and a message this client cannot use at all — a frame which is not an object, an
-element of ``data`` or ``notify`` which is not an object, or a ``service`` which
-is not a name. That last group arrives as ``UnusableMessage``, whose ``message``
+element of ``data`` or ``notify`` which is not an object, a ``service`` which
+is not a name, a ``service`` which *is* a name this version does not know, or a
+frame carrying a whole channel it does not read. That last group arrives as ``UnusableMessage``, whose ``message``
 attribute is the offending value exactly as it arrived, alongside ``cause`` (the
 exception which made it unusable, where there was one) and ``count``/``total``
 as integers.
@@ -1135,6 +1136,33 @@ first attempt is reliably wrong in at least one of the ways below:
   decode_decimal({"signScale": 12})                    # Decimal('0')
   decode_decimal({"lo": "19200"})                      # Decimal('19200')
 
+**Wrap each field, not the message.** ``decode_decimal`` raises rather than
+guess --- at a corrupt member, and at any key it does not recognise, which is
+how a change at Schwab's end reaches you. Decoded one field at a time, a value
+it refuses costs that field; decoded in one ``try``, it costs the message:
+
+.. code-block:: python
+
+  import logging
+
+  from schwaby.contrib.util import decode_decimal, UnusableDecimalScale
+
+  def decode_fields(message, names):
+      out = {}
+      for name in names:
+          if name not in message:
+              continue
+          try:
+              out[name] = decode_decimal(message[name])
+          except UnusableDecimalScale:
+              # Logged, not swallowed: schwaby has already said once what it
+              # did not recognise, and this is the field it cost you.
+              logging.warning('could not decode %s', name)
+      return out
+
+``UnusableDecimalScale`` is both a :class:`~schwaby.utils.SchwabError` and a
+``ValueError``, so either name catches it.
+
 .. autofunction:: schwaby.contrib.util.decode_decimal
 .. autoclass:: schwaby.contrib.util.UnusableDecimalScale
 
@@ -1272,6 +1300,49 @@ nowhere official.
   price on a funded account, it is not a close call. If you see it, please
   `open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__ with the
   field.
+
+.. note::
+
+  **A field id this library has no name for is delivered to your handler
+  under its numeric key**, while every field it does know is relabeled as
+  usual. A field Schwab adds reaches you rather than breaking you.
+
+  It is also logged, once per field per table, on the ``schwaby.streaming``
+  logger --- because being delivered and being *noticed* are different
+  things, and the field tables are only as current as the last time someone
+  looked. If you see that line, please `open an issue
+  <https://github.com/Hu1kSmash/schwaby/issues>`__ with the id and the value.
+
+  This one is not reported through :func:`add_error_handler
+  <schwaby.streaming.StreamClient.add_error_handler>`: nothing was absorbed
+  and nothing failed. It is a change in the venue, which is an operator's
+  concern rather than a caller's.
+
+.. warning::
+
+  **A whole service, or a whole channel, that this version does not know is
+  a different matter: the messages are dropped.** There is no handler to
+  route an unknown service to and no field table to relabel it with, and a
+  channel this version does not read is a compartment of the frame nobody
+  looks in. Your handlers never fire for either, so without a report they
+  are invisible from inside a consumer.
+
+  Both *are* reported the way every other dropped message is --- a
+  ``WARNING``, and an :class:`UnusableMessage` through
+  :func:`add_error_handler
+  <schwaby.streaming.StreamClient.add_error_handler>`, counted per kind and
+  coalesced after the first few so a systematic change cannot become a log
+  flood. What appeared is on the exception's ``message``: the service name
+  for a service, the sorted list of channel names for a channel.
+
+  A service you simply registered no handler for is **not** reported. That is
+  your own choice, and a line per message on a feed you deliberately ignored
+  is noise rather than news. Nor is a ``notify`` frame that names no service,
+  which is not required to name one.
+
+  The frame is not dropped over an unread channel --- the compartments that
+  *are* understood still hold real data, and refusing the whole frame would
+  turn an addition into an outage.
 
 **The sign is not the side.** Fill quantities and prices arrive positive, with
 an even ``signScale``; buy versus sell comes from ``BuySellCode``. The odd

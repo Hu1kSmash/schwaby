@@ -65,8 +65,9 @@ _BARE_NUMBER = re.compile(
 #: shortcut and decode as zero -- the worst wrong answer available on this
 #: feed -- without anything having looked at it.
 #:
-#: A key *alongside* these is a different thing entirely, and is ignored. See
-#: :func:`_report_unknown_keys` for why that direction rather than refusing.
+#: A key *alongside* these refuses the object too, and is logged once. See
+#: :func:`decode_decimal` for why decoding around one cannot be made to
+#: work.
 _DECIMAL_KEYS = frozenset(('lo', 'mid', 'hi', 'signScale'))
 
 
@@ -123,8 +124,17 @@ def _report_unknown_keys(unknown):
 
 
 class UnusableDecimalScale(SchwabError, ValueError):
-    '''Raised by :func:`decode_decimal` when the ``signScale`` cannot be used:
-    absent on an object that has a mantissa, or too large to be real.
+    '''Raised by :func:`decode_decimal` when an object cannot be turned into
+    a number without guessing: a member or ``signScale`` that is not what it
+    should be, a scale too large to be real, a key this version does not
+    recognise, or a value that is not a number at all.
+
+    An absent ``signScale`` is **not** one of these --- it is scale 0,
+    which is how ``AskSize`` and ``BidSize`` arrive. This docstring said the
+    opposite, which was the behaviour at the time and was wrong; the
+    ``danger`` block on the streaming page has the quote that settled it ---
+    an ``Ask`` of ``{"lo": "13720000", "signScale": 12}`` beside an
+    ``AskSize`` of ``{"lo": "19200"}`` in one quote.
 
     The scale is what turns the mantissa into a number, so guessing one is a
     silent wrong answer by construction --- and the guess that suggests itself,
@@ -350,16 +360,18 @@ def decode_decimal(value):
                   generically.
     :raises UnusableDecimalScale: if any member is not an unsigned 32-bit
                                   integer, if the ``signScale`` is outside
-                                  ``0..64``, or if the object carries an
-                                  unrecognised key and *none* of ``lo``,
-                                  ``mid``, ``hi`` and ``signScale``, which
-                                  means it is not one of these at all. An
-                                  empty object is not that case: it is the
-                                  omit-everything spelling of zero, and
-                                  decodes as one. Refused rather than computed
-                                  with, because each of those produces a
-                                  plausible wrong number rather than an
-                                  error.
+                                  ``0..64``, or if the object carries any
+                                  key that is not one of ``lo``, ``mid``,
+                                  ``hi`` and ``signScale`` --- see below. An
+                                  object carrying *none* of the four is
+                                  refused with a different message, because
+                                  it is not one of these at all rather than a
+                                  changed one. An empty object is neither: it
+                                  is the omit-everything spelling of zero,
+                                  and decodes as one. Each of these is
+                                  refused rather than computed with, because
+                                  each produces a plausible wrong number
+                                  rather than an error.
 
                                   **Any** unrecognised key refuses the
                                   object. Not decoded around: an
@@ -428,7 +440,6 @@ def decode_decimal(value):
         # caller wrapping each one keeps the rest of the message. The
         # alternative on this feed is a silent wrong price on a funded
         # account, and between those two there is no contest.
-        _report_unknown_keys(unknown)
         if not keys & _DECIMAL_KEYS:
             # Not a decimal object at all -- a PascalCase
             # `{"Lo": ..., "SignScale": ...}`, or something unrelated. Worth
@@ -439,6 +450,17 @@ def decode_decimal(value):
                     'only {}: {}'.format(
                         _safe_keys(unknown),
                         _safe_repr(value)))
+        # Reported here and not above the raise: this branch is the venue
+        # changing under everyone, and the one above is a caller handing this
+        # function the wrong object. Reporting both put the second one's key
+        # names into a set that is bounded, module-level and never cleared --
+        # measured, one real ACCT_ACTIVITY frame walked generically filled all
+        # 32 slots with `AccountNumber`, `BaseEvent`, `EventType` and the
+        # like, after which a genuine schema addition logged nothing at all.
+        # The report is the whole of what this adds over refusing silently,
+        # and non-schema input could consume all of it for the life of the
+        # process.
+        _report_unknown_keys(unknown)
         raise UnusableDecimalScale(
                 'decimal object carries {}, which this version of schwaby '
                 'does not know. Refused rather than decoded around, because '
