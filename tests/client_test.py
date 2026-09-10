@@ -2797,6 +2797,9 @@ class _TestClient:
             self.client.get_quote(SYMBOL)
 
         self.assertFalse(cm.exception.refresh_token_invalid)
+        # Nothing reached Schwab, so the message must not say what it said.
+        self.assertIn('nothing was sent to Schwab', str(cm.exception))
+        self.assertNotIn('Schwab did not say', str(cm.exception))
 
     @no_duplicates
     def test_a_local_unsupported_token_type_without_expiry_is_terminal(self):
@@ -2807,15 +2810,21 @@ class _TestClient:
         from authlib.integrations.base_client.errors import (
                 UnsupportedTokenTypeError)
 
-        self.mock_session.token = {'message': 'Unauthorized',
-                                   'refresh_token': 'r'}
         self.mock_session.get.side_effect = UnsupportedTokenTypeError()
 
-        with self.assertRaises(TokenRefreshError) as cm:
-            self.client.get_quote(SYMBOL)
+        # authlib checks an expires_at only when it is an int, so a string
+        # there is no expiry either.
+        for token in ({'message': 'Unauthorized', 'refresh_token': 'r'},
+                      {'access_token': 'a', 'token_type': 'mac',
+                       'expires_at': '1789073203.0', 'refresh_token': 'r'}):
+            with self.subTest(token=token):
+                self.mock_session.token = token
+                with self.assertRaises(TokenRefreshError) as cm:
+                    self.client.get_quote(SYMBOL)
 
-        self.assertTrue(cm.exception.refresh_token_invalid)
-        self.assertIn('login flow has to be completed again', str(cm.exception))
+                self.assertTrue(cm.exception.refresh_token_invalid)
+                self.assertIn('login flow has to be completed again',
+                              str(cm.exception))
 
     @no_duplicates
     def test_a_local_unsupported_token_type_with_an_unreadable_token_stays_retryable(self):

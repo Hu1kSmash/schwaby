@@ -311,9 +311,15 @@ class TokenRefreshError(SchwabError):
     ``refresh_token_invalid`` is ``True`` when no amount of retrying will
     produce a working token, and only the full authorization_code flow -- which
     needs a human at a browser -- will help. That covers two cases: Schwab
-    saying the refresh token is invalid, expired or revoked, and the stored
-    token being unusable before anything is even sent, which the underlying
-    OAuth library reports without contacting Schwab at all.
+    saying the refresh token is invalid, expired or revoked, and a stored token
+    that cannot be used and will not change on its own, which the underlying
+    OAuth library reports without contacting Schwab at all -- one with no
+    refresh token, or one it cannot send that has no expiry it acts on, and so
+    is never refreshed.
+
+    A stored token it cannot send that *does* have an expiry is ``False``,
+    although nothing was sent: it is refreshed once that expiry passes. If
+    there is no refresh token to do it with, that refresh reports ``True``.
 
     It is ``False`` for everything else, *including* failures this library did
     not recognize -- the conservative direction, since treating a recoverable
@@ -334,9 +340,10 @@ class TokenRefreshError(SchwabError):
         #: Seconds since the token was originally authorized, or ``None``.
         self.token_age = token_age
 
-        #: ``True`` when the refresh token is invalid, expired or revoked, and
-        #: only a new login flow will help. ``False`` when the failure may be
-        #: transient, or was not recognized.
+        #: ``True`` when no retry can produce a working token -- Schwab
+        #: rejected the refresh token, or the stored token cannot be used and
+        #: will not change on its own -- and only a new login flow will help.
+        #: ``False`` when the failure may be transient, or was not recognized.
         self.refresh_token_invalid = refresh_token_invalid
 
 
