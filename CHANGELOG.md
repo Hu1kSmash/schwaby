@@ -81,6 +81,13 @@ Not reported through `add_error_handler`: nothing was absorbed and nothing
 failed. It is a change in the venue, which is an operator's concern rather
 than a caller's.
 
+An unknown **service** or **channel** is reported both ways — the log and
+`add_error_handler` — because those messages are dropped rather than
+delivered. Each distinct name is guaranteed a line: `add_error_handler`'s
+coalescing is keyed per *kind*, so five new services at once left the fourth
+unnamed in any log line or callback, and a dropped service is a worse event
+than an unnamed field.
+
 The discriminator is that Schwab's field ids are numeric strings. `key`,
 `seq`, `delayed` and `assetMainType` all arrive alongside the numbered fields
 and none of them is a field, so reporting anything merely missing from the

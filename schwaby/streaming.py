@@ -138,6 +138,36 @@ _MAX_REPORTED_FIELDS = 64
 _reported_fields = set()
 
 
+def _report_new_shape(what, name):
+    """Name a thing Schwab added, once, whatever kind of thing it is.
+
+    A separate bounded set rather than `_absorb`'s counters, because those
+    are keyed on a fixed `what` string -- deliberately, so a value the venue
+    chooses cannot grow the dict -- which means every unknown *service*
+    shares one counter and `_absorb`'s coalescing applies across names.
+    Measured: five new services on one connection, and the fourth and fifth
+    were never named, in no log line and no callback. Which ones lost was
+    arbitrary.
+
+    That is the wrong way round. A dropped service is a worse event than an
+    unnamed field, and the field path already guarantees a line per distinct
+    id. This gives services and channels the same guarantee, alongside the
+    `_absorb` accounting rather than instead of it: `_absorb` still counts
+    the drops and still drives `add_error_handler`.
+    """
+    seen = (what, name)
+    if (seen in _reported_fields
+            or len(_reported_fields) >= _MAX_REPORTED_FIELDS):
+        return
+    _reported_fields.add(seen)
+    get_logger().warning(
+            'Schwab sent a %s this version of schwaby does not know: %r. '
+            'Messages for it are dropped -- there is no handler to route '
+            'them to -- and this is reported once, not per message. Please '
+            'open an issue at https://github.com/Hu1kSmash/schwaby/issues.',
+            what, name)
+
+
 def _report_unknown_field(field_enum_type, field_id):
     """Say once that a stream carried a field this version does not know.
 
@@ -221,10 +251,14 @@ class UnusableMessage(SchwabError):
     '''A message which decoded successfully but which this client cannot use.
 
     Distinct from :class:`UnparsableMessage`, which means the JSON itself did
-    not decode and carries the parse exception. Here the JSON is fine and the
-    structure is not what the protocol allows -- a frame which is not an
-    object, an element of ``data`` which is not an object, a ``service`` which
-    is not a name. Reusing ``UnparsableMessage`` would make one type mean two
+    not decode and carries the parse exception. Here the JSON is fine and
+    this client cannot use it -- a frame which is not an object, an element
+    of ``data`` which is not an object, a ``service`` which is not a name, a
+    ``service`` which *is* a name this version does not know, or a frame
+    carrying a whole channel it does not read. The last two are additions at
+    Schwab's end rather than anything malformed; the rest are shapes the
+    protocol does not allow. Reusing ``UnparsableMessage`` would make one
+    type mean two
     shapes, with ``json_parse_exception`` set for one of them and ``None`` for
     the other.
 
@@ -1292,7 +1326,12 @@ class StreamClient(EnumEnforcer):
           itself succeeded;
         * a message this client cannot use at all -- a frame which is not an
           object, an element of ``data`` or ``notify`` which is not an object,
-          a ``service`` which is not a name. These arrive as
+          a ``service`` which is not a name, a ``service`` which *is* a name
+          this version does not know, or a frame carrying a whole channel it
+          does not read. The last two are messages this client is dropping
+          because Schwab added something, rather than because anything is
+          malformed, and they are the ones a consumer cannot see any other
+          way: no handler of theirs fires for either. These arrive as
           :class:`UnusableMessage`, whose ``message`` is the offending value as
           it arrived. These are *coalesced*: the first three on a connection,
           then powers of ten, with the running count in the message. A
@@ -1521,6 +1560,10 @@ class StreamClient(EnumEnforcer):
             # offender, not in the key: `_absorbed_kinds` is a dict keyed on
             # `what`, and putting a value the venue chooses into that key
             # makes it grow without bound.
+            # Named once per service beside the absorb, which coalesces
+            # across every unknown service because its counter is keyed on
+            # the fixed string above.
+            _report_new_shape('service', service)
             self._absorb('a message for a service this version does not know',
                          service, frame=msg, service=service)
             return
@@ -1642,6 +1685,8 @@ class StreamClient(EnumEnforcer):
             # Reported and then carried on past: the channels that *are*
             # understood still hold real data, and refusing the frame over an
             # unread compartment would turn an addition into an outage.
+            for channel in sorted(map(str, unknown_channels)):
+                _report_new_shape('channel', channel)
             self._absorb(
                     'a frame carrying a channel this version does not read',
                     sorted(map(str, unknown_channels)), frame=msg)

@@ -129,12 +129,10 @@ class UnusableDecimalScale(SchwabError, ValueError):
     should be, a scale too large to be real, a key this version does not
     recognise, or a value that is not a number at all.
 
-    An absent ``signScale`` is **not** one of these --- it is scale 0,
-    which is how ``AskSize`` and ``BidSize`` arrive. This docstring said the
-    opposite, which was the behaviour at the time and was wrong; the
-    ``danger`` block on the streaming page has the quote that settled it ---
-    an ``Ask`` of ``{"lo": "13720000", "signScale": 12}`` beside an
-    ``AskSize`` of ``{"lo": "19200"}`` in one quote.
+    An absent ``signScale`` is **not** one of these --- it is scale 0, which
+    is how ``AskSize`` and ``BidSize`` arrive: one quote carries an ``Ask``
+    of ``{"lo": "13720000", "signScale": 12}`` beside an ``AskSize`` of
+    ``{"lo": "19200"}``.
 
     The scale is what turns the mantissa into a number, so guessing one is a
     silent wrong answer by construction --- and the guess that suggests itself,
@@ -197,7 +195,11 @@ def _safe_repr(value):
     """
     try:
         text = repr(value)
-    except ValueError:
+    except Exception:
+        # Not just ValueError. `json.loads` yields plain dicts, whose `repr`
+        # raises only the integer digit limit -- but `StreamJsonDecoder` is a
+        # public extension point, which is the same argument that made
+        # `relabel_message` handle a non-string key.
         return '<{} that cannot be formatted>'.format(type(value).__name__)
     return text if len(text) <= 200 else text[:197] + '...'
 
@@ -364,9 +366,15 @@ def decode_decimal(value):
                                   key that is not one of ``lo``, ``mid``,
                                   ``hi`` and ``signScale`` --- see below. An
                                   object carrying *none* of the four is
-                                  refused with a different message, because
-                                  it is not one of these at all rather than a
-                                  changed one. An empty object is neither: it
+                                  refused with a different message, on the
+                                  assumption that a schema change keeps at
+                                  least one of the four names. If Schwab ever
+                                  renames all of them at once that message
+                                  will read as a caller's mistake, and only
+                                  the exception will say so --- there is no
+                                  once-per-key line for that case.
+
+                                  An empty object is neither: it
                                   is the omit-everything spelling of zero,
                                   and decodes as one. Each of these is
                                   refused rather than computed with, because

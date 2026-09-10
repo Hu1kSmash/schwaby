@@ -8849,6 +8849,59 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 max(len(i) for _, i in streaming._reported_fields), 64)
         streaming._reported_fields.clear()
 
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_every_unknown_service_is_named_at_least_once(
+            self, ws_connect):
+        """`_absorb` coalesces across names; this does not.
+
+        Its counter is keyed on a fixed `what` string -- deliberately, so a
+        value the venue chooses cannot grow the dict -- which means every
+        unknown service shares one counter and the first-three-then-powers-
+        of-ten rule applies across names. Measured before this: five new
+        services on one connection and the fourth was never named, in no log
+        line and no callback, over a thousand frames.
+
+        That was the wrong way round. A dropped service is a worse event than
+        an unnamed field, and the field path already guarantees a line per
+        distinct id.
+        """
+        streaming._reported_fields.clear()
+        socket = await self.login_and_get_socket(ws_connect)
+        names = ['SVC_%s' % c for c in 'ABCDE']
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            for name in names:
+                socket.recv.side_effect = [json.dumps({'data': [{
+                    'service': name, 'command': 'SUBS',
+                    'content': [{'key': 'F'}]}]})] * 4
+                for _ in range(4):
+                    await self.client.handle_message()
+        blob = '\n'.join(got.output)
+        for name in names:
+            with self.subTest(service=name):
+                self.assertIn(name, blob)
+        streaming._reported_fields.clear()
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_every_unknown_channel_is_named_at_least_once(
+            self, ws_connect):
+        streaming._reported_fields.clear()
+        socket = await self.login_and_get_socket(ws_connect)
+        names = ['chan%s' % c for c in 'ABCDE']
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            for name in names:
+                frame = self.streaming_entry('LEVELONE_EQUITIES', 'SUBS')
+                frame[name] = [{'x': 1}]
+                socket.recv.side_effect = [json.dumps(frame)] * 4
+                for _ in range(4):
+                    await self.client.handle_message()
+        blob = '\n'.join(got.output)
+        for name in names:
+            with self.subTest(channel=name):
+                self.assertIn(name, blob)
+        streaming._reported_fields.clear()
+
     # ---- Something Schwab added that this version cannot route ----------
     #
     # A field it does not recognise still reaches a handler. A *service* it

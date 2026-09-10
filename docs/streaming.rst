@@ -282,10 +282,11 @@ an error handler:
 
 It is called for four things: a stream handler which raised, a late rejection of
 a request nobody was waiting on, a connection which failed to close after logout,
-and a message this client cannot use at all — a frame which is not an object, an
-element of ``data`` or ``notify`` which is not an object, a ``service`` which
-is not a name, a ``service`` which *is* a name this version does not know, or a
-frame carrying a whole channel it does not read. That last group arrives as ``UnusableMessage``, whose ``message``
+and a message this client cannot use at all. :meth:`add_error_handler
+<schwaby.streaming.StreamClient.add_error_handler>` below enumerates that last
+group; it is deliberately the only place that does, because this page and two
+docstrings each carried their own copy and only one of the three was widened
+when the list grew. That last group arrives as ``UnusableMessage``, whose ``message``
 attribute is the offending value exactly as it arrived, alongside ``cause`` (the
 exception which made it unusable, where there was one) and ``count``/``total``
 as integers.
@@ -421,6 +422,16 @@ Data Field Relabeling
 
 Under the hood, this API returns JSON objects with numerical key representing
 labels:
+
+.. note::
+
+  The example below relabels every key, because every id in it is one this
+  version knows. **An id it does not know stays numeric** and is delivered to
+  your handler as it arrived --- see :ref:`unknown field ids
+  <unknown_field_ids>`. If you are building a replay fixture or a test double
+  for this library, copy the shape a handler *receives* rather than the wire
+  format: a double that emits raw numeric keys rehearses against something
+  ``schwaby`` never produces.
 
 .. code-block:: python
 
@@ -1154,10 +1165,12 @@ it refuses costs that field; decoded in one ``try``, it costs the message:
               continue
           try:
               out[name] = decode_decimal(message[name])
-          except UnusableDecimalScale:
-              # Logged, not swallowed: schwaby has already said once what it
-              # did not recognise, and this is the field it cost you.
-              logging.warning('could not decode %s', name)
+          except UnusableDecimalScale as exc:
+              # Keep the exception. It carries the specific complaint and a
+              # bounded repr of the value -- a corrupt member and an
+              # unrecognised key are both refusals, and only one of them
+              # also writes a line of its own.
+              logging.warning('could not decode %s: %s', name, exc)
       return out
 
 ``UnusableDecimalScale`` is both a :class:`~schwaby.utils.SchwabError` and a
@@ -1300,6 +1313,8 @@ nowhere official.
   price on a funded account, it is not a close call. If you see it, please
   `open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__ with the
   field.
+
+.. _unknown_field_ids:
 
 .. note::
 
