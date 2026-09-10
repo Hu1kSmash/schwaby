@@ -1358,7 +1358,7 @@ class TokenFileAgeTest(unittest.TestCase):
             with self.subTest(text=text):
                 self.write(text)
                 with self.assertRaisesRegex(ValueError,
-                                            'does not hold a JSON object'):
+                                            'not a JSON object'):
                     auth.token_file_age(self.token_path)
 
     @no_duplicates
@@ -1367,6 +1367,59 @@ class TokenFileAgeTest(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             auth.token_file_age(self.token_path)
+
+    @no_duplicates
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    def test_the_age_agrees_with_a_client_built_from_the_same_file(self):
+        self.write(json.dumps({
+                'creation_timestamp': TOKEN_CREATION_TIMESTAMP,
+                'token': {'access_token': 'a', 'refresh_token': 'r',
+                          'token_type': 'Bearer',
+                          'expires_at': MOCK_NOW + 1800}}))
+        client = auth.client_from_token_file(
+                self.token_path, API_KEY, APP_SECRET)
+
+        self.assertEqual(MOCK_NOW - TOKEN_CREATION_TIMESTAMP,
+                         client.token_age())
+        self.assertEqual(client.token_age(),
+                         auth.token_file_age(self.token_path))
+
+    @no_duplicates
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    def test_a_token_mapping_that_is_not_a_dict_is_accepted(self):
+        # A token_read_func may return any mapping; 4.4.2 built a client from
+        # these.
+        import collections
+        import types
+        raw = {'token': {'access_token': 'a'},
+               'creation_timestamp': TOKEN_CREATION_TIMESTAMP}
+        for token in (collections.UserDict(raw), types.MappingProxyType(raw),
+                      collections.OrderedDict(raw)):
+            with self.subTest(token=type(token).__name__):
+                metadata = auth.TokenMetadata.from_loaded_token(token, None)
+                self.assertEqual(MOCK_NOW - TOKEN_CREATION_TIMESTAMP,
+                                 metadata.token_age())
+
+    @no_duplicates
+    def test_a_malformed_token_raises_valueerror_and_nothing_else(self):
+        # A monitor catching the documented ValueError must not crash on a
+        # KeyError or TypeError, and the client refuses the same files.
+        for text, message in (
+                ('{"creation_timestamp": 1613745000}', 'no "token" entry'),
+                ('{"creation_timestamp": "1613745000", "token": {}}',
+                 'not a number'),
+                ('{"creation_timestamp": null, "token": {}}', 'not a number'),
+                ('{"creation_timestamp": true, "token": {}}', 'not a number'),
+                ('{"creation_timestamp": NaN, "token": {}}', 'not a number'),
+                ('{"creation_timestamp": 1e400, "token": {}}',
+                 'not a number')):
+            with self.subTest(text=text):
+                self.write(text)
+                with self.assertRaisesRegex(ValueError, message):
+                    auth.token_file_age(self.token_path)
+                with self.assertRaisesRegex(ValueError, message):
+                    auth.client_from_token_file(
+                            self.token_path, API_KEY, APP_SECRET)
 
     @no_duplicates
     def test_a_missing_file_raises_oserror(self):

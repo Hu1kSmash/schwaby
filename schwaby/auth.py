@@ -3,11 +3,13 @@ from authlib.integrations.httpx_client import AsyncOAuth2Client, OAuth2Client
 from authlib.oauth2.rfc6749 import OAuth2Token
 
 import collections
+import collections.abc
 import contextlib
 import httpx2
 import importlib
 import json
 import logging
+import math
 import os
 import queue
 import sys
@@ -345,22 +347,41 @@ class TokenMetadata:
         invent for it -- guessing would either refuse a usable token or keep
         presenting a dead one.
         '''
-        # json.load returns whatever the file held. A list, a string or null
-        # would otherwise fail below with an error about indexing, which says
-        # nothing about the file.
-        if not isinstance(token, dict):
+        # json.load returns whatever the file held, and a token_read_func
+        # may hand back any mapping. Anything else -- a list, a string, null
+        # -- would fail below with an error about indexing, which says nothing
+        # about the token.
+        if not isinstance(token, collections.abc.Mapping):
             raise ValueError(
-                    'The token file does not hold a JSON object, so it is '
-                    'not a token this library wrote. Please delete it and '
-                    'create a new one.')
+                    'The token is not a JSON object, so it is not a token '
+                    'this library wrote. If it came from a token file, delete '
+                    'the file and create a new one.')
         if 'creation_timestamp' not in token:
             raise ValueError(
                     'WARNING: The token format has changed since this token '+
                     'was created. Please delete it and create a new one.')
 
+        # The creation time decides how much of the seven days is left, so a
+        # value that is not a number is refused here, rather than failing
+        # later inside token_age() with an error about subtraction.
+        creation_timestamp = token['creation_timestamp']
+        if (isinstance(creation_timestamp, bool)
+                or not isinstance(creation_timestamp, (int, float))
+                or (isinstance(creation_timestamp, float)
+                    and not math.isfinite(creation_timestamp))):
+            raise ValueError(
+                    'The token\'s creation_timestamp is not a number, so its '
+                    'age cannot be known. Delete the token file and create a '
+                    'new one.')
+        if 'token' not in token:
+            raise ValueError(
+                    'The token has no "token" entry, so it is not a token '
+                    'this library wrote. Delete the token file and create a '
+                    'new one.')
+
         return TokenMetadata(
                 token['token'],
-                token['creation_timestamp'],
+                creation_timestamp,
                 unwrapped_token_write_func)
 
     def token_age(self):
@@ -408,8 +429,10 @@ def token_file_age(token_path):
 
     :param token_path: Path to a token file this library wrote.
     :raises ValueError: The file is not a token in the format this library
-                        writes: not JSON, not a JSON object, or written
-                        before the creation timestamp was stored.
+                        writes: not JSON, not a JSON object, written before
+                        the creation timestamp was stored, without a
+                        ``token`` entry, or with a creation timestamp that is
+                        not a number.
     :raises OSError: The file cannot be read.
     '''
     return TokenMetadata.from_loaded_token(
