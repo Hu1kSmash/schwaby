@@ -714,3 +714,68 @@ def decode_decimal(value):
     # `EstimatedPrincipalAmount` arrives on.
     return decimal.Decimal('{}{}E-{}'.format(
             '-' if scale % 2 else '', mantissa, scale // 2))
+
+
+class UnparsableMessageData(SchwabError, ValueError):
+    '''
+    Raised by :func:`parse_message_data` when ``MESSAGE_DATA`` starts like a
+    JSON object --- its first character other than whitespace is ``{`` --- but
+    is not one.
+
+    A truncated or corrupt payload is not a notice, and returning it as text
+    would let it read as one. The message does not repeat the payload, which
+    carries account data.
+    '''
+
+
+def parse_message_data(value):
+    '''
+    Returns an ``ACCT_ACTIVITY`` content item's ``MESSAGE_DATA`` as an object.
+
+    ``MESSAGE_DATA`` is a JSON string rather than an object, so it has to be
+    parsed a second time, and Schwab also sends it empty, on the ``SUBSCRIBED``
+    ack, and as plain prose, such as ``"Feature not supported"``. This
+    returns:
+
+    * the parsed ``dict``, when it is a JSON object;
+    * ``None``, when it is empty or only whitespace;
+    * the text itself, for anything else. That is a notice, and a notice never
+      raises.
+
+    A notice's content item carries an empty ``MESSAGE_TYPE``, so a handler
+    that dispatches on the type has to expect one here.
+
+    A ``dict`` is returned as it is, so calling this on a value that has
+    already been parsed is harmless.
+
+    :raises UnparsableMessageData: The text starts, after any whitespace, with
+                                   ``{`` but is not a JSON object.
+    :raises TypeError: ``value`` is neither a ``str`` nor a ``dict``.
+    '''
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        raise TypeError(
+                'MESSAGE_DATA must be a str or a dict, not a {}'.format(
+                    _type_name(value)))
+
+    # A plain str: a decoder's subclass could otherwise decide its own strip or
+    # startswith.
+    text = str.__str__(value)
+    stripped = text.strip()
+    if not stripped:
+        return None
+    if not stripped.startswith('{'):
+        return text
+
+    try:
+        parsed = json.loads(stripped)
+    except (ValueError, RecursionError):
+        # ValueError covers JSONDecodeError and UnicodeDecodeError; a payload
+        # nested past the interpreter's depth raises RecursionError instead.
+        parsed = None
+    if not isinstance(parsed, dict):
+        raise UnparsableMessageData(
+                'MESSAGE_DATA starts like a JSON object but is not one ({} '
+                'characters)'.format(len(text)))
+    return parsed

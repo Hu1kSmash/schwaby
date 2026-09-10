@@ -745,6 +745,7 @@ class UtilsTest(unittest.TestCase):
             'RedirectServerExitedError': ('m',),
             'InvalidOrderException': ('m',),
             'UnusableDecimalScale': ('m',),
+            'UnparsableMessageData': ('m',),
         }
 
         # Seeded with `schwaby` for the same reason as the walk above: an

@@ -1227,3 +1227,65 @@ class DecodeDecimalTest(unittest.TestCase):
         with self.assertRaises(UnusableDecimalScale) as caught:
             decode_decimal(10 ** 5000)
         self.assertLess(len(str(caught.exception)), 400)
+
+
+from schwaby.contrib.util import UnparsableMessageData, parse_message_data
+
+
+class ParseMessageDataTest(unittest.TestCase):
+
+    @no_duplicates
+    def test_a_json_object_is_parsed(self):
+        self.assertEqual({'EventType': 'OrderCreated'},
+                         parse_message_data('{"EventType": "OrderCreated"}'))
+        self.assertEqual({'a': 1}, parse_message_data('  \n{"a": 1}\n '))
+
+    @no_duplicates
+    def test_the_subscribed_ack_is_none(self):
+        for value in ('', '   ', '\n\t'):
+            with self.subTest(value=value):
+                self.assertIsNone(parse_message_data(value))
+
+    @no_duplicates
+    def test_a_notice_is_returned_as_its_text_and_never_raises(self):
+        for value in ('Feature not supported', '[1, 2]', '"quoted"', '7',
+                      'notice with a { later on'):
+            with self.subTest(value=value):
+                self.assertEqual(value, parse_message_data(value))
+                self.assertIs(str, type(parse_message_data(value)))
+
+    @no_duplicates
+    def test_a_dict_is_returned_unchanged(self):
+        parsed = {'EventType': 'OrderCreated'}
+        self.assertIs(parsed, parse_message_data(parsed))
+        once = parse_message_data('{"a": 1}')
+        self.assertEqual(once, parse_message_data(once))
+
+    @no_duplicates
+    def test_text_that_starts_like_an_object_but_is_not_one_raises(self):
+        deep = '{"a":' * 200000 + '1' + '}' * 200000
+        for value in ('{', '{"a": 1', '{"a": 1} trailing', '  {nope}',
+                      '{"AccountNumber": "12345678"', deep):
+            with self.subTest(value=value[:40]):
+                with self.assertRaises(UnparsableMessageData) as cm:
+                    parse_message_data(value)
+                self.assertIsInstance(cm.exception, SchwabError)
+                self.assertIsInstance(cm.exception, ValueError)
+                self.assertNotIn('12345678', str(cm.exception))
+
+    @no_duplicates
+    def test_a_str_subclass_is_read_as_its_text(self):
+        class Text(str):
+            def strip(self, *args):
+                return ''
+
+        self.assertEqual('Feature not supported',
+                         parse_message_data(Text('Feature not supported')))
+
+    @no_duplicates
+    def test_anything_else_is_refused(self):
+        for value in (None, b'{"a": 1}', 7, ['{"a": 1}']):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(TypeError,
+                                            'must be a str or a dict'):
+                    parse_message_data(value)

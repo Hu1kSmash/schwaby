@@ -1555,6 +1555,12 @@ malformed message and should not be reported as one.
   across about three months of one production feed, most often around 00:30
   Eastern, and also around 18:00 and 21:00.
 
+``parse_message_data`` does that second parse and keeps the three cases apart:
+
+.. autofunction:: schwaby.contrib.util.parse_message_data
+
+.. autoclass:: schwaby.contrib.util.UnparsableMessageData
+
 .. warning::
 
   **A re-subscribe can replay recent activity in a stripped shape.**
