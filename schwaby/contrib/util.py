@@ -717,11 +717,16 @@ def decode_decimal(value):
             '-' if scale % 2 else '', mantissa, scale // 2))
 
 
+#: Unicode categories skipped before a ``{`` in ``MESSAGE_DATA``: format and
+#: control characters, and space, line and paragraph separators.
+_SKIPPED_BEFORE_OBJECT = frozenset(('Cf', 'Cc', 'Zs', 'Zl', 'Zp'))
+
+
 class UnparsableMessageData(SchwabError, ValueError):
     '''
     Raised by :func:`parse_message_data` when ``MESSAGE_DATA`` starts like a
-    JSON object --- its first character other than whitespace is ``{`` --- but
-    is not one.
+    JSON object --- its first character other than whitespace, a format or
+    control character, or a separator is ``{`` --- but is not one.
 
     A truncated or corrupt payload is not a notice, and returning it as text
     would let it read as one. The message does not repeat the payload, which
@@ -750,8 +755,15 @@ def parse_message_data(value):
     A ``dict`` is returned as it is, so calling this on a value that has
     already been parsed is harmless.
 
-    :raises UnparsableMessageData: The text starts, after any whitespace, with
-                                   ``{`` but is not a JSON object.
+    Format and control characters and separators in front of the ``{`` --- a
+    byte order mark, a zero-width space --- are skipped, so a payload behind
+    one is still read as a payload. Other characters are not skipped, even
+    one that renders as nothing, such as a combining mark.
+
+    :raises UnparsableMessageData: The text starts, after any whitespace,
+                                   format or control characters and
+                                   separators, with ``{`` but is not a JSON
+                                   object.
     :raises TypeError: ``value`` is neither a ``str`` nor a ``dict``.
     '''
     if isinstance(value, dict):
@@ -767,11 +779,13 @@ def parse_message_data(value):
     stripped = text.strip()
     if not stripped:
         return None
-    # Invisible characters str.strip leaves in place -- a byte order mark, a
-    # zero-width space, a NUL -- must not turn a payload into a notice.
+    # Format and control characters str.strip leaves in place -- a byte order
+    # mark, a zero-width space, a NUL -- and any separator after one of them
+    # must not turn a payload into a notice.
     start = 0
+    skipped = _SKIPPED_BEFORE_OBJECT
     while (start < len(stripped)
-           and unicodedata.category(stripped[start]) in ('Cf', 'Cc', 'Zs')):
+           and unicodedata.category(stripped[start]) in skipped):
         start += 1
     if not stripped.startswith('{', start):
         return text

@@ -1275,7 +1275,8 @@ class ParseMessageDataTest(unittest.TestCase):
 
     @no_duplicates
     def test_invisible_characters_before_an_object_do_not_make_a_notice(self):
-        for prefix in ('\ufeff', '\u200b', '\u2060', '\u200e', '\x00'):
+        for prefix in ('\ufeff', '\u200b', '\u2060', '\u200e', '\x00',
+                       '\ufeff\u3000', '\ufeff\u2028', '\ufeff\u2029'):
             with self.subTest(prefix=prefix):
                 self.assertEqual({'a': 1},
                                  parse_message_data(prefix + '{"a": 1}'))
