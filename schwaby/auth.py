@@ -166,27 +166,55 @@ def __sweep_stale_token_temp_files(directory):
             pass
 
 
+def _positive_seconds(value):
+    '''Whether ``expires_in`` is a count of seconds authlib can turn into an
+    expiry. Bounded, because authlib adds it to the clock; the bound also
+    refuses ``inf`` and ``nan``.'''
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return 0 < value <= 10 ** 9
+    if isinstance(value, float):
+        return 1 <= value <= 10 ** 9
+    if isinstance(value, str):
+        return (value.isascii() and value.isdigit() and len(value) <= 10
+                and 0 < int(value) <= 10 ** 9)
+    return False
+
+
 def _is_usable_token(token):
     '''Whether a token response can replace the stored token.
 
-    Only what the session needs to use a token at all is required: an access
-    token, and the ``bearer`` type the session knows how to send. A stricter
-    test would refuse a real token over a field Schwab might omit, and a
-    refused refresh stops an application that had a working token a moment
-    ago.
+    What the session needs to go on using a token: a string access token, the
+    ``bearer`` type it knows how to send, and an ``expires_in`` it can turn
+    into an expiry -- without one, or with ``0``, the token is never refreshed
+    and every call fails once it lapses. A ``refresh_token`` may be absent,
+    and authlib then keeps the stored one; present, it replaces the stored
+    one, so an empty value would erase a refresh token that still works.
+
+    Nothing else is required. A stricter test would refuse a real token over
+    a field Schwab might omit, and a refused refresh stops an application that
+    had a working token a moment ago.
     '''
     try:
         access_token = token.get('access_token')
         token_type = token.get('token_type')
-        return (isinstance(access_token, str) and bool(access_token)
+        if not (isinstance(access_token, str) and access_token
                 and isinstance(token_type, str)
-                and token_type.lower() == 'bearer')
+                and token_type.lower() == 'bearer'):
+            return False
+        if not _positive_seconds(token.get('expires_in')):
+            return False
+        if 'refresh_token' in token:
+            refresh_token = token['refresh_token']
+            return isinstance(refresh_token, str) and bool(refresh_token)
+        return True
     except Exception:
         return False
 
 
 def _refuse_unusable_token_response(response):
-    '''Refuses a refresh response that is not a usable token, before it is
+    '''Refuses a token response that is not a usable token, before it is
     kept.
 
     authlib takes any JSON object without an ``error`` key as the new token,
@@ -201,6 +229,9 @@ def _refuse_unusable_token_response(response):
     server error and a body that is not JSON are left to authlib, which raises
     on both without storing anything, and so is a JSON object carrying
     ``error``, which authlib reports as the rejection it is.
+
+    Also registered as ``access_token_response`` on the client that exchanges
+    a login's code, whose token was written the same way.
     '''
     if response.status_code >= 500:
         return response
@@ -991,6 +1022,12 @@ def client_from_received_url(
     #      OAuth2Client created in get_auth_context cannot be passed around. 
     #      Instead, we reconstruct it here.
     oauth = OAuth2Client(api_key, redirect_uri=auth_context.callback_url)
+    # The token a login exchanges its code for is written just below, so it
+    # gets the check a refresh does. Measured: {"message": "Unauthorized"} was
+    # written as the token, and every call after it failed without contacting
+    # Schwab, restarts included.
+    oauth.register_compliance_hook(
+            'access_token_response', _refuse_unusable_token_response)
 
     token = oauth.fetch_token(
         TOKEN_ENDPOINT,

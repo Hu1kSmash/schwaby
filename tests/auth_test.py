@@ -735,8 +735,7 @@ class ClientFromAccessFunctionsTest(unittest.TestCase):
 
 
     def setUp(self):
-        # A usable token: the write callback refuses one without an access
-        # token and its type.
+        # Shaped like a real token, for the tests that write it.
         self.raw_token = {'access_token': 'yes', 'token_type': 'Bearer'}
         self.token = {
                 'token': self.raw_token,
@@ -1684,16 +1683,31 @@ class UsableTokenTest(unittest.TestCase):
 
     @no_duplicates
     def test_a_token_needs_an_access_token_and_its_type(self):
-        for token in ({'access_token': 'a', 'token_type': 'Bearer'},
-                      {'access_token': 'a', 'token_type': 'bearer'}):
+        usable = {'access_token': 'a', 'token_type': 'Bearer',
+                  'expires_in': 1800}
+        for token in (usable, dict(usable, token_type='bearer'),
+                      dict(usable, expires_in='1800'),
+                      dict(usable, expires_in=1800.0),
+                      dict(usable, refresh_token='r')):
             with self.subTest(usable=token):
                 self.assertTrue(auth._is_usable_token(token))
-        for token in ({'message': 'Unauthorized'}, {'access_token': 'a'},
-                      {'token_type': 'Bearer'},
-                      {'access_token': '', 'token_type': 'Bearer'},
-                      {'access_token': 'a', 'token_type': 'mac'},
-                      {'access_token': ['a'], 'token_type': 'Bearer'},
-                      {'access_token': 'a', 'token_type': ['Bearer']},
+        without_expiry = dict(usable)
+        del without_expiry['expires_in']
+        for token in ({'message': 'Unauthorized'},
+                      dict(usable, access_token=None),
+                      dict(usable, access_token=''),
+                      dict(usable, access_token=['a']),
+                      dict(usable, token_type=None),
+                      dict(usable, token_type='mac'),
+                      dict(usable, token_type=['Bearer']),
+                      without_expiry,
+                      dict(usable, expires_in=0),
+                      dict(usable, expires_in=True),
+                      dict(usable, expires_in='abc'),
+                      dict(usable, expires_in=float('inf')),
+                      dict(usable, expires_in=10 ** 10),
+                      dict(usable, refresh_token=None),
+                      dict(usable, refresh_token=''),
                       None, [], 'token'):
             with self.subTest(token=token):
                 self.assertFalse(auth._is_usable_token(token))

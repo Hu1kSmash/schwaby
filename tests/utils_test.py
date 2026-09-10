@@ -140,9 +140,17 @@ class HTTPStatusErrorTest(unittest.TestCase):
         # raises, and the next one refreshes again and recovers once the
         # endpoint does.
         from schwaby.utils import TokenRefreshError
+        usable = {'access_token': 'NEW', 'token_type': 'Bearer',
+                  'expires_in': 1800}
         for body in ({'message': 'Unauthorized'}, ['a'], [], 'x', '', None, 7,
-                     {'access_token': 'NEW', 'token_type': 'mac'},
-                     {'access_token': 'NEW', 'token_type': ['Bearer']}):
+                     dict(usable, token_type='mac'),
+                     dict(usable, token_type=['Bearer']),
+                     dict(usable, refresh_token=None),
+                     dict(usable, refresh_token=''),
+                     {'access_token': 'NEW', 'token_type': 'Bearer'},
+                     dict(usable, expires_in=0),
+                     dict(usable, expires_in='abc'),
+                     dict(usable, expires_in=float('inf'))):
             with self.subTest(body=body):
                 answers = [(401, body), (200, self.GOOD_TOKEN)]
                 writes = []
@@ -157,6 +165,90 @@ class HTTPStatusErrorTest(unittest.TestCase):
                 self.assertEqual(['/v1/oauth/token', '/v1/oauth/token',
                                   '/marketdata/v1/F/quotes'], requests)
                 self.assertEqual('NEW', writes[0]['token']['access_token'])
+
+    @no_duplicates
+    def test_a_server_error_with_a_json_body_is_still_a_server_error(self):
+        # The pre-parse check leaves a 5xx to authlib whatever its body. The
+        # empty 503 above passes through the not-JSON branch anyway, so it
+        # proved nothing about this one.
+        client, requests = self._refreshing_client(
+                lambda request: self._json_response(
+                    503, {'message': 'Service Unavailable'}, request))
+        with self.assertRaises(HTTPStatusError):
+            client.get_quote('F')
+        self.assertEqual(['/v1/oauth/token'], requests)
+
+    @no_duplicates
+    def test_a_login_does_not_store_a_token_that_is_not_usable(self):
+        # The token a login exchanges its code for was written unchecked:
+        # {"message": "Unauthorized"} became the token file, and every call
+        # after it failed without contacting Schwab.
+        import httpx2
+        from unittest.mock import patch
+        from authlib.integrations.base_client.errors import OAuthError
+        from authlib.integrations.httpx_client import OAuth2Client
+        from schwaby import auth
+        context = auth.AuthContext('https://127.0.0.1:8182',
+                                   'https://example.invalid/authorize',
+                                   'state')
+        request = httpx2.Request('POST',
+                                 'https://api.schwabapi.com/v1/oauth/token')
+
+        def log_in(body, writes):
+            with patch.object(OAuth2Client, 'post',
+                              return_value=self._json_response(
+                                  200, body, request)):
+                return auth.client_from_received_url(
+                        'api-key', 'app-secret', context,
+                        'https://127.0.0.1:8182/?code=c&state=state',
+                        lambda written, *args, **kwargs: writes.append(
+                            written))
+
+        writes = []
+        with self.assertRaises(OAuthError):
+            log_in({'message': 'Unauthorized'}, writes)
+        self.assertEqual([], writes)
+        # Positive control: a usable token logs in and is written once.
+        log_in(dict(self.GOOD_TOKEN), writes)
+        self.assertEqual(1, len(writes))
+        self.assertEqual('NEW', writes[0]['token']['access_token'])
+
+    @no_duplicates
+    def test_a_stored_token_that_cannot_be_sent_needs_a_new_login(self):
+        # authlib raises UnsupportedTokenTypeError locally, before any
+        # request, when the stored token has no access token of a type it can
+        # send -- a token file damaged before refreshes were checked, say.
+        # Retrying never helps, so it says to log in. Schwab's own
+        # unsupported_token_type rejection is a different class and stays
+        # retryable; one has been seen to recover.
+        import httpx2
+        from schwaby.auth import client_from_access_functions
+        from schwaby.utils import TokenRefreshError
+        requests = []
+
+        def handler(request):
+            requests.append(request.url.path)
+            return httpx2.Response(200, json={}, request=request)
+
+        damaged = {'message': 'Unauthorized', 'refresh_token': 'r'}
+        client = client_from_access_functions(
+                'api-key', 'app-secret',
+                lambda: {'creation_timestamp': 9999999999, 'token': damaged},
+                lambda *args, **kwargs: None)
+        client.session._transport = httpx2.MockTransport(handler)
+        client.session._mounts = {}
+        with self.assertRaises(TokenRefreshError) as caught:
+            client.get_quote('F')
+        self.assertTrue(caught.exception.refresh_token_invalid)
+        self.assertEqual([], requests)
+
+        client, _ = self._refreshing_client(
+                lambda request: self._json_response(
+                    400, {'error': 'unsupported_token_type',
+                          'error_description': '400 Bad Request'}, request))
+        with self.assertRaises(TokenRefreshError) as caught:
+            client.get_quote('F')
+        self.assertFalse(caught.exception.refresh_token_invalid)
 
     @no_duplicates
     def test_the_async_client_does_not_store_a_bad_refresh_response(self):
