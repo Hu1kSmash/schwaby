@@ -1347,8 +1347,8 @@ nowhere official.
   through :func:`add_error_handler
   <schwaby.streaming.StreamClient.add_error_handler>`. **Every distinct
   service or channel name is named at least once, in both** --- up to the
-  first 64 of them on a client, after which a line says the cap is reached
-  --- and everything after that first sighting is coalesced so a systematic change cannot become
+  first 64 of them on a client, after which the guarantee stops and a line
+  says so --- and everything after that first sighting is coalesced so a systematic change cannot become
   a log flood. The coalescing counts per *kind*, which is why the first
   sighting is guaranteed separately: without it a fourth new service arriving
   beside three others would never be reported at all.

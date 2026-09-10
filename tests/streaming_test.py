@@ -8971,6 +8971,81 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                     self.client._report_new_shape('service', 10 ** 5000))
 
     @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_an_unnameable_service_does_not_end_the_receive_loop(
+            self, ws_connect):
+        # The end-to-end half, which the direct call above cannot show: the
+        # loop survives and the good element in the same frame still reaches
+        # its handler. Its channel sibling asserted this; this one did not.
+        socket = await self.login_and_get_socket(ws_connect)
+        delivered = []
+        self.client.add_level_one_equity_handler(delivered.append)
+
+        class Unnameable:
+            def __str__(self):
+                raise RuntimeError('no name for you')
+
+            def __hash__(self):
+                return 11
+
+        class Decoder(streaming.StreamJsonDecoder):
+            def decode_json_string(self, raw):
+                frame = json.loads(raw)
+                frame['data'].append({'service': Unnameable(),
+                                      'command': 'SUBS', 'content': []})
+                return frame
+
+        self.client.set_json_decoder(Decoder())
+        socket.recv.side_effect = [json.dumps(
+                self.streaming_entry('LEVELONE_EQUITIES', 'SUBS'))]
+        await self.client.handle_message()
+
+        self.assertEqual(1, len(delivered))
+        self.assertEqual(1, self.client._absorbed)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_venue_text_cannot_forge_a_response_log_line(
+            self, ws_connect):
+        # Reachable with ordinary JSON, no custom decoder: a newline in a
+        # `service` on the orphan-response path went to the log through `%s`,
+        # forging a second line that reads as a real WARNING from this
+        # logger. `_absorb` a few lines away already used `%r`.
+        socket = await self.login_and_get_socket(ws_connect)
+        forged = 'OK\nWARNING:schwaby.streaming:Schwab rejected your order'
+        socket.recv.side_effect = [json.dumps({'response': [{
+            'service': forged, 'command': 'SUBS',
+            'content': {'code': 3, 'msg': 'FORGED'}}]})]
+        with self.assertLogs(streaming.get_logger(), level='INFO') as got:
+            await self.client.handle_message()
+        self.assertEqual(1, len(got.output))
+        self.assertNotIn('\nWARNING', got.output[0])
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_response_value_that_cannot_be_formatted_is_survivable(
+            self, ws_connect):
+        # A subscribe Schwab *accepted* raised a bare ValueError out of the
+        # message built for the late rejection beside it -- not a
+        # SchwabError, not absorbed, reported to no handler, from a request
+        # that had already succeeded.
+        socket = await self.login_and_get_socket(ws_connect)
+
+        class Decoder(streaming.StreamJsonDecoder):
+            def decode_json_string(self, raw):
+                return {'response': [{'service': 'X', 'command': 'SUBS',
+                                      'content': {'code': 10 ** 5000,
+                                                  'msg': 'm'}}]}
+
+        self.client.set_json_decoder(Decoder())
+        socket.recv.side_effect = ['{}']
+        with self.assertLogs(streaming.get_logger(), level='INFO') as got:
+            await self.client.handle_message()
+        # The line survives with its content, rather than logging swallowing
+        # a formatting failure and printing nothing useful.
+        self.assertIn('Received a response', '\n'.join(got.output))
+
+    @no_duplicates
     def test_the_field_cap_says_so_rather_than_going_quiet(self):
         # Going quiet at a cap is indistinguishable from nothing new
         # arriving, which is the one reading an operator must not be left to
@@ -9000,7 +9075,10 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         fields.relabel_message(raw, copy.deepcopy(raw))
         self.assertEqual(streaming._MAX_REPORTED_FIELDS,
                          len(streaming._reported_fields))
-        # Saturated on one side, untouched on the other.
+        # Saturated on one side, untouched on the other. Guaranteed by
+        # construction once the shapes set moved into `__init__`, so it is
+        # kept as a statement of intent and the real guard is below: a shape
+        # still reports with the field budget full.
         self.assertEqual(set(), self.client._reported_shapes)
         with self.assertLogs(streaming.get_logger(), level='WARNING'):
             self.assertTrue(

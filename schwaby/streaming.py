@@ -148,9 +148,29 @@ _reported_fields = set()
 #: field report is log-only, so process-level dedup is right for it -- the
 #: log is process-wide. This one drives `add_error_handler`, which is per
 #: client, so a second client in the same process has its own handlers and
-#: must hear about a dropped service for itself. Measured before this: it
-#: heard about three of five.
+#: must hear about a dropped service for itself. Measured before this, with
+#: one frame per name: a second client heard about three of five. The exact
+#: number depends on how the frames interleave -- four frames per name gives
+#: two of five -- because what leaks through is `_absorb`'s per-kind
+#: coalescing rather than anything about the names.
 _MAX_REPORTED_SHAPES = 64
+
+
+def _safe_value(value):
+    """`repr` of a venue-controlled value, bounded and unable to raise.
+
+    Pre-formatted rather than handed to `%r`, because `%r` itself raises on
+    an integer past `sys.get_int_max_str_digits()` -- and a logging failure
+    is swallowed, so the *content* of the line is lost rather than the line.
+    Quoted, because a bare `%s` on a name containing a newline forges a
+    second line indistinguishable from a real one; that is reachable with
+    ordinary JSON, no custom decoder required.
+    """
+    try:
+        text = repr(value)
+    except Exception:
+        text = '<{} that cannot be formatted>'.format(type(value).__name__)
+    return text if len(text) <= 200 else text[:197] + '...'
 
 
 def _safe_name(value):
@@ -760,8 +780,9 @@ class StreamClient(EnumEnforcer):
         if resp_code != 0:
             return UnexpectedResponseCode(
                 resp,
-                'unexpected response code: {}, msg is \'{}\''.format(
-                    resp_code, content.get('msg')))
+                'unexpected response code: {}, msg is {}'.format(
+                    _safe_value(resp_code),
+                    _safe_value(content.get('msg'))))
 
         return None
 
@@ -936,9 +957,13 @@ class StreamClient(EnumEnforcer):
         handler at all. Bounded: a first sighting happens at most
         `_MAX_REPORTED_SHAPES` times per client.
 
-        Per client, and not reset by `login` or `close`. A reconnect does not
-        re-report, because the handlers are the same ones that already heard;
-        a *different* client has different handlers and hears for itself.
+        Per client, and not reset by `login` or `close`, so a reconnect does
+        not emit this dedicated line again -- the handlers are the ones that
+        already heard. `_absorb`'s own counters *are* reset by `login`, so
+        the same unknown service still reaches the callback through ordinary
+        coalescing after a reconnect; what does not recur is the guarantee
+        that every distinct name gets through. A *different* client has
+        different handlers and hears for itself.
 
         The name goes through `_safe_name`: it is venue-controlled, `str()`
         of it can raise, and it is bounded because this set never shrinks.
@@ -1095,9 +1120,10 @@ class StreamClient(EnumEnforcer):
             # worked is routine and logs at INFO, a late rejection warns.
             log = self.logger.info if code == 0 else self.logger.warning
             log('Response frame carried an additional %s/%s response: code %s, '
-                'msg %r. It answers no request this client is waiting on.',
-                response.get('service'), response.get('command'),
-                code, content.get('msg'))
+                'msg %s. It answers no request this client is waiting on.',
+                _safe_value(response.get('service')),
+                _safe_value(response.get('command')),
+                _safe_value(code), _safe_value(content.get('msg')))
 
             # `is not None` as well, for the same reason as the orphan path: a
             # response with no code at all is neither a rejection nor a
@@ -1107,8 +1133,9 @@ class StreamClient(EnumEnforcer):
                         UnexpectedResponseCode(
                             frame,
                             'Schwab rejected a request which had already '
-                            'been abandoned: code {}, msg {!r}'.format(
-                                code, content.get('msg'))),
+                            'been abandoned: code {}, msg {}'.format(
+                                _safe_value(code),
+                                _safe_value(content.get('msg')))),
                         response.get('service'),
                         response))
 
@@ -1398,11 +1425,13 @@ class StreamClient(EnumEnforcer):
           object, an element of ``data`` or ``notify`` which is not an object,
           a ``service`` which is not a name, a channel or a ``response``
           whose value is not a list, an unparseable element of a
-          ``response``, a message which could not be relabeled --- the only
-          category that populates ``cause`` and ``service`` --- and, since
-          Schwab may add to this protocol at any time, a ``service`` which
-          *is* a name this version does not know, or a frame carrying a
-          whole channel it does not read. Those last two are messages this
+          ``response``, a response frame with no usable request id, a
+          message which could not be relabeled --- the only category that
+          populates ``cause``, though not the only one that populates
+          ``service`` --- and, since Schwab may add to this protocol at any
+          time, a ``service`` which *is* a name this version does not know,
+          or a frame carrying a whole channel it does not read. Those last
+          two populate ``service`` as well. Those last two are messages this
           client drops because Schwab added something rather than because
           anything is malformed, and they are the ones a consumer cannot see
           any other way: no handler of theirs fires for either. **Every distinct
@@ -1410,8 +1439,10 @@ class StreamClient(EnumEnforcer):
           to the first 64 of them on this client, which the coalescing below
           would otherwise prevent -- it counts per kind, so without that
           guarantee a fourth new service arriving beside three others would
-          never be reported at all. Past 64 a new name is reported nowhere,
-          and a line says so when the cap is reached. These arrive as
+          never be reported at all. Past 64 that guarantee stops: a further
+          name may still be reported, if `_absorb`'s own per-kind counter
+          happens to be low enough, but nothing promises it. A line says so
+          when the cap is reached. These arrive as
           :class:`UnusableMessage`, whose ``message`` is the offending value
           as it arrived --- except for an unread channel, where it is the
           sorted list of channel names, since what offends is which
@@ -1794,9 +1825,10 @@ class StreamClient(EnumEnforcer):
                 log = self.logger.info if code == 0 else self.logger.warning
 
                 log('Received a response to %s/%s with no request '
-                    'outstanding: code %s, msg \'%s\'. Ignoring it.',
-                    response.get('service'), response.get('command'),
-                    code, content.get('msg'))
+                    'outstanding: code %s, msg %s. Ignoring it.',
+                    _safe_value(response.get('service')),
+                    _safe_value(response.get('command')),
+                    _safe_value(code), _safe_value(content.get('msg')))
 
                 # A late rejection is reported, a late success is not. This is
                 # the third kind of absorbed failure: the request it answers
@@ -1822,8 +1854,9 @@ class StreamClient(EnumEnforcer):
                             UnexpectedResponseCode(
                                 msg,
                                 'Schwab rejected a request which had already '
-                                'been abandoned: code {}, msg {!r}'.format(
-                                    code, content.get('msg'))),
+                                'been abandoned: code {}, msg {}'.format(
+                                    _safe_value(code),
+                                    _safe_value(content.get('msg')))),
                             service=response.get('service'),
                             message=response)
             return
