@@ -911,8 +911,8 @@ The first frame arrived within 0.03 seconds of the ``SUBS`` acknowledgement
 in eleven of fourteen subscriptions. The interval that follows it is a
 partial cycle, so discard it before averaging anything.
 
-**Frequency ``0`` is what the REST endpoint returns.** A stream subscription
-at ``NASDAQ_VOLUME_0`` and a
+**Frequency** ``0`` **is what the REST endpoint returns.** A stream
+subscription at ``NASDAQ_VOLUME_0`` and a
 :meth:`~schwaby.client.Client.get_movers` call 70 seconds apart produced the
 same ten symbols in the same order. The other buckets shared only four to six
 of those ten. So :meth:`~schwaby.client.Client.get_movers` is not a different
@@ -1014,7 +1014,9 @@ id. Match the key exactly.
 appear only on ``OrderCreated``, where each order leg's ``Security`` block
 carries all three keys together. ``OrderCreated`` also carries a second
 ``Symbol`` in each leg's ``QuoteOnOrderAcceptance`` block, so a search by key
-name finds two. A lowercase ``symbol`` has never been seen.
+name finds two. ``ChangeCreated`` carries a ``QuoteOnOrderAcceptance``
+container too; whether it holds a ``Symbol`` has not been checked. A lowercase
+``symbol`` has never been seen.
 
 .. code-block:: python
 
@@ -1027,8 +1029,9 @@ to an instrument means joining on the order id --- and a symbol lookup there
 returns nothing rather than raising. The last three come from a small sample
 on a single account.
 
-Every capture behind these is an equity order. What these keys hold on an
-option order has not been observed.
+The symbol findings above come from equity captures. Option orders have been
+captured since --- see :ref:`price changes <account_activity_price_change>` ---
+but what these keys hold on one has not been observed.
 
 **Order statuses that end an order** are exported as
 :attr:`Client.Order.TERMINAL_STATUSES
@@ -1048,7 +1051,7 @@ on an option order. No equity order's replacement has been captured.
 ``EXPIRED`` is :ref:`Unconfirmed <confidence_tags>`: included by reading, and
 never captured.
 
-**``MESSAGE_TYPE`` tokens observed.** These are the tokens **as they appear on
+``MESSAGE_TYPE`` **tokens observed.** These are the tokens **as they appear on
 the wire**, and most of them are CamelCase. ``SUBSCRIBED`` is a genuine
 exception. A consumer comparing against an upper-case ``'ORDERCREATED'``
 matches nothing. Schwab documents this vocabulary nowhere at all; a search of
@@ -1077,8 +1080,8 @@ each a process receives may log once. That is expected; please `open an issue
 
 No other type is known from a captured frame. The absence of others from the
 captures is not evidence either way: the archive most of them come from records
-only fill-bearing and unexpected events, so a type that carries no fill would
-never have been recorded.
+only fill-bearing and unexpected pushes, so a type on a push that carried
+neither a fill nor anything unexpected would not have been recorded.
 
 **Match case-insensitively, and do not assume case is the only difference.**
 ``ORDERUROUT`` is not a case variant of ``OrderUROutCompleted`` but a truncation
@@ -1214,12 +1217,13 @@ it refuses costs that field; decoded in one ``try``, it costs the message:
 
 .. danger::
 
-  **The whole mantissa arrives in** ``lo``, **and it does not fit in 32
+  **The whole mantissa arrives in** ``lo``, **and it can be wider than 32
   bits.** A serialized .NET ``System.Decimal`` has a 96-bit mantissa, and the
   obvious reading of ``lo`` is the low 32 bits of it, with ``mid`` and ``hi``
   carrying the rest. That is not what Schwab sends. In 5,843 decimal objects
-  from a production ``ACCT_ACTIVITY`` archive, every one carried ``lo`` alone,
-  as a string of digits, and 129 of them were wider than 32 bits:
+  from a production ``ACCT_ACTIVITY`` archive, none carried ``mid`` or ``hi``,
+  and 129 carried a ``lo`` wider than 32 bits --- each a string of ten digits,
+  at ``signScale`` 12 or 13:
 
   .. code-block:: python
 
@@ -1232,9 +1236,9 @@ it refuses costs that field; decoded in one ``try``, it costs the message:
   ``EstimatedNetAmount`` on ``OrderCreated``. Read whole, every one of the 33
   fill principals equalled price times quantity from the same message. At
   ``signScale`` 12 anything from ``4294.967296`` up needs the extra width, so a
-  decoder holding ``lo`` to 32 bits loses most real fill principals --- loudly
-  if it refuses them, silently if it wraps them. This library refused them
-  until it was checked against that archive.
+  decoder holding ``lo`` to 32 bits loses any fill principal above roughly
+  $4,295 --- loudly if it refuses one, silently if it wraps it. This library
+  refused such values until it was checked against that archive.
 
   ``decode_decimal`` reads a lone ``lo`` as the whole mantissa, up to the 96
   bits the encoding allows. An object that does carry ``mid`` or ``hi`` is read
@@ -1245,10 +1249,12 @@ it refuses costs that field; decoded in one ``try``, it costs the message:
   please** `open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__
   **with the field.**
 
+.. _decimal_context:
+
 ``Decimal`` rather than a float, deliberately: these are money, and
-:meth:`set_price <schwaby.orders.generic.OrderBuilder.set_price>` has refused a
-float since 2.1.0 for the reason :ref:`price_strings` gives. A value decoded
-into a binary float cannot be fed back into a reprice without going through the
+:meth:`set_price <schwaby.orders.generic.OrderBuilder.set_price>` refuses a
+float for the reason :ref:`price_strings` gives. A value decoded into a binary
+float cannot be fed back into a reprice without going through the
 conversion this library exists to avoid, and accumulating one over a day's
 principal reintroduces exactly the error class that made limit prices a cent
 low. The value is built from a string, sign included, because **every
@@ -1403,16 +1409,17 @@ nowhere official.
   *are* understood still hold real data, and refusing the whole frame would
   turn an addition into an outage.
 
-**The sign is not the side --- except on** ``Mid``. Fill quantities and prices
-arrive positive, with an even ``signScale``; buy versus sell comes from
-``BuySellCode``. The odd branch exists so a genuinely negative field does not
+**The sign of a field is not a side.** Buy versus sell comes from
+``BuySellCode``. Prices and quantities arrived positive, with an even
+``signScale``; the odd branch exists so a genuinely negative field does not
 decode positive. Across that production archive only four fields were ever
 negative: ``EstimatedPrincipalAmount``, ``EstimatedPrincipalAmnt`` and
 ``EstimatedNetAmount``, negative on a buy because the cash goes out, and
-``Mid``. ``Bid``, ``Ask``, ``LimitPrice``, ``ExecutionPrice``,
-``PrincipalAmmount`` and every quantity were positive throughout. A consumer
-inferring direction from the sign of an amount is wrong in a way that looks
-entirely plausible.
+``Mid``, negative on a sell --- the opposite way round. ``Bid``, ``Ask``,
+``LimitPrice``, ``ExecutionPrice``, ``PrincipalAmmount`` and every quantity
+were positive throughout. Two fields whose signs followed the side in opposite
+directions are reason enough: do not infer direction from the sign of
+anything.
 
 .. danger::
 
@@ -1431,10 +1438,32 @@ entirely plausible.
   ``SchwabOrderID``, so the side correlation is measured on creation messages
   only.
 
-  If you want a mid price, take the magnitude, or compute ``(Bid + Ask) / 2``
-  from the same quote. Do not read the side from ``Mid`` either: a convention
-  that held on a sample and appears nowhere in Schwab's documentation is not
-  one to trade on.
+  If you want a mid price, take the magnitude with ``copy_abs()``, which
+  ignores the decimal context and is exact. ``abs()`` and ordinary arithmetic
+  do not: they apply the caller's context, as
+  :ref:`the decoder's construction <decimal_context>` explains. With
+  ``decimal.getcontext().prec = 6``, ``abs()`` turns a ``Mid`` of
+  ``-12.345678`` into ``12.3457``, while ``copy_abs()`` gives ``12.345678``.
+  To compute a mid from the same quote's ``Bid`` and ``Ask`` instead, do the
+  arithmetic under a context with enough precision:
+
+  .. code-block:: python
+
+    import decimal
+
+    from schwaby.contrib.util import decode_decimal
+
+    # `quote` is a parsed quote container, like the one shown above.
+    mid = decode_decimal(quote['Mid']).copy_abs()    # exact in any context
+
+    bid = decode_decimal(quote['Bid'])
+    ask = decode_decimal(quote['Ask'])
+    with decimal.localcontext() as ctx:
+        ctx.prec = 34
+        mid_from_quote = (bid + ask) / 2
+
+  Do not read the side from ``Mid`` either: a convention that held on a sample
+  and appears nowhere in Schwab's documentation is not one to trade on.
 
 **Timestamp and container fields arrive as** ``{}``, not ``null`` and not
 absent, where the populated form is ``{"DateTimeString": "..."}``. Seen on
@@ -1443,7 +1472,7 @@ absent, where the populated form is ``{"DateTimeString": "..."}``. Seen on
 capture. A truthiness check handles it; ``d['ExecutionTime']['DateTimeString']``
 does not.
 
-**``MESSAGE_DATA`` is a string, not an object** --- it has to be parsed a
+``MESSAGE_DATA`` **is a string, not an object** --- it has to be parsed a
 second time. It is the empty string on the ``SUBSCRIBED`` ack, which is not a
 malformed message and should not be reported as one.
 
@@ -1486,11 +1515,19 @@ malformed message and should not be reported as one.
 consumer ruling item-by-item makes its verdict depend on Schwab's ordering
 within the batch. Scan the whole batch before classifying any of it.
 
-All of the above was measured against a funded account, by placing an
-unfillable limit order and cancelling it --- except the batch ordering, which
-was recorded in production without the frame being retained and so is attested
-by a note rather than by bytes anyone can still produce. Schwab documents none
-of it.
+This section draws on several sources:
+
+- a deliberate place-and-cancel of an unfillable limit order on a funded
+  account;
+- a production archive of fill-bearing and unexpected pushes, which is where
+  the decimal and ``Mid`` counts come from;
+- option orders placed by hand whose prices were then changed, described
+  below;
+- for the batch ordering above, a note: it was recorded in production without
+  the frame being retained, so it is attested by a note rather than by bytes
+  anyone can still produce.
+
+Schwab documents none of it.
 
 .. _account_activity_price_change:
 
@@ -1519,8 +1556,12 @@ trade.
    --- or any type containing ``CANCEL`` --- as "this order is gone" concludes
    that a working order was cancelled while it goes on working under the new
    id, and nothing raises. The ``CancelRequestType`` on those items read
-   ``ClientCancel`` in every change, so that field does not separate a change
-   from a cancel.
+   ``ClientCancel`` in every change, and each ``ExecutionCreated`` on the
+   retired id carried ``ExecutionTransType`` ``UROut`` and ``CancelType``
+   ``ClientCancel`` --- the same pair as the cancel shown above, so
+   ``CancelType`` does not separate a change from a cancel. That cancel does
+   not show a ``CancelRequestType``, so whether that one differs has not been
+   compared.
 
    **REST does not connect them either.** :meth:`get_order
    <schwaby.client.Client.get_order>` read ``REPLACED`` on each of the five

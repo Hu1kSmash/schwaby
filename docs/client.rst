@@ -476,10 +476,20 @@ helper function <extract_order_id>`. Otherwise, see
   fault, which strands a leg that merely filled. Re-read the target order to
   tell them apart. Venue-observed.
 
-  **A replacement is a new order with a new ID.** Schwab cancels the original
-  and creates a fresh one, so anything tracking the old ID is now watching a
-  cancelled order --- and will conclude the position closed while the
+  **A replacement is a new order with a new ID.** The original stops working
+  and a fresh one takes its place, so anything tracking the old ID is watching
+  an order that has ended --- and will conclude the position closed while the
   replacement is still working.
+
+  That order does not necessarily read ``CANCELED``. :meth:`get_order
+  <schwaby.client.Client.get_order>` read ``REPLACED`` on each ID a
+  :ref:`price change <account_activity_price_change>` retired on an option
+  order --- five of five, on one order. Those changes were made by hand in
+  Schwab's own interface, not through this method, so whether a replacement
+  made here reads the same has not been checked. A check for ``CANCELED``
+  alone would miss ``REPLACED``; membership in
+  :attr:`Client.Order.TERMINAL_STATUSES
+  <schwaby.client.Client.Order.TERMINAL_STATUSES>` covers both.
 
   Getting the new ID is less settled than it looks. Schwab documents the
   ``Location`` header nowhere at all --- :meth:`Utils.extract_order_id
@@ -494,8 +504,9 @@ helper function <extract_order_id>`. Otherwise, see
     r = client.replace_order(account_hash, order_id, new_order_spec)
     r.raise_for_status()
 
-    # The ID in hand now refers to a cancelled order. Find the replacement
-    # rather than inferring it -- see the reconciliation recipe.
+    # The ID in hand now refers to an order that has stopped working, and
+    # its status may read REPLACED rather than CANCELED. Find the
+    # replacement rather than inferring it -- see the reconciliation recipe.
     order_id = None
 
   :ref:`reconciling` shows how to locate an order you have no ID for, which is

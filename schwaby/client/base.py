@@ -430,8 +430,9 @@ class BaseClient(EnumEnforcer):
         #: Schwab's documentation lists every status and never says which are
         #: terminal, so this is a reading rather than a contract. ``FILLED``,
         #: ``CANCELED`` and ``REJECTED`` have been observed ending an order,
-        #: and ``REPLACED`` ending each id a price change retired, on an
-        #: option order; no equity order's replacement has been captured.
+        #: and ``REPLACED`` ending each id a price change retired --- five of
+        #: five, on one option order; no equity order's replacement has been
+        #: captured.
         #: ``EXPIRED`` is :ref:`Unconfirmed <confidence_tags>`: included by
         #: reading, and never captured.
         #:
@@ -1349,7 +1350,7 @@ class BaseClient(EnumEnforcer):
           symbols appearing all session. That follows from ranking on
           cumulative session volume, which only grows. Polling this endpoint
           frequently gets you the same list.
-        * **``INDEX_ALL`` does not return indices.** It returns equities, it
+        * ``INDEX_ALL`` **does not return indices.** It returns equities, it
           is not the same set as ``EQUITY_ALL``, and none of its members
           appeared in the ``NYSE`` list at any point while eight or nine of
           ten appeared in ``NASDAQ``. What it actually selects is not

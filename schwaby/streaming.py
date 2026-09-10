@@ -1594,8 +1594,9 @@ class StreamClient(EnumEnforcer):
 
         * ``service`` is the stream service the failure belongs to, or ``None``
           where it has none -- the close failure, or a message which named no
-          service. **Do not discriminate on ``service`` and ``message`` both
-          being ``None``.** The close failure is the only report which leaves
+          service. **Do not discriminate on** ``service`` **and** ``message``
+          **both being** ``None``. The close failure is the only report
+          which leaves
           both unset by design, and every other site passes at least one:
           :class:`UnusableMessage` carries the containing frame and
           :class:`UnparsableMessage` carries the raw text. But that is a
