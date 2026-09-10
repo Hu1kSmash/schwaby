@@ -8828,6 +8828,27 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             fields.relabel_message(raw, copy.deepcopy(raw))
         streaming._reported_fields.clear()
 
+    @no_duplicates
+    def test_a_field_key_that_cannot_be_named_does_not_escape(self):
+        # A key is whatever the decoder produced, and `str()` of a wide
+        # integer raises past sys.get_int_max_str_digits(). Left where it is
+        # -- it cannot be a field id -- rather than taking the message down.
+        streaming._reported_fields.clear()
+        fields = streaming.StreamClient.LevelOneEquityFields
+        raw = {'key': 'F', '1': 13.71, 10 ** 6000: 'x'}
+        new = copy.deepcopy(raw)
+        fields.relabel_message(raw, new)
+        self.assertEqual(13.71, new['BID_PRICE'])
+        self.assertIn(10 ** 6000, new)
+
+        # And a million-digit id passes isdigit(); what is retained and
+        # logged is bounded, because the set never shrinks.
+        raw = {'key': 'F', '9' * 1000000: 'x'}
+        fields.relabel_message(raw, copy.deepcopy(raw))
+        self.assertLessEqual(
+                max(len(i) for _, i in streaming._reported_fields), 64)
+        streaming._reported_fields.clear()
+
     # ---- Something Schwab added that this version cannot route ----------
     #
     # A field it does not recognise still reaches a handler. A *service* it

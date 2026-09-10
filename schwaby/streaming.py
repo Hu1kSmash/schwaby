@@ -64,7 +64,13 @@ class _BaseFieldEnum(Enum):
             # dropped instead. That is the exact direction this change exists
             # to prevent, and reporting field 1 as one schwaby "has no name
             # for" would have been a wrong warning besides.
-            text_key = str(old_key)
+            try:
+                text_key = str(old_key)
+            except Exception:
+                # A key is whatever the decoder produced, and `str()` of a
+                # wide integer raises past sys.get_int_max_str_digits(). It
+                # cannot be a field id, so leave it exactly where it is.
+                continue
             if text_key in cls.key_mapping():
                 new_key = cls.key_mapping()[text_key]
                 new_msg[new_key] = new_msg.pop(old_key)
@@ -74,6 +80,12 @@ class _BaseFieldEnum(Enum):
                 # deliberate, and it is why a new field reaches a handler
                 # instead of breaking one -- but silently, so nobody learns
                 # the field exists. Said once, here.
+                #
+                # One consequence of matching on text: a content item
+                # carrying both `1` and `'1'` has two spellings of one id,
+                # and the second relabel overwrites the first. That needs a
+                # custom decoder emitting both forms in one item; the
+                # alternative was dropping such a message entirely.
                 #
                 # `isdigit` is the discriminator because Schwab's field ids
                 # are numeric strings and the other keys in a content item
@@ -86,7 +98,7 @@ class _BaseFieldEnum(Enum):
                 # test the loop already performs: only a key that missed the
                 # table is examined, and in a normal message that is the four
                 # names above.
-                _report_unknown_field(cls, text_key)
+                _report_unknown_field(cls, text_key[:64])
 
 
 #: Every service this version knows how to route, and ``ADMIN``, which is
@@ -138,6 +150,9 @@ def _report_unknown_field(field_enum_type, field_id):
     feed, where per-message is a flood and a flood is its own way of hiding
     the message.
     """
+    # Bounded in length as well as in count: `_reported_fields` never
+    # shrinks, so a million-digit id -- which passes `isdigit` -- would be
+    # retained forever and named in full in a million-character log line.
     seen = (field_enum_type.__name__, field_id)
     if (seen in _reported_fields
             or len(_reported_fields) >= _MAX_REPORTED_FIELDS):

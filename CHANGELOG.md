@@ -57,6 +57,24 @@ applies, so a **$6.86 limit price decodes as $6,860,000** — six orders of
 magnitude, silently, on the field this feed exists to carry. Both are refused
 now, and a rename is caught on the first message that carries it.
 
+"Present" means carrying a value, not merely having the key — the same rule
+the mantissa and the scale already applied. Asked the other way, an explicit
+`{"signScale": null}` slipped the guard and then met the absent-scale rule,
+which is the same defect through a different door.
+
+**One gap remains, and it is inherent rather than chosen.** `lo`, `mid` and
+`hi` are omitted individually when zero, so the absence of one carries no
+information, and a renamed *member* beside a surviving member cannot be told
+from an ordinary omission:
+
+    {"lo": "705032704", "Mid": 1, "signScale": 12}   ->  705.032704
+
+which is $5,000.00 read seven times low — the truncation this decoder exists
+to prevent. Nothing can detect it; the unknown key is logged on the first
+message carrying it, and that is the whole of the warning available. An
+earlier draft of this entry said both rename directions were refused. That was
+true of a renamed *component* and not of a renamed member of one.
+
 The cost is real and is the right way round: a payload that legitimately omits
 a component — an `AskSize` with no scale, a $0 commission with no mantissa —
 raises while an added key is still unknown, rather than being guessed at. Every

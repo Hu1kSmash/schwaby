@@ -92,13 +92,20 @@ def _report_unknown_keys(unknown):
     encoding is positional in `lo`/`mid`/`hi`/`signScale`; a fifth key does
     not move the other four.
 
-    What is *not* ignored is an object carrying none of the four. That is not
-    a decimal object at all, and decoding it as zero is the failure this
-    whole guard exists for. The residual gap is an object with a valid
-    `signScale` and a mantissa under a name this library does not know --
-    `{"low": 1, "signScale": 12}` -- which still reads as zero. A serializer
-    does not typo, so that shape means a rename, and a rename shows up here
-    as a logged unknown key on the very first message.
+    What is *not* ignored is an object carrying none of the four -- not a
+    decimal object at all -- or one whose *missing* component the unknown key
+    could be, since guessing there is a wrong number in both directions.
+
+    One gap remains and it is inherent rather than chosen. `lo`, `mid` and
+    `hi` are omitted individually when zero, so the absence of one carries no
+    information, and a renamed *member* beside a surviving member cannot be
+    told from an ordinary omission:
+
+        {"lo": "705032704", "Mid": 1, "signScale": 12}   ->  705.032704
+
+    which is the truncation this decoder exists to prevent, seven times low.
+    Nothing here can detect that; the unknown key is logged on the first
+    message carrying it, and that is the whole of the warning available.
 
     Reported once per distinct key rather than once per message: this fires
     on a live feed, where a per-message line is a flood and a flood is its own
@@ -118,7 +125,7 @@ def _report_unknown_keys(unknown):
     # left rather than after the fact: the cap is justified by input nobody
     # here controls, and `update` before the check let one object carrying
     # 500 unknown keys put all 500 in a set bounded at 32.
-    fresh = sorted({str(k) for k in unknown} - _reported_keys)[:room]
+    fresh = sorted({_safe_key(k) for k in unknown} - _reported_keys)[:room]
     if not fresh:
         return
     _reported_keys.update(fresh)
@@ -156,6 +163,21 @@ class UnusableDecimalScale(SchwabError, ValueError):
     like everything else this library defines, and a :class:`ValueError` so it
     also reads as what it is.
     '''
+
+
+def _safe_key(key):
+    """A key's name, bounded and guaranteed not to raise.
+
+    `str()` of a wide integer raises past `sys.get_int_max_str_digits()`, and
+    a key is whatever the decoder produced. Bounded in length as well as in
+    count: `_reported_keys` never shrinks, so a 2 MB key would be retained
+    forever and named in full in a 2 MB log line.
+    """
+    try:
+        text = str(key)
+    except Exception:
+        return '<{} that cannot be named>'.format(type(key).__name__)
+    return text if len(text) <= 64 else text[:61] + '...'
 
 
 def _safe_repr(value):
@@ -342,13 +364,22 @@ def decode_decimal(value):
                                   error.
 
                                   A key **alongside** those four is a schema
-                                  addition rather than corruption. It is
-                                  ignored and logged once, because a key
-                                  Schwab adds arrives on every decimal object
-                                  at once --- refusing it would turn a
-                                  harmless addition into every money and
-                                  quantity field on the feed failing
-                                  together.
+                                  addition rather than corruption, and on an
+                                  object carrying both a mantissa and a
+                                  ``signScale`` it is ignored and logged
+                                  once: a key Schwab adds arrives on every
+                                  decimal object at once, and refusing it
+                                  would turn a harmless addition into every
+                                  money and quantity field failing together.
+
+                                  It is **refused** where a component is
+                                  missing, because the unknown key may be
+                                  that component renamed and guessing is a
+                                  wrong number either way. So a payload that
+                                  legitimately omits one --- an ``AskSize``
+                                  with no scale, a $0 commission with no
+                                  mantissa --- raises while an added key is
+                                  still unknown.
     :raises UnusableDecimalScale: if a non-object value is not a number, or
                                   carries an exponent past 64 in either
                                   direction. The empty string reaches this
@@ -371,8 +402,18 @@ def decode_decimal(value):
     keys = set(value)
     unknown = keys - _DECIMAL_KEYS
     if unknown:
-        known = keys & _DECIMAL_KEYS
-        if known and (not known & _MANTISSA_KEYS or 'signScale' not in known):
+        # *Present* means carrying a value, which is the same rule the
+        # mantissa loop and the scale below both apply -- they treat an
+        # explicit JSON null as an absence, deliberately and with a test.
+        # Asking a different question here was the two-walks-disagree shape
+        # inside one function: keyed on mere presence,
+        # `{"lo": "6860000", "signScale": null, "SignScale": 12}` slipped the
+        # guard, then met the absent-scale rule, and decoded $6.86 as
+        # $6,860,000 again -- the exact defect this refusal exists to close.
+        present = {k for k in keys & _DECIMAL_KEYS
+                   if value.get(k) is not None}
+        if keys & _DECIMAL_KEYS and (
+                not present & _MANTISSA_KEYS or 'signScale' not in present):
             # An unknown key beside a *missing* component is ambiguous: the
             # unknown key may be that component, renamed. Both directions are
             # a silent wrong number if guessed at, and they are not
@@ -394,11 +435,11 @@ def decode_decimal(value):
             raise UnusableDecimalScale(
                     'decimal object is missing its {} and carries {}, which '
                     'may be that component under a new name: {}'.format(
-                        'mantissa' if not known & _MANTISSA_KEYS
+                        'mantissa' if not present & _MANTISSA_KEYS
                         else 'signScale',
-                        ', '.join(sorted(map(str, unknown))),
+                        ', '.join(sorted(map(_safe_key, unknown))),
                         _safe_repr(value)))
-        if not known:
+        if not keys & _DECIMAL_KEYS:
             # None of the four. Not a decimal object at all -- a PascalCase
             # `{"Lo": ..., "SignScale": ...}`, or an unrelated object
             # entirely -- and it would otherwise fall straight through the
@@ -407,7 +448,7 @@ def decode_decimal(value):
             raise UnusableDecimalScale(
                     'not a decimal object -- no lo, mid, hi or signScale, '
                     'only {}: {}'.format(
-                        ', '.join(sorted(map(str, unknown))),
+                        ', '.join(sorted(map(_safe_key, unknown))),
                         _safe_repr(value)))
         # A key *alongside* the four is a schema addition, not corruption.
         # Ignored, and said out loud once, for the reasons on

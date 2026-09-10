@@ -469,6 +469,70 @@ class DecodeDecimalTest(unittest.TestCase):
                     decode_decimal(value)
         util._reported_keys.clear()
 
+    def test_an_explicit_null_does_not_slip_the_rename_guard(self):
+        """The guard and the decoder must mean the same thing by "present".
+
+        The guard was keyed on the key being *there* while the mantissa loop
+        and the scale twenty lines below treat an explicit null as an
+        absence -- deliberately, with their own test. So a null walked
+        straight back into the defect the guard was added to close: no usable
+        `signScale`, the absent-scale rule applies, and a $6.86 limit price
+        decodes as $6,860,000.
+        """
+        for src in ('{"lo": "6860000", "signScale": null, "SignScale": 12}',
+                    '{"lo": "6860000", "signScale": null, "flags": 0}',
+                    '{"lo": null, "signScale": 12, "low": 6860000}',
+                    '{"lo": null, "mid": null, "hi": null,'
+                    ' "signScale": 12, "f": 0}'):
+            with self.subTest(src=src):
+                util._reported_keys.clear()
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal(json.loads(src))
+        # Positive control: a null in a slot is still an absence when no
+        # unknown key is in play, which is the rule this borrows.
+        util._reported_keys.clear()
+        self.assertEqual(
+                decimal.Decimal(19200),
+                decode_decimal(json.loads(
+                    '{"lo": "19200", "signScale": null}')))
+
+    def test_a_renamed_mantissa_member_is_the_gap_that_remains(self):
+        """Stated because it cannot be closed, and I claimed it was.
+
+        `lo`, `mid` and `hi` are omitted individually when zero, so the
+        absence of one carries no information and a renamed member beside a
+        surviving member is indistinguishable from an ordinary omission. The
+        commit that added the refusal said "both halves refuse now"; this is
+        the half that does not, and it is a silent truncation -- the defect
+        this decoder was written for.
+        """
+        util._reported_keys.clear()
+        self.assertEqual(
+                decimal.Decimal('5000'),
+                decode_decimal({'lo': '705032704', 'mid': 1, 'signScale': 12}))
+        # Renamed, and seven times low. Not refused, and cannot be.
+        with self.assertLogs(util.get_logger(), level='WARNING') as caught:
+            renamed = decode_decimal(
+                    {'lo': '705032704', 'Mid': 1, 'signScale': 12})
+        self.assertEqual(decimal.Decimal('705.032704'), renamed)
+        # The one warning available is that the key was seen at all.
+        self.assertIn("'Mid'", caught.output[0])
+        util._reported_keys.clear()
+
+    def test_a_key_that_cannot_be_named_does_not_escape(self):
+        # A key is whatever the decoder produced. `str()` of a wide integer
+        # raises past sys.get_int_max_str_digits(), and the report and the
+        # refusal message both name the unknown keys.
+        util._reported_keys.clear()
+        self.assertEqual(
+                decimal.Decimal('0.000001'),
+                decode_decimal({'lo': '1', 'signScale': 12, 10 ** 6000: 0}))
+        # Bounded in length, not only in count: the set never shrinks.
+        util._reported_keys.clear()
+        decode_decimal({'lo': '1', 'signScale': 12, 'k' * 5000: 0})
+        self.assertLessEqual(max(len(k) for k in util._reported_keys), 64)
+        util._reported_keys.clear()
+
     def test_an_added_key_costs_the_objects_that_omit_a_component(self):
         """What the refusal above costs, stated rather than discovered.
 
