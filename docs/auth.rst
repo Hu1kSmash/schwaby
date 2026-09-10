@@ -392,10 +392,10 @@ request. This entire process is automatically managed and invisible to you.
 
 This is where Schwab implements token expiration and other security measures:
 requests for a new access token using a refresh token older than seven days are
-rejected with an :ref:`invalid_client error<invalid_client>`. There is currently
-no way to make a refresh token last longer than seven days. Once you start
-seeing this error, you have no choice but to delete your old token file and
-create a new one.
+refused, as :ref:`described below <invalid_client>`. There is currently no way
+to make a refresh token last longer than seven days. Once you start seeing this
+refusal, you have no choice but to delete your old token file and create a new
+one.
 
 
 ---------------
@@ -525,19 +525,33 @@ understood, so a stack trace `on the issue tracker
 
 .. _invalid_client:
 
-+++++++++++++++++++++++++++++++++++++++++++++++++++++
-``OAuthError: invalid_client: refresh token invalid``
-+++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++
+A Refused Token Refresh
++++++++++++++++++++++++
 
 Tokens can only be refreshed for approximately seven days, at which point Schwab
-refuses to refresh your token and you need to recreate it. A refusal during a
-call reaches you as :class:`~schwaby.utils.TokenRefreshError`, with authlib's
-``OAuthError`` as its ``__cause__``. :ref:`See here to learn about how tokens
-work. <token_expiration>`.
+refuses to refresh your token and you need to recreate it. :ref:`See here to
+learn about how tokens work <token_expiration>`.
 
-A login raises ``OAuthError`` itself, with the code
-``unusable_token_response``, when the token endpoint answers with something
-that is not a usable token. Nothing is written.
+A refusal during a call reaches you as
+:class:`~schwaby.utils.TokenRefreshError`, with authlib's ``OAuthError`` as its
+``__cause__``. The seven-day refusal has been observed as
+``unsupported_token_type`` with ``invalid_grant`` nested inside it, and that
+sets ``refresh_token_invalid``.
+
+``OAuthError: invalid_client`` is a different failure. RFC 6749 defines
+``invalid_client`` as the client -- your app key and secret -- failing to
+authenticate, which recreating the token does not fix. This library cannot tell
+it from a transient failure, so ``refresh_token_invalid`` is ``False`` for it.
+
+
++++++++++++++++++++++++++++++++++++++++
+``OAuthError: unusable_token_response``
++++++++++++++++++++++++++++++++++++++++
+
+A login raises this when the token endpoint answers with something that is not
+a usable token. Nothing is written, so a token file already on disk is left as
+it was.
 
 
 ++++++++++++++++++++++
