@@ -57,6 +57,61 @@ class _BaseFieldEnum(Enum):
             if old_key in cls.key_mapping():
                 new_key = cls.key_mapping()[old_key]
                 new_msg[new_key] = new_msg.pop(old_key)
+            elif old_key.isdigit():
+                # A numeric key this table does not have is a field Schwab
+                # added. It is delivered verbatim either way -- that is
+                # deliberate, and it is why a new field reaches a handler
+                # instead of breaking one -- but silently, so nobody learns
+                # the field exists. Said once, here.
+                #
+                # `isdigit` is the discriminator because Schwab's field ids
+                # are numeric strings and the other keys in a content item
+                # are not: `key`, `seq`, `delayed` and `assetMainType` all
+                # arrive alongside the numbered fields and none of them is a
+                # field. Keying on "not in the table" alone would report all
+                # four on every message.
+                #
+                # This runs on the hot path, so it sits in the `else` of a
+                # test the loop already performs: only a key that missed the
+                # table is examined, and in a normal message that is the four
+                # names above.
+                _report_unknown_field(cls, old_key)
+
+
+#: How many distinct (field table, field id) pairs to name before giving up.
+#: The set never shrinks and what goes into it is the venue's to choose.
+_MAX_REPORTED_FIELDS = 64
+
+_reported_fields = set()
+
+
+def _report_unknown_field(field_enum_type, field_id):
+    """Say once that a stream carried a field this version does not know.
+
+    Not an error and not reported through :meth:`add_error_handler`: nothing
+    was absorbed, nothing failed, and the message reached its handler intact
+    with the unrecognised id still on it. It is a schema change, which is an
+    operator's concern rather than a caller's, so it goes to the log.
+
+    Once per table and id rather than once per message: this fires on a live
+    feed, where per-message is a flood and a flood is its own way of hiding
+    the message.
+    """
+    seen = (field_enum_type.__name__, field_id)
+    if (seen in _reported_fields
+            or len(_reported_fields) >= _MAX_REPORTED_FIELDS):
+        return
+    _reported_fields.add(seen)
+    get_logger().warning(
+            'Schwab sent field %s on a %s message, which this version of '
+            'schwaby has no name for. The field is delivered to your handler '
+            'under its numeric key and everything else is relabeled as '
+            'usual; this is reported once per field, not per message. If you '
+            'see this, please open an issue at '
+            'https://github.com/Hu1kSmash/schwaby/issues with the value -- '
+            'the field tables are only as current as the last time someone '
+            'looked.',
+            field_id, field_enum_type.__name__)
 
 
 class UnexpectedResponse(SchwabError):

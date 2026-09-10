@@ -55,10 +55,27 @@ issue](https://github.com/Hu1kSmash/schwaby/issues) with the field. The
 encoding is undocumented publicly and a capture is the only way anyone learns
 what a new key means.
 
-**Nothing else in the library rejects an unexpected field**, measured rather
-than assumed: an unknown numeric field id on a stream you subscribe to is
-delivered verbatim while every known field still relabels, so a new field
-reaches your handler rather than breaking it.
+### A field Schwab adds to a stream is now visible, not just survivable
+
+Nothing else in the library *rejects* an unexpected field — measured rather
+than assumed. An unknown numeric field id on a stream you subscribe to is
+delivered to your handler under its numeric key while every known field still
+relabels, so a new field reaches you rather than breaking you. That half
+already worked and has not changed.
+
+What did not work is finding out. It was silent, so a field could appear and
+sit in your messages indefinitely with nothing to notice it. It is now logged
+once per field per table on the `schwaby.streaming` logger.
+
+Not reported through `add_error_handler`: nothing was absorbed and nothing
+failed. It is a change in the venue, which is an operator's concern rather
+than a caller's.
+
+The discriminator is that Schwab's field ids are numeric strings. `key`,
+`seq`, `delayed` and `assetMainType` all arrive alongside the numbered fields
+and none of them is a field, so reporting anything merely missing from the
+table would log four lines per message — a flood, which hides the one line
+that matters.
 
 ## 4.2.0
 

@@ -8820,3 +8820,106 @@ class LevelOneOptionStrikeFieldTest(IsolatedAsyncioTestCase):
         # whichever alias came last would have named the field.
         fields = streaming.StreamClient.LevelOneOptionFields
         self.assertNotIn('STRIKE_TYPE', fields.key_mapping().values())
+
+
+class UnknownStreamFieldTest(IsolatedAsyncioTestCase):
+    """A field Schwab adds reaches a handler. Nobody was told it exists.
+
+    The delivering half is deliberate and predates this: an id the field
+    table does not have is left on the message verbatim while every known
+    field still relabels, so a schema addition does not break a consumer.
+    What was missing is any way to learn it happened.
+    """
+
+    def setUp(self):
+        streaming._reported_fields.clear()
+
+    def tearDown(self):
+        streaming._reported_fields.clear()
+
+    @no_duplicates
+    def test_an_unknown_field_is_still_delivered_verbatim(self):
+        fields = streaming.StreamClient.LevelOneEquityFields
+        raw = {'key': 'F', '1': 13.71, '2': 13.72, '99': 'brand new'}
+        new = copy.deepcopy(raw)
+        fields.relabel_message(raw, new)
+        self.assertEqual('brand new', new['99'])
+        # Positive control: the rest of the message still relabeled, so this
+        # is not passing because relabeling did nothing at all.
+        self.assertEqual(13.71, new['BID_PRICE'])
+        self.assertEqual(13.72, new['ASK_PRICE'])
+
+    @no_duplicates
+    def test_an_unknown_field_is_reported_once_per_table_and_id(self):
+        fields = streaming.StreamClient.LevelOneEquityFields
+        with self.assertLogs(streaming.get_logger(),
+                             level='WARNING') as caught:
+            for _ in range(3):
+                raw = {'key': 'F', '1': 13.71, '99': 'brand new'}
+                fields.relabel_message(raw, copy.deepcopy(raw))
+        self.assertEqual(1, len(caught.output))
+        self.assertIn('99', caught.output[0])
+        self.assertIn('LevelOneEquityFields', caught.output[0])
+
+        # A different id, and the same id on a different table, each earn a
+        # line: they are different facts about the venue.
+        with self.assertLogs(streaming.get_logger(),
+                             level='WARNING') as caught:
+            raw = {'key': 'F', '98': 'another'}
+            fields.relabel_message(raw, copy.deepcopy(raw))
+            raw = {'key': 'F', '99': 'brand new'}
+            streaming.StreamClient.LevelOneOptionFields.relabel_message(
+                    raw, copy.deepcopy(raw))
+        self.assertEqual(2, len(caught.output))
+
+    @no_duplicates
+    def test_the_keys_that_are_not_fields_are_not_reported(self):
+        # `key`, `seq`, `delayed` and `assetMainType` arrive alongside the
+        # numbered fields and none of them is a field. Keying on "not in the
+        # table" instead of on "numeric" would report all four on every
+        # message, which is a flood rather than a signal.
+        fields = streaming.StreamClient.LevelOneEquityFields
+        raw = {'key': 'F', 'seq': 7, 'delayed': False,
+               'assetMainType': 'EQUITY', '1': 13.71}
+        with self.assertNoLogs(streaming.get_logger(), level='WARNING'):
+            new = copy.deepcopy(raw)
+            fields.relabel_message(raw, new)
+        # Positive control: the same call does report a numeric one.
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            raw['99'] = 'brand new'
+            fields.relabel_message(raw, copy.deepcopy(raw))
+
+    @no_duplicates
+    def test_the_report_is_bounded(self):
+        fields = streaming.StreamClient.LevelOneEquityFields
+        for i in range(streaming._MAX_REPORTED_FIELDS * 3):
+            raw = {'key': 'F', str(1000 + i): 'x'}
+            fields.relabel_message(raw, copy.deepcopy(raw))
+        self.assertLessEqual(len(streaming._reported_fields),
+                             streaming._MAX_REPORTED_FIELDS)
+        # And relabeling still works after the cap.
+        raw = {'key': 'F', '1': 13.71, '99999': 'x'}
+        new = copy.deepcopy(raw)
+        fields.relabel_message(raw, new)
+        self.assertEqual(13.71, new['BID_PRICE'])
+        self.assertEqual('x', new['99999'])
+
+    @no_duplicates
+    async def test_a_new_field_reaches_a_handler_not_breaks_one(self):
+        # End to end through the dispatch path, which is where a consumer
+        # would actually meet this.
+        client = StreamClient(client=MagicMock())
+        got = []
+        client.add_level_one_equity_handler(got.append)
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            await client._dispatch_to_handlers(
+                    'LEVELONE_EQUITIES',
+                    {'service': 'LEVELONE_EQUITIES', 'command': 'SUBS',
+                     'timestamp': 1,
+                     'content': [{'key': 'F', '1': 13.71, '99': 'brand new'}]},
+                    relabel=True)
+        self.assertEqual(1, len(got))
+        self.assertEqual(13.71, got[0]['content'][0]['BID_PRICE'])
+        self.assertEqual('brand new', got[0]['content'][0]['99'])
+        # Nothing was absorbed and nothing was reported as a failure.
+        self.assertEqual(0, client._absorbed)

@@ -1263,6 +1263,23 @@ nowhere official.
   encoding is undocumented publicly and a capture is the only way anyone
   learns what a new key means.
 
+.. note::
+
+  **A field id this library has no name for is delivered to your handler
+  under its numeric key**, while every field it does know is relabeled as
+  usual. A field Schwab adds reaches you rather than breaking you.
+
+  It is also logged, once per field per table, on the ``schwaby.streaming``
+  logger --- because being delivered and being *noticed* are different
+  things, and the field tables are only as current as the last time someone
+  looked. If you see that line, please `open an issue
+  <https://github.com/Hu1kSmash/schwaby/issues>`__ with the id and the value.
+
+  Note this is not reported through :func:`add_error_handler
+  <schwaby.streaming.StreamClient.add_error_handler>`: nothing was absorbed
+  and nothing failed. It is a change in the venue, which is an operator's
+  concern rather than a caller's.
+
 **The sign is not the side.** Fill quantities and prices arrive positive, with
 an even ``signScale``; buy versus sell comes from ``BuySellCode``. The odd
 branch exists so a genuinely negative field does not decode positive, and the
