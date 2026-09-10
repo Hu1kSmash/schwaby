@@ -22,6 +22,134 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 4.4.2
+
+*2026-09-10*
+
+Fixes from a review of 4.4.0 and 4.4.1. Nothing is removed or renamed.
+
+### A token that is not usable is no longer stored, from a refresh or a login
+
+During an automatic refresh, the token endpoint's response was taken as the new
+token unless it carried an `error` key. A body such as
+`{"message": "Unauthorized"}` was written to the token file and kept in memory,
+so every call after it raised `TokenRefreshError` without contacting Schwab —
+after a restart too — until someone completed the login flow again, while the
+exception said the failure might be transient. A list or a string was stored on
+the session and then failed, so every later call failed without contacting
+Schwab until the process restarted; after `[]`, the exception even said to log
+in again. A refresh response whose `refresh_token` was present but empty erased
+the stored refresh token for good. And the token a login exchanges its code for
+was written without any check at all.
+
+A token response is now refused before it is stored unless it carries a
+non-empty string access token, the bearer type, and an expiry authlib acts on —
+built, as authlib builds it, from `expires_at` or `expires_in` — and any
+`refresh_token` it carries is a non-empty string. That holds on every client,
+including one returned by a login flow, and at the login itself. A refresh
+raises `TokenRefreshError`, nothing is written or kept, and the next call tries
+again; a login raises authlib's `OAuthError`, with the code
+`unusable_token_response`, before writing anything. Measured with a mocked token
+endpoint; what Schwab's endpoint sends in these cases has not been observed.
+This predates 4.4.0.
+
+A stored token that authlib cannot send, and will never replace by itself, was
+reported as retryable — a token file damaged before this release, say. authlib
+replaces a token only as an expiry it acts on nears, and only with a refresh
+token. If the expiry is missing, cannot be read as an int, or is too far off to
+be reached, or there is no refresh token, the token fails locally, before
+anything is sent, on every call. It is now reported as needing a new login; one
+authlib will refresh stays retryable. Schwab's own `unsupported_token_type`
+rejection is a different class and is unchanged: terminal with `invalid_grant`
+nested inside it, retryable without.
+
+### A bare number with a huge exponent no longer escapes `decode_decimal`
+
+A string such as `"1E1000000000000000000"` — an exponent near 10^18 or beyond
+— raised `decimal.InvalidOperation`. That is neither a `SchwabError` nor a
+`ValueError`, so it escaped the one `except` callers are told to write and cost
+the whole message rather than the field. It was reachable from any JSON string
+field handed to the decoder, and it predates 4.4.0. It is refused as
+`UnusableDecimalScale` now.
+
+### Venue text cannot forge a log line
+
+The refusal message joined unknown key names unquoted, so a key containing a
+newline planted a second line — a fake `CRITICAL`, for instance — wherever the
+exception was logged, including through the logging recipe on the streaming
+page. Key names are quoted now.
+
+The streaming client's own log lines and error reports could be forged the same
+way through a custom `StreamJsonDecoder`: by a value whose `__repr__` carries a
+line break, a class name that does, or an exception whose message quotes venue
+text. All three are escaped now, including the line breaks past ASCII — `\x85`,
+U+2028 and U+2029.
+
+The error-handler recipe on the streaming page formatted the service name with
+`%s`. That name is whatever Schwab sent, so a plain JSON frame could plant a
+line in an alert copied from the recipe. It uses `%r` now.
+
+### Values from a custom JSON decoder are read as plain types
+
+`json.loads` never produces a subclass, but a custom `StreamJsonDecoder` can,
+and several decided their own value or escaped: `str`, `float`, `int` and
+`Decimal` subclasses, a mapping whose `get` answers differently on a second
+read, a key whose comparison raises, and an object claiming a class it is not,
+such as a mock. `decode_decimal` now routes on an object's real type, reads a
+mapping once through its own `items()`, and reduces each value — a bare string
+included — to its exact built-in type. Any `collections.abc.Mapping` is a
+decimal object now; a `UserDict` or `mappingproxy` was refused as "not a
+number". A mapping whose `items()` cannot be read is refused, and so is one
+carrying the same key twice once its names are reduced to plain text. On the
+stream, a `MESSAGE_TYPE` that was such a subclass could drop its whole data
+element, valid items with it; it is delivered now, and a frame logged when
+absorbed can no longer end the receive loop the same way.
+
+One consequence of reading a mapping through `items()`: a key its `get` would
+return but its `items()` does not list is not read, so such a mapping decodes as
+though the key were absent — a mantissa hidden that way decodes as zero.
+`json.loads` never produces one.
+
+### Documentation
+
+- **Getting a mid price.** 4.4.1 said to take `Mid`'s magnitude or compute
+  `(Bid + Ask) / 2`, and under a reduced decimal context both round silently.
+  Use `copy_abs()`, or do the arithmetic under a context with enough precision.
+- **`HTTPStatusError` can come from the call itself.** The session refreshes an
+  expired access token on the way past, and a server error from the token
+  endpoint raises this class out of a call such as `get_quote()`, so keep the
+  call inside the `try`. It does not cover network errors: a timeout or a
+  dropped connection raises one of `httpx2`'s transport errors.
+- **Classifying by substring.** The runtime warning and the
+  `ACCOUNT_ACTIVITY_MESSAGE_TYPES` comment now say that `CANCEL` and `UROUT`
+  also match the retired id of a price change on the option orders captured,
+  while the order goes on working under a new id.
+- **A rejected token refresh.** Below 500, JSON that is not a usable token —
+  whether or not it carries an `error` key — raises `TokenRefreshError`, and a
+  body that is not JSON raises a `ValueError`, usually `json.JSONDecodeError`.
+  The recipe for catching a failed refresh says so too, and `TokenRefreshError`
+  records a transient `unsupported_token_type` rejection seen once.
+- **A refused token refresh, in troubleshooting.** The entry was headed
+  `OAuthError: invalid_client: refresh token invalid` and said to recreate the
+  token. The seven-day refusal has been observed as `unsupported_token_type`
+  with `invalid_grant` nested inside, which sets `refresh_token_invalid`;
+  `invalid_client` has not been observed here, is reported with
+  `refresh_token_invalid` `False`, and the entry now says to check `token_age`
+  when it arrives.
+- **`replace_order`.** The old id of a replacement does not necessarily read
+  `CANCELED`; `TERMINAL_STATUSES` covers `REPLACED` too.
+- **Narrowed to the evidence:** `lo` can be wider than 32 bits, not always;
+  the refusal cost any fill principal above roughly $4,295 at `signScale` 12,
+  not "most"; option orders have been captured, and what their symbol keys
+  hold has not been observed; where the account activity evidence comes from;
+  and what `CancelType` does and does not show; and `Mid`'s sign is stated for
+  the sell orders checked, not for every sell order.
+
+### Corrections to earlier entries
+
+The 4.4.1, 4.4.0, 4.3.0 and 4.2.0 entries are corrected in place where they
+said more than the evidence supports, and each correction says so.
+
 ## 4.4.1
 
 *2026-09-10*
@@ -29,9 +157,12 @@ untrue when it was written, it gets corrected and the correction says so.
 ### A decimal object's `lo` is no longer held to 32 bits
 
 `decode_decimal` refused every decimal object whose `lo` was wider than 32
-bits, and on Schwab's feed that is **most fill principals**. It raised
-`UnusableDecimalScale`, so nothing decoded to a wrong number — but the value
-was gone, and a refused value writes no log line of its own.
+bits, and on Schwab's feed that includes **any fill principal above roughly
+$4,295** at `signScale` 12. It raised `UnusableDecimalScale`, so nothing
+decoded to a wrong number — but the value was gone, and a refused value writes
+no log line of its own. *(corrected in 4.4.2: this said "most fill
+principals". How many fill principals the archive holds in total is not known,
+so that was unsupported.)*
 
 The cause was reasoning where there should have been measurement. The
 encoding is a serialized .NET `System.Decimal`, whose 96-bit mantissa is laid
@@ -39,8 +170,10 @@ out as three 32-bit members, `lo`, `mid` and `hi`, and this read `lo` as the
 first of them. Schwab does not send that layout. Measured over 5,843 decimal
 objects from a production `ACCT_ACTIVITY` archive:
 
-- every one carried `lo` alone, as a string of digits — no `mid` or `hi`,
-  ever;
+- none carried `mid` or `hi`, and every `lo` was a string of digits;
+  *(corrected in 4.4.2: this said every one carried `lo` alone, but a decimal
+  object need not carry `lo` at all — `{}` and `{"signScale": 12}` were
+  measured as zeros, on one payload.)*
 - 129 had a `lo` above 4294967295, and all 129 were refused. They were
   `PrincipalAmmount` on `OrderFillCompleted` — Schwab's spelling — and
   `EstimatedPrincipalAmount`, `EstimatedPrincipalAmnt` and `EstimatedNetAmount`
@@ -74,19 +207,29 @@ Two smaller fixes to the same function, both from review:
 
 ### A quote's `Mid` decodes negative on a sell order
 
+*(corrected in 4.4.2: this was measured on the sell orders whose message
+carried `BuySellCode` — creation messages only — and is not established for
+every sell order.)*
+
 Documentation only; the decoder is right about what Schwab sends. `Mid`'s
 magnitude is exactly `(Bid + Ask) / 2` from the same quote, 563 of 563, but its
 sign followed the order's side: on the 182 quotes whose message carried
 `BuySellCode`, every buy was even and every sell odd. That is the opposite of
-the amounts, which are negative on a buy. Take the magnitude, or compute the
-mid from `Bid` and `Ask`.
+the amounts, which are negative on a buy. Take the magnitude with
+`copy_abs()`, or compute the mid from `Bid` and `Ask` under a context with
+enough precision. *(corrected in 4.4.2: this said to take the magnitude or
+compute the mid, and both `abs()` and ordinary arithmetic apply the caller's
+decimal context, so under a reduced precision each silently rounds — the
+error `decode_decimal` exists to avoid.)*
 
 ### Corrections to earlier entries
 
-The 4.2.0 entry, and an earlier one about the decoder recommended in 4.1.0,
-said that reading `lo` alone truncates anything above 4294.967295. That was
-reasoned from the .NET layout and is wrong about the wire. Both are corrected
-in place, and say so.
+Two passages in the 4.2.0 entry — its notes on `decode_decimal`, and its
+documentation note about the decoder published in 4.1.0 — said that reading
+`lo` alone truncates anything above 4294.967295. That was reasoned from the
+.NET layout and is wrong about the wire. Both are corrected in place, and say
+so. *(corrected in 4.4.2: this paragraph described the second passage as an
+earlier entry. Both corrected passages are in the 4.2.0 entry.)*
 
 ## 4.4.0
 
@@ -186,7 +329,9 @@ member of it — which would add a field to every account activity message.
   is on the stream: the new id's `ChangeCreated` carries `ParentSchwabOrderID`,
   naming the id it replaced. Captured over eight changes on two option orders;
   the change and monitor types are in the exported set with their captured
-  spellings, and no `OrderReplaced` type appeared.
+  spellings, and no `OrderReplaced` type appeared. *(corrected in 4.4.2: REST
+  was read on the five retired ids of one option order, not across all eight
+  changes, and not for a replacement made through `replace_order`.)*
 - **The account activity observation log no longer states what was never
   observed.**
   - The order id was said to appear under at least seven spellings. One has
@@ -195,8 +340,10 @@ member of it — which would add a field to every account activity message.
     preference". Lowercase `symbol` was never observed, the order was a
     parser's policy rather than Schwab's, and the page now says which message
     carries which key.
-  - A claim about what an option leg's symbol holds is withdrawn; no option
-    order has been captured.
+  - A claim about what an option leg's symbol holds is withdrawn; what an
+    option order's symbol keys hold has not been observed. *(corrected in
+    4.4.2: this said no option order had been captured, which was untrue —
+    4.4.0 itself documents option-order captures.)*
   - Five message types that carry no symbol at any depth are now named, since
     a symbol lookup on them returns nothing rather than raising.
   - All five terminal statuses were titled "observed to be terminal" while
@@ -248,6 +395,11 @@ and decoded as `705.032704` — seven times low, silently — because `lo`, `mid
 and `hi` are omitted individually when zero, so the absence of one carries no
 information. An earlier draft of this entry called that an inherent gap. It is
 inherent only if you are trying to decode around the unknown key.
+
+*Corrected in 4.4.2: the three-member layout this paragraph relies on was
+reasoned from .NET, never captured. Schwab sends the whole mantissa in `lo`,
+and none of 5,843 decimal objects in a production archive carried `mid` or
+`hi`.*
 
 ### A field Schwab adds to a stream is now visible, not just survivable
 
@@ -370,7 +522,9 @@ attempt is reliably wrong in at least one of five ways, each of which is a
   anything over `4294.967295` at `signScale` 12 — `$5,000.00` decodes as
   `$705.03`; *(corrected in 4.4.1: this was reasoned from the .NET layout and
   is wrong about the wire. Schwab sends the whole mantissa in `lo`, and holding
-  it to 32 bits refused most fill principals.)*
+  it to 32 bits refused any fill principal above roughly $4,295 at
+  `signScale` 12. Corrected again in 4.4.2: this note said "most fill
+  principals", which the archive does not establish.)*
 - an odd `signScale` means negative, and the sign is not the side;
 - an object with a `signScale` and no mantissa is **zero**, not unknown — it
   arrives that way as `LeavesQuantity` on the final fill of a completed order,
