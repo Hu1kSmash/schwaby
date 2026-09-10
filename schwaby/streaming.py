@@ -263,9 +263,9 @@ def _report_unknown_message_type(name):
     client could not use.
 
     Once per type, compared case-insensitively, and once per process because
-    the log is process-wide. Expiry, replacement and partial fill have never
-    been captured, so a process may see each of those once; a line per message
-    would bury the one that names the missing type.
+    the log is process-wide. Expiry and partial fill have never been captured,
+    so a process may see each of those once; a line per message would bury the
+    one that names the missing type.
     """
     folded = name.casefold()
     if (folded in _reported_message_types
@@ -2156,18 +2156,18 @@ class StreamClient(EnumEnforcer):
     #:
     #: A reference for noticing a type nobody has seen before, **not** a
     #: list to classify messages against. Schwab documents this vocabulary
-    #: nowhere, and only these ten have been captured, so an exact match
+    #: nowhere, and only these have been captured, so an exact match
     #: against it will miss a real message whose type has simply never been
     #: recorded. Classify by substring and case-insensitively, as the
     #: streaming documentation describes, and use this only to ask whether a
     #: type is one anyone has seen.
     #:
     #: A type outside it is still delivered to your handler, and is logged once
-    #: on ``schwaby.streaming``. A buy rejected for buying power has been
-    #: captured and used only types listed here; expiry, replacement and
-    #: partial fill have not, so the first of each a process receives may log
-    #: once. That is expected, and a report of the type it names is how this
-    #: list grows.
+    #: on ``schwaby.streaming``. A buy rejected for buying power and a price
+    #: change to a working order have both been captured using only types
+    #: listed here; expiry and partial fill have not, so the first of each a
+    #: process receives may log once. That is expected, and a report of the
+    #: type it names is how this list grows.
     #:
     #: Held on ``StreamClient`` rather than on ``AccountActivityFields``,
     #: because a set in an ``Enum`` body silently becomes a member, which would
@@ -2178,6 +2178,8 @@ class StreamClient(EnumEnforcer):
         'ExecutionRequested', 'ExecutionRequestCreated',
         'ExecutionRequestCompleted', 'OrderFillCompleted',
         'CancelAccepted', 'ExecutionCreated', 'OrderUROutCompleted',
+        'ChangeCreated', 'ChangeAccepted',
+        'OrderMonitorCreated', 'OrderMonitorCompleted',
     ))
 
     # Folded once, from the public set, so a case variant of an observed type

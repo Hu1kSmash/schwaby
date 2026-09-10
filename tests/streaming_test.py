@@ -9605,8 +9605,8 @@ class LevelOneOptionStrikeFieldTest(IsolatedAsyncioTestCase):
 class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
     """ACCT_ACTIVITY types outside the observed vocabulary are named once.
 
-    Schwab documents the MESSAGE_TYPE vocabulary nowhere, and only ten types
-    have been captured. A message of any other type is still delivered; what
+    Schwab documents the MESSAGE_TYPE vocabulary nowhere, and only fourteen
+    types have been captured. A message of any other type is still delivered; what
     is new is that it no longer passes silently.
     """
 
@@ -9718,13 +9718,17 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
                 self.fields.key_mapping())
 
     @no_duplicates
-    def test_it_is_exactly_the_ten_observed_types(self):
+    def test_it_is_exactly_the_observed_types(self):
+        # The change and monitor types were first known from a note that
+        # spelled them in upper case; these are the captured spellings.
         self.assertEqual(
                 {'SUBSCRIBED', 'OrderCreated', 'OrderAccepted',
                  'ExecutionRequested', 'ExecutionRequestCreated',
                  'ExecutionRequestCompleted', 'OrderFillCompleted',
                  'CancelAccepted', 'ExecutionCreated',
-                 'OrderUROutCompleted'},
+                 'OrderUROutCompleted',
+                 'ChangeCreated', 'ChangeAccepted',
+                 'OrderMonitorCreated', 'OrderMonitorCompleted'},
                 set(streaming.StreamClient.ACCOUNT_ACTIVITY_MESSAGE_TYPES))
 
     @no_duplicates
