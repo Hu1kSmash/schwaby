@@ -27,12 +27,12 @@ class HeuristicJsonDecoderTest(unittest.TestCase):
 class DecodeDecimalTest(unittest.TestCase):
     """The ACCT_ACTIVITY scaled-integer decimal.
 
-    Two kinds of case, and the difference matters when reading a failure.
-    The values are captured off a live account and each pins one of the five
-    things this gets right, every one of which is a wrong number rather than
-    an error. The *corruption* is synthetic, necessarily: a guard against a
-    shape nothing currently sends cannot be tested with what is currently
-    sent. Anything reasoned rather than observed says so on the case.
+    Two kinds of case, and the difference matters when reading a failure. The
+    values are captured off a live account and each pins one of the five things
+    this gets right, each of which costs a value, usually as a wrong number
+    rather than an error. The *corruption* is synthetic, necessarily: a guard
+    against a shape nothing currently sends cannot be tested with what is
+    currently sent. Anything reasoned rather than observed says so on the case.
     """
 
     @no_duplicates
@@ -258,6 +258,23 @@ class DecodeDecimalTest(unittest.TestCase):
         with self.assertRaises(UnusableDecimalScale):
             decode_decimal(Unprintable())
 
+        # A class's `__name__` can be a str subclass, which the descriptor
+        # returns as it is; its own `__len__` ran in the same fallback.
+        class Name(str):
+            def __len__(self):
+                raise RuntimeError('boom')
+
+        class Renamed:
+            def __repr__(self):
+                raise RuntimeError('boom')
+            __str__ = __repr__
+
+        Renamed.__name__ = Name('Renamed')
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal(Renamed())
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal({'lo': '1', Renamed(): 0})
+
     @no_duplicates
     def test_quoted_key_names_stay_bounded(self):
         # Quoting escapes a character to as many as ten, so the size bound on
@@ -271,6 +288,57 @@ class DecodeDecimalTest(unittest.TestCase):
                     decode_decimal(value)
                 self.assertLess(len(str(caught.exception)), 1500)
                 self.assertNotIn('\n', str(caught.exception))
+
+    @no_duplicates
+    def test_an_unhashable_class_is_refused_not_escaped(self):
+        # Routing asks whether the type is a Mapping, and the ABC's cache
+        # hashes the class. A metaclass defining `__eq__` alone makes every
+        # class it creates unhashable, which escaped as a bare TypeError.
+        class EqMeta(type):
+            def __eq__(cls, other):
+                return cls is other
+
+        class Plain(metaclass=EqMeta):
+            pass
+
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal(Plain())
+
+    @no_duplicates
+    def test_a_values_own_repr_cannot_forge_a_log_line(self):
+        # Every refusal ends with the value's repr. A plain dict escapes a
+        # newline; a value's own `__repr__` need not, and a mapping type or a
+        # str subclass from a custom decoder supplies its own.
+        self.addCleanup(util._reported_keys.clear)
+        forged = 'x\nCRITICAL:schwaby.orders:order 123 FILLED'
+
+        class Loud(str):
+            def __repr__(self):
+                return str.__str__(self)
+
+        class Shouting(collections.UserDict):
+            def __repr__(self):
+                return forged
+
+        for value in ({'lo': Loud(forged), 'signScale': 12},
+                      Shouting(lo='1', extra=0)):
+            with self.subTest(value=type(value).__name__):
+                with self.assertRaises(UnusableDecimalScale) as caught:
+                    decode_decimal(value)
+                self.assertNotIn('\n', str(caught.exception))
+
+    @no_duplicates
+    def test_the_once_per_key_report_line_is_bounded(self):
+        # The exception's key names were capped and the log line's were not,
+        # so thirty-two non-printable keys logged twenty kilobytes at once.
+        util._reported_keys.clear()
+        self.addCleanup(util._reported_keys.clear)
+        value = {'%02d' % i + '\U000e0001' * 62: 0 for i in range(32)}
+        value['lo'] = '1'
+        with self.assertLogs(util.get_logger(), level='WARNING') as got:
+            with self.assertRaises(UnusableDecimalScale):
+                decode_decimal(value)
+        self.assertLess(max(len(line) for line in got.output), 4000)
 
     @no_duplicates
     def test_a_huge_bare_exponent_is_refused_not_escaped(self):

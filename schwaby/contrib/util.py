@@ -127,7 +127,7 @@ def _report_unknown_keys(unknown):
             'issue at https://github.com/Hu1kSmash/schwaby/issues with the '
             'field: it is undocumented publicly and a capture is the only '
             'way anyone learns what a new key means.',
-            ', '.join(repr(k) for k in fresh))
+            ', '.join(_quoted(k) for k in fresh))
 
 
 class UnusableDecimalScale(SchwabError, ValueError):
@@ -169,15 +169,23 @@ def _safe_keys(unknown):
     # joined bare a newline in one forged a second line wherever the
     # exception was logged -- including through the recipe the streaming
     # docs give for logging it.
-    # Each quoted name is bounded too: `repr` escapes a character to as many
-    # as ten, so a 64-character name could quote to 640.
-    names = []
-    for name in sorted(map(_safe_key, unknown)):
-        quoted = repr(name)
-        names.append(quoted if len(quoted) <= 80 else quoted[:77] + '...')
+    names = [_quoted(name) for name in sorted(map(_safe_key, unknown))]
     if len(names) <= 8:
         return ', '.join(names)
     return '{} and {} more'.format(', '.join(names[:8]), len(names) - 8)
+
+
+def _quoted(name):
+    """A bounded name, quoted, and bounded again.
+
+    Quoted because a name is venue text, and joined bare a newline in one
+    forges a second line wherever the message is logged. Bounded again
+    because `repr` escapes a character to as many as ten, so a 64-character
+    name could quote to 640 -- and both the exception and the once-per-key
+    log line join these.
+    """
+    quoted = repr(name)
+    return quoted if len(quoted) <= 80 else quoted[:77] + '...'
 
 
 def _type_name(value):
@@ -188,7 +196,9 @@ def _type_name(value):
     branch written not to.
     """
     try:
-        name = type.__dict__['__name__'].__get__(type(value))
+        # A plain str too: a class's `__name__` may be set to a str subclass,
+        # and the descriptor hands it back as it is.
+        name = str.__str__(type.__dict__['__name__'].__get__(type(value)))
     except Exception:
         name = 'object'
     return name if len(name) <= 64 else name[:61] + '...'
@@ -235,7 +245,13 @@ def _safe_repr(value):
         # `relabel_message` handle a non-string key.
         return '<{} that cannot be formatted>'.format(_type_name(value))
     text = str.__str__(text)   # a plain str, for the reason `_safe_key` gives
-    return text if len(text) <= 200 else text[:197] + '...'
+    text = text if len(text) <= 200 else text[:197] + '...'
+    # A plain dict's repr escapes a newline, but a value's own `__repr__` need
+    # not -- a mapping type or a str subclass from a custom decoder supplies
+    # one -- and every refusal ends with this text, so it could forge a line.
+    if not text.isprintable():
+        text = ''.join(c if c.isprintable() else repr(c)[1:-1] for c in text)
+    return text
 
 
 def _decode_bare(value):
@@ -460,6 +476,11 @@ def decode_decimal(value):
                                   the key is named in the log on the first
                                   message. The alternative on this feed is a
                                   silent wrong price.
+
+                                  A mapping whose ``items()`` cannot be read
+                                  is refused, and so is one carrying the
+                                  same key twice once its names are reduced
+                                  to plain text.
     :raises UnusableDecimalScale: if a non-object value is not a number, or
                                   carries an exponent past 64 in either
                                   direction. The empty string reaches this
@@ -479,7 +500,13 @@ def decode_decimal(value):
     # methods with a bare TypeError. Any `Mapping` is a decimal object, not
     # only a dict -- a `UserDict` or a `mappingproxy` was refused as "not a
     # number".
-    if not issubclass(type(value), collections.abc.Mapping):
+    try:
+        is_mapping = issubclass(type(value), collections.abc.Mapping)
+    except Exception:
+        # The ABC's cache hashes the class, and a metaclass can make a class
+        # unhashable: a bare TypeError, past the one `except` callers write.
+        is_mapping = False
+    if not is_mapping:
         return _decode_bare(value)
 
     # Read once, through the mapping's own `items()`, into a plain dict, and
