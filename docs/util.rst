@@ -4,7 +4,7 @@
 Utilities
 =========
 
-Miscellaneous helpers, all presented under the ``Utils`` class:
+Miscellaneous helpers. Most are methods of the ``Utils`` class:
 
 .. autoclass:: schwaby.utils.Utils
 
@@ -35,8 +35,9 @@ token can use, and this finds the one you mean.
   try:
       account_hash = find_account_hash(r.json(), '123456789')
   except AccountNumberNotFoundError:
-      # This token does not cover that account.
-      raise
+      # An ordinary answer, not a fault: this token does not cover that
+      # account.
+      raise SystemExit('this token does not cover that account')
 
 .. autofunction:: schwaby.utils.find_account_hash
 

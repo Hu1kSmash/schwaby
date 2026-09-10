@@ -1167,8 +1167,10 @@ presence of ``OrderUROutCompleted`` alone to tell a cancel from a rejection.
     far;
   - ``ExecutionInfo/ExecutionQuantity`` is this execution alone, and
     ``ExecutionInfo/ExecutionPrice`` is its price;
-  - ``OrderInfoForTransactionPosting/Quantity`` is the size of the order, not
-    a fill.
+  - ``OrderInfoForTransactionPosting/Quantity`` is the order's quantity, not
+    this fill's: on each order that filled in two executions it held the same
+    value on both fills, and on the two of those that could be compared it
+    equalled the order's own leg quantity.
 
   On an order that fills in one execution, the first two are equal, so reading
   the wrong one survives every test built on such fills. On an order that fills
@@ -1185,32 +1187,36 @@ presence of ``OrderUROutCompleted`` alone to tell a cancel from a rejection.
 
 ``PriceImprovement`` **has no established unit.** It sits directly under
 ``BaseEvent/OrderFillCompletedEventOrderLegQuantityInfo``, beside the
-quantities above. It was checked against 188 live equity fills, dividing it by
-the shares filled and comparing the result with the improvement over the quote
-held when the order was placed. 94 fitted a total for the whole fill, 9 fitted
-a price per share, and the rest fitted neither. The quote at placement is not
-the market at execution, and the fill carries no bid or ask to compare with
-instead, so the check cannot settle it. Do not multiply it or divide it by the
-quantity until you have checked it against a fill of your own.
+quantities above. It was checked against 188 live ETF fills, dividing it by the
+shares filled and comparing the result with the improvement over the quote held
+when the order was placed. 94 fitted a total for the whole fill, 9 fitted a
+price per share, 28 looked as though the quote had moved, and 57 fitted
+neither. The quote at placement is not the market at execution, and the fill
+carries no bid or ask to compare with instead, so the check cannot settle it.
+Do not multiply it or divide it by the quantity until you have checked it
+against a fill of your own.
 
-**A fill carries two timestamps, and they are never the same moment.** Under
+**A fill carries two timestamps, and in that archive they were never the same
+moment.** Under
 ``BaseEvent/OrderFillCompletedEventOrderLegQuantityInfo/ExecutionInfo``, both
 ``ExecutionTimeStamp/DateTimeString`` and
 ``VenuExecutionTimeStamp/DateTimeString`` (Schwab's spelling) were present on
-all 218 fill items in a production archive, and they differed on every one, by
+all 218 fill items in a production archive --- 163 distinct fills, since the
+archive can store one message twice --- and they differed on every one, by
 under a second. Both are strings of the form ``YYYY-MM-DD HH:MM:SS.fff`` with
-no offset. ``ExecutionTimeStamp`` is market time: read as Eastern, 106 of 106
-fills landed within a minute of the placing program's own zoned clock, and read
-as UTC none did. That was measured in summer only, so whether it follows
-daylight saving is not established. The venue stamp's time zone was not
-measured.
+no offset. ``ExecutionTimeStamp`` reads as US Eastern time: read that way, 106
+of 106 equity fills landed within a minute of the placing program's own zoned
+clock, and read as UTC none did. That was measured in summer only, so whether
+it follows daylight saving is not established. The venue stamp's time zone was
+not measured.
 
-**Charges are reported on each fill, and a zero charge is present rather than
-omitted.** ``ActualChargedCommissionAmount`` sits directly under the same
+**Charges were present on every fill in that archive, zero charges included.**
+``ActualChargedCommissionAmount`` sits directly under the same
 ``ExecutionInfo``. ``SECFees``, ``TAF`` and ``ORF`` sit one level down, under
 ``ActualChargedFeesCommissionAndTax``. All four were present on all 163
-distinct fills in that archive, and a zero charge arrived as a decimal object
-carrying only ``signScale``, which ``decode_decimal`` reads as zero.
+distinct equity fills, and a zero charge arrived there as a decimal object
+carrying only ``signScale``. An empty ``{}`` has also been seen as a genuine
+zero commission, on another payload, and ``decode_decimal`` reads both as zero.
 ``RouteName`` was a non-empty string on all 163. ``ExecutionBroker`` was absent
 on 2, so treat it as optional.
 
@@ -1546,8 +1552,10 @@ malformed message and should not be reported as one.
   as plain prose --- ``"Feature not supported"`` has been observed --- so a
   consumer calling ``json.loads`` unconditionally raises on a message that is
   merely informational, on the account feed, at whatever moment Schwab decides
-  to tell you something. Parse it defensively and treat a failure as "this one
-  is a notice", not as a broken frame.
+  to tell you something. Text that is not JSON is a notice, not a broken
+  frame. Text that starts like a JSON object and does not parse is neither: it
+  is a truncated or corrupt payload, and ``parse_message_data`` below raises
+  on it rather than passing it off as a notice.
 
   That notice arrives as an ordinary ``data``-channel content item whose
   ``MESSAGE_TYPE`` is the empty string, so a handler that dispatches on the
@@ -1684,10 +1692,10 @@ item that marks it.
 ``MESSAGE_TYPE`` and ``MESSAGE_DATA``. A content item carrying none of those is
 a ``notify``-channel item, which this library forwards unchanged --- see the
 warning under :ref:`Data Field Relabeling <data_field_relabeling>` above.
-Observed values there include an activity token of ``orderfill``. A notice
-reading ``feature not supported`` was also listed here, but over about three
-months of one production feed that notice arrived only on the ``data`` channel,
-as ``MESSAGE_DATA`` text, and never on ``notify``.
+Observed values there include an activity token of ``orderfill``. The
+``Feature not supported`` notice has been seen on the ``data`` channel instead:
+over about three months of one production feed it arrived only there, as
+``MESSAGE_DATA`` text.
 
 If you learn something this list gets wrong, a pull request correcting it is
 more useful than a private patch.

@@ -400,9 +400,9 @@ class BaseClient(EnumEnforcer):
         '''
         Returns the accounts this token can use, as a list pairing each
         ``accountNumber`` with the ``hashValue`` to pass whenever referring to
-        that account in API calls. Nothing orders the list, so use
-        :func:`~schwaby.utils.find_account_hash` to find the hash for a number
-        rather than taking the first entry.
+        that account in API calls. Schwab documents no order for the list, so
+        use :func:`~schwaby.utils.find_account_hash` to find the hash for a
+        number rather than taking the first entry.
         '''
         path = '/trader/v1/accounts/accountNumbers'
         return self._get_request(path, {})
