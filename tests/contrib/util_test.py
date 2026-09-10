@@ -533,6 +533,48 @@ class DecodeDecimalTest(unittest.TestCase):
         self.assertLessEqual(max(len(k) for k in util._reported_keys), 64)
         util._reported_keys.clear()
 
+    def test_a_refusal_message_cannot_raise_on_the_keys_it_names(self):
+        """A case per call site, not per helper.
+
+        `_safe_key` has three callers -- the report, and the two refusal
+        messages -- and a red-proof case on the helper's own body proves only
+        that *some* caller reaches it. Reverting both refusal sites to
+        `str()` left the entire suite green, because every existing fixture
+        took the ignored path.
+        """
+        # The ambiguity refusal: a missing component, and an unnameable key.
+        with self.assertRaises(UnusableDecimalScale) as caught:
+            decode_decimal({'lo': '1', 10 ** 6000: 0})
+        self.assertIn('cannot be named', str(caught.exception))
+        # The not-a-decimal-object refusal: no known key at all.
+        with self.assertRaises(UnusableDecimalScale) as caught:
+            decode_decimal({10 ** 6000: 0})
+        self.assertIn('cannot be named', str(caught.exception))
+        # Positive control: an ordinary key is named, so the assertions above
+        # are not passing on a message that says nothing.
+        with self.assertRaises(UnusableDecimalScale) as caught:
+            decode_decimal({'lo': '1', 'Scale': 12})
+        self.assertIn('Scale', str(caught.exception))
+
+    def test_a_refusal_message_is_bounded_in_count_as_well(self):
+        # `_safe_key` caps each name and the join did not, so an object
+        # carrying 100,000 unknown keys produced a 2.9 MB exception message.
+        crowded = {'lo': '1'}
+        crowded.update({'k%05d' % i: 0 for i in range(100000)})
+        with self.assertRaises(UnusableDecimalScale) as caught:
+            decode_decimal(crowded)
+        self.assertLess(len(str(caught.exception)), 1000)
+        self.assertIn('more', str(caught.exception))
+
+    def test_an_empty_object_is_the_omit_everything_zero(self):
+        # The `:raises:` block said an object carrying none of the four is
+        # refused, which reads as covering `{}`. It does not and should not:
+        # the guard lives behind "an unrecognised key is present", and `{}`
+        # is the omit-everything spelling of zero.
+        self.assertEqual(decimal.Decimal(0), decode_decimal({}))
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal({'Foo': 1})
+
     def test_an_added_key_costs_the_objects_that_omit_a_component(self):
         """What the refusal above costs, stated rather than discovered.
 

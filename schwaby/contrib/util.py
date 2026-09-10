@@ -165,6 +165,21 @@ class UnusableDecimalScale(SchwabError, ValueError):
     '''
 
 
+def _safe_keys(unknown):
+    """The unknown keys as one bounded phrase.
+
+    Bounded in count as well as per key: `_safe_key` caps each name, and the
+    join did not, so an object carrying 100,000 unknown keys produced a
+    2.9 MB exception message. Transient rather than retained, which is why
+    it is a smaller problem than the sets -- but an exception a caller logs
+    is retained by whatever logs it.
+    """
+    names = sorted(map(_safe_key, unknown))
+    if len(names) <= 8:
+        return ', '.join(names)
+    return '{} and {} more'.format(', '.join(names[:8]), len(names) - 8)
+
+
 def _safe_key(key):
     """A key's name, bounded and guaranteed not to raise.
 
@@ -176,7 +191,11 @@ def _safe_key(key):
     try:
         text = str(key)
     except Exception:
-        return '<{} that cannot be named>'.format(type(key).__name__)
+        # Bounded too. A type whose name is enormous would otherwise go
+        # straight into `_reported_keys`, which never shrinks -- the exact
+        # scenario the length bound exists for, through the branch written
+        # to be safe.
+        text = '<{} that cannot be named>'.format(type(key).__name__)
     return text if len(text) <= 64 else text[:61] + '...'
 
 
@@ -355,10 +374,13 @@ def decode_decimal(value):
                   generically.
     :raises UnusableDecimalScale: if any member is not an unsigned 32-bit
                                   integer, if the ``signScale`` is outside
-                                  ``0..64``, or if the object carries *none*
-                                  of ``lo``, ``mid``, ``hi`` and
-                                  ``signScale``, which means it is not one of
-                                  these at all. Refused rather than computed
+                                  ``0..64``, or if the object carries an
+                                  unrecognised key and *none* of ``lo``,
+                                  ``mid``, ``hi`` and ``signScale``, which
+                                  means it is not one of these at all. An
+                                  empty object is not that case: it is the
+                                  omit-everything spelling of zero, and
+                                  decodes as one. Refused rather than computed
                                   with, because each of those produces a
                                   plausible wrong number rather than an
                                   error.
@@ -437,7 +459,7 @@ def decode_decimal(value):
                     'may be that component under a new name: {}'.format(
                         'mantissa' if not present & _MANTISSA_KEYS
                         else 'signScale',
-                        ', '.join(sorted(map(_safe_key, unknown))),
+                        _safe_keys(unknown),
                         _safe_repr(value)))
         if not keys & _DECIMAL_KEYS:
             # None of the four. Not a decimal object at all -- a PascalCase
@@ -448,7 +470,7 @@ def decode_decimal(value):
             raise UnusableDecimalScale(
                     'not a decimal object -- no lo, mid, hi or signScale, '
                     'only {}: {}'.format(
-                        ', '.join(sorted(map(_safe_key, unknown))),
+                        _safe_keys(unknown),
                         _safe_repr(value)))
         # A key *alongside* the four is a schema addition, not corruption.
         # Ignored, and said out loud once, for the reasons on
