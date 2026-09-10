@@ -557,9 +557,10 @@ class BaseClient(EnumEnforcer):
         return self._post_request(path, order_spec)
 
     def replace_order(self, account_hash, order_id, order_spec):
-        '''Replace an existing order for an account. The existing order will be
-        replaced by the new order. Once replaced, the old order will be canceled
-        and a new order will be created.'''
+        '''Replace an existing order for an account. The existing order stops
+        working and a new order, with a new ID, takes its place. The old ID
+        does not carry over, and what it reads afterwards is not necessarily
+        ``CANCELED``.'''
         if isinstance(order_spec, OrderBuilder):
             order_spec = order_spec.build()
 

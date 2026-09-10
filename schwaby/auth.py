@@ -1015,7 +1015,7 @@ def easy_client(api_key, app_secret, callback_url, token_path, asyncio=False,
     any way. If ``token_path`` refers to an existing file, this method will
     assume that file is valid token and will attempt to parse it.
 
-    **``max_token_age`` defaults to 6.5 days**, and a token older than that is
+    ``max_token_age`` **defaults to 6.5 days**, and a token older than that is
     discarded here and replaced through :func:`client_from_login_flow`. Setting
     ``max_token_age=0`` skips the proactive refresh, but Schwab's refresh token
     expires seven days after authorization regardless, so a long-running program

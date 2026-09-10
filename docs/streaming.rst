@@ -1254,15 +1254,15 @@ it refuses costs that field; decoded in one ``try``, it costs the message:
 ``Decimal`` rather than a float, deliberately: these are money, and
 :meth:`set_price <schwaby.orders.generic.OrderBuilder.set_price>` refuses a
 float for the reason :ref:`price_strings` gives. A value decoded into a binary
-float cannot be fed back into a reprice without going through the
-conversion this library exists to avoid, and accumulating one over a day's
-principal reintroduces exactly the error class that made limit prices a cent
-low. The value is built from a string, sign included, because **every
-operation** on a ``Decimal`` applies the caller's context and only construction
-does not: a consumer who sets ``decimal.getcontext().prec = 6`` elsewhere in
-their process would otherwise get ``1234.57`` for a price of ``1234.5678``, and
-negating a positive result is such an operation, so the sign has to go into the
-string too.
+float cannot be fed back into a reprice without going through the conversion
+this library exists to avoid, and accumulating one over a day's principal
+reintroduces exactly the error class that made limit prices a cent low. The
+value is built from a string, sign included, because **every operation** on a
+``Decimal`` applies the caller's context --- only construction, and the
+``copy_`` methods such as ``copy_abs()``, do not: a consumer who sets
+``decimal.getcontext().prec = 6`` elsewhere in their process would otherwise
+get ``1234.57`` for a price of ``1234.5678``, and negating a positive result is
+such an operation, so the sign has to go into the string too.
 
 The scale is also bounded rather than computed with. ``10 ** (signScale // 2)``
 on a garbage or hostile ``signScale`` builds an astronomical integer and hangs
@@ -1410,16 +1410,16 @@ nowhere official.
   turn an addition into an outage.
 
 **The sign of a field is not a side.** Buy versus sell comes from
-``BuySellCode``. Prices and quantities arrived positive, with an even
-``signScale``; the odd branch exists so a genuinely negative field does not
-decode positive. Across that production archive only four fields were ever
-negative: ``EstimatedPrincipalAmount``, ``EstimatedPrincipalAmnt`` and
-``EstimatedNetAmount``, negative on a buy because the cash goes out, and
-``Mid``, negative on a sell --- the opposite way round. ``Bid``, ``Ask``,
+``BuySellCode``. Prices other than ``Mid``, and every quantity, arrived
+positive, with an even ``signScale``; the odd branch exists so a genuinely
+negative field does not decode positive. Across that production archive only
+four fields were ever negative: ``EstimatedPrincipalAmount``,
+``EstimatedPrincipalAmnt`` and ``EstimatedNetAmount``, negative on a buy
+because the cash goes out, and ``Mid``, negative on the sell orders where the
+side could be checked --- the opposite way round. ``Bid``, ``Ask``,
 ``LimitPrice``, ``ExecutionPrice``, ``PrincipalAmmount`` and every quantity
 were positive throughout. Two fields whose signs followed the side in opposite
-directions are reason enough: do not infer direction from the sign of
-anything.
+directions are reason enough: do not infer direction from the sign of anything.
 
 .. danger::
 
@@ -1445,7 +1445,8 @@ anything.
   ``decimal.getcontext().prec = 6``, ``abs()`` turns a ``Mid`` of
   ``-12.345678`` into ``12.3457``, while ``copy_abs()`` gives ``12.345678``.
   To compute a mid from the same quote's ``Bid`` and ``Ask`` instead, do the
-  arithmetic under a context with enough precision:
+  arithmetic under a context with enough precision, and trap ``Inexact`` so a
+  result that would have to round raises instead:
 
   .. code-block:: python
 
@@ -1460,6 +1461,7 @@ anything.
     ask = decode_decimal(quote['Ask'])
     with decimal.localcontext() as ctx:
         ctx.prec = 34
+        ctx.traps[decimal.Inexact] = True
         mid_from_quote = (bid + ask) / 2
 
   Do not read the side from ``Mid`` either: a convention that held on a sample
