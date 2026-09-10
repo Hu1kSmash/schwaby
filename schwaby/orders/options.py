@@ -197,8 +197,13 @@ class OptionSymbol:
     @classmethod
     def parse_symbol(cls, symbol):
         '''
-        Parse a string option symbol of the for ``[Underlying left justified to 6 positions][Two digit year]
-        [Two digit month][Two digit day]['P' or 'C'][Strike price]``.
+        Parse a string option symbol of the form ``[Underlying left justified
+        with spaces to 6 positions][Two digit year][Two digit month][Two digit
+        day]['P' or 'C'][Strike price in thousandths, eight digits]``, 21
+        characters in all.
+
+        :raises ValueError: The symbol is not exactly that layout, or its
+                            expiration date or contract type is not valid.
         '''
         format_error_str = (
             'option symbol must have format ' +
@@ -210,7 +215,12 @@ class OptionSymbol:
         # space of padding turned a 2026 expiration into 2061, and a
         # seven-digit strike turned 125 into 12.5.
         layout_error_str = format_error_str + ', 21 characters in all'
-        if not isinstance(symbol, str) or len(symbol) != 21:
+        if not isinstance(symbol, str):
+            raise ValueError(layout_error_str)
+        # A plain str, so that a subclass cannot answer the length check for
+        # characters it does not have.
+        symbol = str.__str__(symbol)
+        if len(symbol) != 21:
             raise ValueError(layout_error_str)
         if not _SYMBOL_ROOT.fullmatch(symbol[:6]):
             raise ValueError(layout_error_str)
@@ -223,7 +233,7 @@ class OptionSymbol:
         contract_type = symbol[12]
         if contract_type not in ('C', 'P'):
             raise ValueError(
-                r'option must have contract type \'C\' r \'\P\', ' +
+                "option must have contract type 'C' or 'P', " +
                 format_error_str)
 
         strike = str(int(symbol[13:]) / 1000.0)

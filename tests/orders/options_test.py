@@ -744,6 +744,16 @@ class OptionSymbolLayoutTest(unittest.TestCase):
                     OptionSymbol.parse_symbol(symbol)
 
     @no_duplicates
+    def test_a_str_subclass_cannot_fake_the_length(self):
+        class Padded(str):
+            def __len__(self):
+                return 21
+
+        with self.assertRaisesRegex(
+                ValueError, 'option symbol must have format'):
+            OptionSymbol.parse_symbol(Padded('SOXL  261120P0012500'))
+
+    @no_duplicates
     def test_a_well_formed_symbol_still_parses_and_round_trips(self):
         for symbol, underlying, expiration, contract_type in (
                 ('SOXL  261120P00125000', 'SOXL', datetime.date(2026, 11, 20),
@@ -765,7 +775,7 @@ class OptionSymbolLayoutTest(unittest.TestCase):
 
     @no_duplicates
     def test_the_other_refusals_keep_their_messages(self):
-        with self.assertRaisesRegex(ValueError, 'contract type'):
+        with self.assertRaisesRegex(ValueError, "contract type 'C' or 'P', "):
             OptionSymbol.parse_symbol('SOXL  261120X00125000')
         with self.assertRaisesRegex(ValueError, 'contract type'):
             OptionSymbol.parse_symbol('soxl  261120p00125000')
