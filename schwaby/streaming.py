@@ -168,7 +168,22 @@ def _safe_str(value):
         text = str(value)
     except Exception:
         text = '<unprintable>'
+    text = str.__str__(text)   # a plain str; `_safe_value` says why
     return text if len(text) <= 200 else text[:197] + '...'
+
+
+def _type_name(value):
+    """A value's type name, for a line about a value that could not be read.
+
+    Read through `type`'s own descriptor and reduced to a plain str.
+    `type(x).__name__` consults the metaclass first, which can raise inside
+    the very branch written not to.
+    """
+    try:
+        name = str.__str__(type.__dict__['__name__'].__get__(type(value)))
+    except Exception:
+        name = 'object'
+    return name if len(name) <= 64 else name[:61] + '...'
 
 
 def _safe_value(value):
@@ -185,7 +200,7 @@ def _safe_value(value):
         text = repr(value)
     except Exception:
         text = '<{} that cannot be formatted>'.format(
-                type(value).__name__)
+                _type_name(value))
     # A plain `str`: `repr` hands back a subclass untouched when `__repr__`
     # returns one. Measured on an absorbed frame from a custom decoder: a
     # raising `__len__` ended the receive loop with nothing logged, and one
@@ -205,7 +220,7 @@ def _safe_name(value):
     try:
         text = str(value)
     except Exception:
-        text = '<{} that cannot be named>'.format(type(value).__name__)
+        text = '<{} that cannot be named>'.format(_type_name(value))
     # A plain `str`: `str()` hands back a subclass untouched when `__str__`
     # returns one. Measured on a `MESSAGE_TYPE`: one returning itself kept its
     # own `casefold`, which raised and absorbed the whole element, and its own
@@ -297,9 +312,9 @@ def _report_unknown_message_type(name):
             'types anyone has captured. The message is not refused for that; '
             'this is reported once per type, not per message. Classify these '
             'messages by substring rather than by exact type, and do not read '
-            'a CANCEL or UROUT as the order ending: on the option orders '
-            'captured, a price change retired the old order id the same way. '
-            'If you see this, please open an issue at '
+            'a CANCEL or UROUT as necessarily ending the order: on the '
+            'option orders captured, a price change retired the old order id '
+            'the same way. If you see this, please open an issue at '
             'https://github.com/Hu1kSmash/schwaby/issues with the type -- '
             'Schwab documents this vocabulary nowhere, and a report is how '
             'the list of observed types grows.',

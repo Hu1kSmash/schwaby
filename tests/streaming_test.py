@@ -9719,6 +9719,38 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
                 max(len(t) for t in streaming._reported_message_types), 192)
 
     @no_duplicates
+    def test_a_str_formatted_for_a_log_line_is_plain_and_bounded(self):
+        # `_safe_str` formats an exception beside its type name. `str()` of a
+        # KeyError is the repr of its key, and a decoder's key object can hand
+        # back itself -- whose own `__len__` then ran, measured ending the
+        # receive loop and losing a valid quote in the same frame.
+        class Key(str):
+            def __repr__(self):
+                return self
+
+            def __len__(self):
+                raise RuntimeError('boom')
+
+        text = streaming._safe_str(KeyError(Key('2')))
+        self.assertIs(str, type(text))
+        self.assertLessEqual(len(text), 200)
+
+    @no_duplicates
+    def test_an_unnameable_type_does_not_escape_a_name(self):
+        # The fallback that names an unprintable value read
+        # `type(x).__name__`, which consults the metaclass first.
+        class Meta(type):
+            @property
+            def __name__(cls):
+                raise RuntimeError('boom')
+
+        class Unprintable(metaclass=Meta):
+            def __str__(self):
+                raise RuntimeError('boom')
+
+        self.assertIs(str, type(streaming._safe_name(Unprintable())))
+
+    @no_duplicates
     def test_a_value_formatted_for_a_log_line_is_plain_and_bounded(self):
         # `_safe_value` reprs a whole frame when one is absorbed. A decoder's
         # str subclass whose `__repr__` returns itself kept its own `__len__`:
