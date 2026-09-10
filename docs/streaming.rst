@@ -1157,6 +1157,32 @@ presence of ``OrderUROutCompleted`` alone to tell a cancel from a rejection.
   than trying to enumerate every fill label. The error is asymmetric ---
   under-counting is recoverable from a REST poll, over-counting is not.
 
+.. danger::
+
+  **A fill carries three quantities, and only one is the running total.** All
+  three sit inside ``OrderFillCompleted``, under
+  ``BaseEvent/OrderFillCompletedEventOrderLegQuantityInfo``:
+
+  - ``QuantityInfo/CumulativeQuantity`` is how much of the order has filled so
+    far;
+  - ``ExecutionInfo/ExecutionQuantity`` is this execution alone, and
+    ``ExecutionInfo/ExecutionPrice`` is its price;
+  - ``OrderInfoForTransactionPosting/Quantity`` is the size of the order, not
+    a fill.
+
+  On an order that fills in one execution, the first two are equal, so reading
+  the wrong one survives every test built on such fills. On an order that fills
+  in two, the second fill's ``ExecutionQuantity`` is the second tranche only.
+  Measured on equity orders from a production archive of 160 filled orders:
+  all three that filled in two executions showed the split --- the first fill
+  with ``LeavesQuantity`` above zero and the two quantities equal, the second
+  with ``ExecutionQuantity`` below ``CumulativeQuantity`` and
+  ``LeavesQuantity`` zero --- and all 157 that filled in one had the two
+  equal. Where these keys sit on an option order has not been checked.
+
+  ``OrderCreated`` carries a ``Quantity`` as well, per leg under ``OrderLegs``.
+  It is the size ordered, on an order that may never fill.
+
 **Two enumerated fields arrive as either the label or its ordinal.**
 ``ResponseType`` and ``RouteStatus`` were captured as both a string and an
 integer on the *same* order, from two ``ExecutionRequestCompleted`` frames two
