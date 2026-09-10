@@ -1183,6 +1183,16 @@ presence of ``OrderUROutCompleted`` alone to tell a cancel from a rejection.
   ``OrderCreated`` carries a ``Quantity`` as well, per leg under ``OrderLegs``.
   It is the size ordered, on an order that may never fill.
 
+``PriceImprovement`` **has no established unit.** It sits directly under
+``BaseEvent/OrderFillCompletedEventOrderLegQuantityInfo``, beside the
+quantities above. It was checked against 188 live equity fills, dividing it by
+the shares filled and comparing the result with the improvement over the quote
+held when the order was placed. 94 fitted a total for the whole fill, 9 fitted
+a price per share, and the rest fitted neither. The quote at placement is not
+the market at execution, and the fill carries no bid or ask to compare with
+instead, so the check cannot settle it. Do not multiply it or divide it by the
+quantity until you have checked it against a fill of your own.
+
 **Two enumerated fields arrive as either the label or its ordinal.**
 ``ResponseType`` and ``RouteStatus`` were captured as both a string and an
 integer on the *same* order, from two ``ExecutionRequestCompleted`` frames two
