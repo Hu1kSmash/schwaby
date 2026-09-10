@@ -567,8 +567,15 @@ def decode_decimal(value):
     # rather than guessed. The choice is made on `mid` *and* `hi`: keyed on
     # `mid` alone, `{"lo": ..., "hi": 1}` would read `lo` whole and drop `hi`
     # without a word.
+    #
+    # An absent `lo` is zero here too, as an absent member always has been.
+    # The shortcut above has already returned for that case, but it is
+    # normalisation only, and the arithmetic must not depend on it: read
+    # unconditionally, a mantissa-less object that reached this line would
+    # raise instead of decoding as the zero it is.
     if value.get('mid') is None and value.get('hi') is None:
-        mantissa = _unsigned(value.get('lo'), 'lo', value, 96)
+        lo = value.get('lo')
+        mantissa = 0 if lo is None else _unsigned(lo, 'lo', value, 96)
     else:
         mantissa = 0
         for name, shift in (('lo', 0), ('mid', 32), ('hi', 64)):
