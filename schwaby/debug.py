@@ -143,10 +143,22 @@ def _enable_bug_report_logging(output=None, loggers=None):
     _COLLECT_RESPONSE_REDACTIONS = True
 
     if loggers is None:
+        # Imported here rather than at module scope: `schwaby/__init__.py`
+        # does not pull in `contrib`, so naming it at the top would make
+        # `import schwaby` load a subpackage nothing else needs. It belongs
+        # in the list because the one thing it logs -- a key Schwab added to
+        # a decimal object -- is exactly what a bug report wants to carry.
+        #
+        # `from ... import ... as` rather than `import schwaby.contrib.util`,
+        # which binds the name `schwaby` locally and turns every other
+        # `schwaby.` reference in this function into an UnboundLocalError.
+        from schwaby.contrib import util as contrib_util
+
         loggers = (
             schwaby.auth.get_logger(),
             schwaby.client.base.get_logger(),
             schwaby.streaming.get_logger(),
+            contrib_util.get_logger(),
             get_logger())
 
     class RecordingHandler(logging.Handler):

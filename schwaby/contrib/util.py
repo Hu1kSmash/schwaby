@@ -1,8 +1,13 @@
 import decimal
 import json
+import logging
 import re
 from schwaby.streaming import StreamJsonDecoder
 from schwaby.utils import SchwabError
+
+
+def get_logger():
+    return logging.getLogger(__name__)
 
 
 class HeuristicJsonDecoder(StreamJsonDecoder):
@@ -55,11 +60,60 @@ MAX_EXPONENT = 64
 _BARE_NUMBER = re.compile(
         r'-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?\Z')
 
-#: Every key a serialized ``System.Decimal`` can carry. An object with none
-#: of them is not one, and would otherwise take the mantissa-less shortcut
-#: and decode as zero -- the worst wrong answer available on this feed --
-#: without anything having looked at it.
+#: Every key a serialized ``System.Decimal`` is known to carry. An object with
+#: none of them is not one, and would otherwise take the mantissa-less
+#: shortcut and decode as zero -- the worst wrong answer available on this
+#: feed -- without anything having looked at it.
+#:
+#: A key *alongside* these is a different thing entirely, and is ignored. See
+#: :func:`_report_unknown_keys` for why that direction rather than refusing.
 _DECIMAL_KEYS = frozenset(('lo', 'mid', 'hi', 'signScale'))
+
+#: How many distinct unknown keys to name in the log before giving up. A cap
+#: rather than an unbounded set, because the thing being counted is attacker-
+#: or corruption-controlled and this set never shrinks.
+_MAX_REPORTED_KEYS = 32
+
+_reported_keys = set()
+
+
+def _report_unknown_keys(unknown):
+    """Say once, per distinct key, that Schwab sent something new.
+
+    The alternative was refusing the object, which this function did for one
+    release. That is the loud direction and it is the wrong one *here*: a key
+    Schwab adds appears on every decimal object at once, so refusing turns a
+    schema addition into every money and quantity field on the feed raising
+    together -- a dead feed, from a change that costs nothing to ignore. The
+    encoding is positional in `lo`/`mid`/`hi`/`signScale`; a fifth key does
+    not move the other four.
+
+    What is *not* ignored is an object carrying none of the four. That is not
+    a decimal object at all, and decoding it as zero is the failure this
+    whole guard exists for. The residual gap is an object with a valid
+    `signScale` and a mantissa under a name this library does not know --
+    `{"low": 1, "signScale": 12}` -- which still reads as zero. A serializer
+    does not typo, so that shape means a rename, and a rename shows up here
+    as a logged unknown key on the very first message.
+
+    Reported once per distinct key rather than once per message: this fires
+    on a live feed, where a per-message line is a log flood and a
+    per-connection line is what an operator can act on.
+    """
+    fresh = unknown - _reported_keys
+    if not fresh or len(_reported_keys) >= _MAX_REPORTED_KEYS:
+        return
+    _reported_keys.update(fresh)
+    get_logger().warning(
+            'Schwab sent %s inside a decimal object, which this version of '
+            'schwaby does not know about. The value still decodes -- the '
+            'encoding is positional and an added key does not move the '
+            'others -- and this is reported once per key, not per message. '
+            'If you see this, please open an issue at '
+            'https://github.com/Hu1kSmash/schwaby/issues so the field can be '
+            'documented: it is undocumented publicly and a capture is the '
+            'only way anyone learns what it means.',
+            ', '.join(repr(k) for k in sorted(map(str, fresh))))
 
 
 class UnusableDecimalScale(SchwabError, ValueError):
@@ -256,12 +310,22 @@ def decode_decimal(value):
                   generically.
     :raises UnusableDecimalScale: if any member is not an unsigned 32-bit
                                   integer, if the ``signScale`` is outside
-                                  ``0..64``, or if the object carries a key
-                                  other than ``lo``, ``mid``, ``hi`` and
-                                  ``signScale``. Refused rather than computed
+                                  ``0..64``, or if the object carries *none*
+                                  of ``lo``, ``mid``, ``hi`` and
+                                  ``signScale``, which means it is not one of
+                                  these at all. Refused rather than computed
                                   with, because each of those produces a
                                   plausible wrong number rather than an
                                   error.
+
+                                  A key **alongside** those four is a schema
+                                  addition rather than corruption. It is
+                                  ignored and logged once, because a key
+                                  Schwab adds arrives on every decimal object
+                                  at once --- refusing it would turn a
+                                  harmless addition into every money and
+                                  quantity field on the feed failing
+                                  together.
     :raises UnusableDecimalScale: if a non-object value is not a number, or
                                   carries an exponent past 64 in either
                                   direction. The empty string reaches this
@@ -278,23 +342,24 @@ def decode_decimal(value):
     if not isinstance(value, dict):
         return _decode_bare(value)
 
-    if not _DECIMAL_KEYS.issuperset(value):
-        # An object carrying none of the four keys would otherwise fall
-        # straight through the mantissa-less shortcut below and decode as
-        # zero without anything having looked at it -- so a PascalCase
-        # `{"Lo": ..., "SignScale": ...}`, a `{"low": ...}` typo, or an
-        # entirely unrelated object all read as a genuine zero. Zero is the
-        # worst wrong answer available on this feed: it is what a $0
-        # commission and a completed fill look like.
-        #
-        # Refusing an *unknown* key rather than requiring a known one is the
-        # loud direction. If Schwab ever changes this serialization, every
-        # field raises at once and says so, instead of a feed quietly
-        # reporting zeros.
-        raise UnusableDecimalScale(
-                'not a decimal object -- unexpected {}: {}'.format(
-                    ', '.join(sorted(map(str, set(value) - _DECIMAL_KEYS))),
-                    _safe_repr(value)))
+    unknown = value.keys() - _DECIMAL_KEYS
+    if unknown:
+        if not value.keys() & _DECIMAL_KEYS:
+            # None of the four. Not a decimal object at all -- a PascalCase
+            # `{"Lo": ..., "SignScale": ...}`, or an unrelated object
+            # entirely -- and it would otherwise fall straight through the
+            # mantissa-less shortcut below and decode as a genuine zero,
+            # which is what a $0 commission and a completed fill look like.
+            raise UnusableDecimalScale(
+                    'not a decimal object -- no lo, mid, hi or signScale, '
+                    'only {}: {}'.format(
+                        ', '.join(sorted(map(str, unknown))),
+                        _safe_repr(value)))
+        # A key *alongside* the four is a schema addition, not corruption.
+        # Ignored, and said out loud once, for the reasons on
+        # `_report_unknown_keys`. This direction was chosen deliberately:
+        # refusing made a field Schwab adds take the whole feed down.
+        _report_unknown_keys(unknown)
 
     # The scale is read, validated and bounded *before* the mantissa-less
     # shortcut, not after. That shortcut returns without looking at anything

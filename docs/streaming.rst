@@ -1242,6 +1242,27 @@ nowhere official.
   the common value, ``AskSize`` and ``BidSize`` are what it gets wrong: the
   second guess is off by a factor of a million with nothing raised.
 
+.. note::
+
+  **A key you do not recognise inside a decimal object is almost certainly a
+  schema addition, and ignoring it is the right move.** The encoding is
+  positional --- ``lo``, ``mid`` and ``hi`` are fixed slices of one 96-bit
+  mantissa and ``signScale`` is the scale --- so a fifth key does not move the
+  other four. Refuse it and a field Schwab adds one morning takes down every
+  money and quantity value on the feed at once, which is a far worse outcome
+  than not knowing what the new key means.
+
+  What is *not* safe to ignore is an object carrying **none** of those four.
+  That is not a decimal object, and the mantissa-less rule above would decode
+  it as a genuine zero.
+
+  ``decode_decimal`` does both: it ignores an added key and logs it once per
+  key on ``schwaby.contrib.util``, and refuses an object with none of the
+  four. If you see that log line, please `open an issue
+  <https://github.com/Hu1kSmash/schwaby/issues>`__ with the field --- the
+  encoding is undocumented publicly and a capture is the only way anyone
+  learns what a new key means.
+
 **The sign is not the side.** Fill quantities and prices arrive positive, with
 an even ``signScale``; buy versus sell comes from ``BuySellCode``. The odd
 branch exists so a genuinely negative field does not decode positive, and the

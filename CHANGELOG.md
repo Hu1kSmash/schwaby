@@ -22,6 +22,44 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## Unreleased
+
+### A field Schwab adds no longer takes the feed down
+
+4.2.0 made `decode_decimal` refuse a decimal object carrying any key it did
+not recognise. That was the wrong direction and this reverses it.
+
+The reasoning behind the refusal was that an unknown key could be a renamed
+mantissa, and decoding around it would report a real value as zero — which is
+what a $0 commission and a completed fill look like. True, and it ignored how
+the two failures differ in blast radius. **A key Schwab adds appears on every
+decimal object at once**, so refusing it turns a harmless schema addition into
+every money and quantity field on the feed failing together, on a morning
+nobody chose. The encoding is positional — `lo`, `mid` and `hi` are fixed
+slices of one 96-bit mantissa — so a fifth key does not move the other four.
+
+So an unrecognised key alongside `lo`, `mid`, `hi` or `signScale` is now
+**ignored and logged once per key** on the `schwaby.contrib.util` logger,
+which `enable_bug_report_logging` now collects. An object carrying **none** of
+those four is still refused: that is not a decimal object, and the
+mantissa-less rule would decode it as a genuine zero.
+
+One shape is knowingly given up: a mantissa under a name this library does not
+know, beside a valid `signScale` — `{"low": 1, "signScale": 12}` — still reads
+as zero. A serializer does not typo, so that means a rename rather than
+corruption, and a rename is visible in the same log line on the first message
+that carries it.
+
+If you see that warning, please [open an
+issue](https://github.com/Hu1kSmash/schwaby/issues) with the field. The
+encoding is undocumented publicly and a capture is the only way anyone learns
+what a new key means.
+
+**Nothing else in the library rejects an unexpected field**, measured rather
+than assumed: an unknown numeric field id on a stream you subscribe to is
+delivered verbatim while every known field still relabels, so a new field
+reaches your handler rather than breaking it.
+
 ## 4.2.0
 
 *2026-09-09*

@@ -2,6 +2,7 @@ import decimal
 import json
 import unittest
 
+from schwaby.contrib import util
 from schwaby.contrib.util import (
     MAX_SIGN_SCALE, decode_decimal, HeuristicJsonDecoder,
     UnusableDecimalScale)
@@ -221,7 +222,6 @@ class DecodeDecimalTest(unittest.TestCase):
         for bad in ('', 'not a number',
                     {'lo': '1', 'signScale': 10 ** 9},
                     {'Lo': '1', 'SignScale': 12},        # not a decimal object
-                    {'lo': '1', 'signScale': 12, 'x': 1},
                     {'lo': 'x', 'signScale': 12},        # non-numeric string
                     {'lo': '1', 'signScale': 'x'},       # non-numeric scale
                     {'lo': [1], 'signScale': 12},        # non-scalar: TypeError
@@ -374,17 +374,78 @@ class DecodeDecimalTest(unittest.TestCase):
         # The mantissa-less shortcut returns zero without inspecting
         # anything, so corruption that changes *keys* rather than values
         # reached it -- and zero is what a $0 commission and a completed fill
-        # look like.
+        # look like. Refused only when *none* of the four keys is present;
+        # see the schema-addition test below for the other direction.
         for value in ({'Lo': 6860000, 'SignScale': 12},     # PascalCase
-                      {'low': 6860000, 'signScale': 12},    # typo
+                      {'low': 6860000},                     # typo, no scale
                       {'symbol': 'AAPL', 'quantity': 100},  # another object
-                      {'lo': '6860000', 'signScale': 12, 'flags': 0}):
+                      {'flags': 0}):
             with self.subTest(value=value):
                 with self.assertRaises(UnusableDecimalScale):
                     decode_decimal(value)
         # Positive control: the two shapes that legitimately decode to zero.
         self.assertEqual(decimal.Decimal(0), decode_decimal({}))
         self.assertEqual(decimal.Decimal(0), decode_decimal({'signScale': 12}))
+
+    def test_a_key_schwab_adds_later_does_not_take_the_feed_down(self):
+        # The direction this was decided in, and why. A key Schwab adds
+        # appears on *every* decimal object at once, so refusing one turns a
+        # schema addition into every money and quantity field raising
+        # together. The encoding is positional in lo/mid/hi/signScale and a
+        # fifth key does not move the other four, so it is ignored.
+        util._reported_keys.clear()
+        for value, expected in (
+                ({'lo': '13720000', 'signScale': 12, 'flags': 0}, '13.72'),
+                ({'lo': '19200', 'flags': 0}, '19200'),
+                ({'signScale': 12, 'flags': 0}, '0'),
+                ({'lo': '6860000', 'signScale': 13, 'IsNeg': True}, '-6.86')):
+            with self.subTest(value=value):
+                self.assertEqual(decimal.Decimal(expected),
+                                 decode_decimal(value))
+
+    def test_a_key_schwab_adds_later_is_reported_once_per_key(self):
+        # Once per distinct key, not once per message: this fires on a live
+        # feed, where per-message is a log flood and per-key is what an
+        # operator can act on.
+        util._reported_keys.clear()
+        with self.assertLogs(util.get_logger(), level='WARNING') as caught:
+            decode_decimal({'lo': '1', 'signScale': 12, 'flags': 0})
+            decode_decimal({'lo': '2', 'signScale': 12, 'flags': 0})
+            decode_decimal({'lo': '3', 'signScale': 12, 'flags': 0})
+        self.assertEqual(1, len(caught.output))
+        self.assertIn("'flags'", caught.output[0])
+        # A *second* new key is worth its own line.
+        with self.assertLogs(util.get_logger(), level='WARNING') as caught:
+            decode_decimal({'lo': '1', 'signScale': 12, 'scale': 6})
+        self.assertEqual(1, len(caught.output))
+        self.assertIn("'scale'", caught.output[0])
+        self.assertNotIn("'flags'", caught.output[0])
+
+    def test_the_unknown_key_report_is_bounded(self):
+        # The thing being counted is corruption-controlled and the set never
+        # shrinks, so it is capped rather than unbounded.
+        util._reported_keys.clear()
+        for i in range(util._MAX_REPORTED_KEYS * 3):
+            decode_decimal({'lo': '1', 'signScale': 12, 'k%d' % i: 0})
+        self.assertLessEqual(len(util._reported_keys),
+                             util._MAX_REPORTED_KEYS)
+        # And it still decodes after the cap is reached.
+        self.assertEqual(decimal.Decimal('0.000001'),
+                         decode_decimal({'lo': '1', 'signScale': 12,
+                                         'one more': 0}))
+        util._reported_keys.clear()
+
+    def test_the_residual_gap_is_a_rename_and_it_is_visible(self):
+        # A mantissa under a name this library does not know, beside a valid
+        # signScale, still reads as zero -- the one shape the looser guard
+        # gives up. A serializer does not typo, so this means a rename, and a
+        # rename is visible: the unknown key is logged on the first message.
+        util._reported_keys.clear()
+        with self.assertLogs(util.get_logger(), level='WARNING') as caught:
+            value = decode_decimal({'low': 6860000, 'signScale': 12})
+        self.assertEqual(decimal.Decimal(0), value)   # the gap, stated
+        self.assertIn("'low'", caught.output[0])      # and not silent
+        util._reported_keys.clear()
 
     def test_a_dict_subclass_whose_get_and_getitem_disagree_is_catchable(self):
         # The comment above the loop says why the members use `.get`; the
