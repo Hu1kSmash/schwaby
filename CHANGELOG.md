@@ -83,10 +83,16 @@ than a caller's.
 
 An unknown **service** or **channel** is reported both ways — the log and
 `add_error_handler` — because those messages are dropped rather than
-delivered. Each distinct name is guaranteed a line: `add_error_handler`'s
-coalescing is keyed per *kind*, so five new services at once left the fourth
-unnamed in any log line or callback, and a dropped service is a worse event
-than an unnamed field.
+delivered, and **every distinct name is guaranteed to appear in both**. That
+guarantee is separate from the coalescing, which counts per *kind*: five new
+services at once left the fourth unnamed in any log line and any callback,
+and a dropped service is a worse event than an unnamed field.
+
+Services and channels count against their own budget rather than the fields'.
+Sharing one meant 254 declared field ids across 14 tables competed with them
+for 64 slots, so a single frame of unknown ids could exhaust it and leave a
+dropped service unnamed — the lesser event consuming the budget of the worse
+one.
 
 The discriminator is that Schwab's field ids are numeric strings. `key`,
 `seq`, `delayed` and `assetMainType` all arrive alongside the numbered fields

@@ -137,9 +137,37 @@ _MAX_REPORTED_FIELDS = 64
 
 _reported_fields = set()
 
+#: Services and channels count separately from fields, and against their own
+#: budget. Sharing one made a category that cannot starve itself starve the
+#: other: 254 declared field ids across 14 tables against 64 slots, and one
+#: frame of unknown ids left a new service unnamed -- the very defect
+#: `_report_new_shape` was added to close, with the *lesser* event having
+#: consumed the whole budget.
+_MAX_REPORTED_SHAPES = 64
+
+_reported_shapes = set()
+
+
+def _safe_name(value):
+    """A key's name, bounded and guaranteed not to raise.
+
+    `str()` of a wide integer raises past `sys.get_int_max_str_digits()`, and
+    a top-level frame key is whatever the decoder produced --
+    `StreamJsonDecoder` is a public extension point, which is the argument
+    that made `relabel_message` handle a non-string key.
+    """
+    try:
+        text = str(value)
+    except Exception:
+        text = '<{} that cannot be named>'.format(type(value).__name__)
+    return text if len(text) <= 64 else text[:61] + '...'
+
 
 def _report_new_shape(what, name):
-    """Name a thing Schwab added, once, whatever kind of thing it is.
+    """Name a thing Schwab added, once, and say so through both channels.
+
+    Returns True the first time a given (kind, name) is seen, which the
+    caller passes to `_absorb` as `force` so the callback names it too.
 
     A separate bounded set rather than `_absorb`'s counters, because those
     are keyed on a fixed `what` string -- deliberately, so a value the venue
@@ -153,19 +181,31 @@ def _report_new_shape(what, name):
     unnamed field, and the field path already guarantees a line per distinct
     id. This gives services and channels the same guarantee, alongside the
     `_absorb` accounting rather than instead of it: `_absorb` still counts
-    the drops and still drives `add_error_handler`.
+    the drops and still coalesces everything after the first sighting.
+
+    Its own budget, not the fields' -- see `_MAX_REPORTED_SHAPES`. And the
+    name is truncated, because unlike a field id it is not `isdigit`-bounded
+    and this set never shrinks.
     """
-    seen = (what, name)
-    if (seen in _reported_fields
-            or len(_reported_fields) >= _MAX_REPORTED_FIELDS):
-        return
-    _reported_fields.add(seen)
+    seen = (what, str(name)[:64] if not isinstance(name, str) else name[:64])
+    if seen in _reported_shapes:
+        return False
+    if len(_reported_shapes) >= _MAX_REPORTED_SHAPES:
+        return False
+    _reported_shapes.add(seen)
+    if len(_reported_shapes) >= _MAX_REPORTED_SHAPES:
+        get_logger().warning(
+                'That is %d distinct services and channels schwaby does not '
+                'know, which is as many as it will name. Any further ones '
+                'are dropped the same way and are not reported.',
+                _MAX_REPORTED_SHAPES)
     get_logger().warning(
-            'Schwab sent a %s this version of schwaby does not know: %r. '
+            'Schwab sent a %s this version of schwaby does not know: %s. '
             'Messages for it are dropped -- there is no handler to route '
             'them to -- and this is reported once, not per message. Please '
             'open an issue at https://github.com/Hu1kSmash/schwaby/issues.',
-            what, name)
+            what, seen[1])
+    return True
 
 
 def _report_unknown_field(field_enum_type, field_id):
@@ -262,7 +302,10 @@ class UnusableMessage(SchwabError):
     shapes, with ``json_parse_exception`` set for one of them and ``None`` for
     the other.
 
-    ``message`` is the offending value, exactly as it arrived.
+    ``message`` is the offending value, exactly as it arrived --- except for
+    an unread channel, where it is the sorted list of channel names, since
+    the offending thing is which compartments appeared rather than any one
+    value inside them.
 
     ``cause`` is the exception which made it unusable, where there was one --
     a relabeling failure carries the ``KeyError`` from the field tables, which
@@ -546,7 +589,19 @@ class StreamClient(EnumEnforcer):
         try:
             return json.dumps(obj, indent=4)
         except (TypeError, ValueError):
-            return repr(obj)
+            try:
+                return repr(obj)
+            except Exception:
+                # The fallback needs one of its own. `repr` of a dict holding
+                # a wide integer key raises past the digit limit, which is
+                # the same hazard `_safe_repr` and `_safe_name` exist for --
+                # and here it defeats the whole point of this function, which
+                # is that a formatting failure stays cosmetic. In production
+                # logging swallows it and prints a "--- Logging error ---"
+                # block for every debug line; under pytest's capture handler
+                # it re-raises, which is how this surfaced.
+                return '<{} that cannot be formatted>'.format(
+                        type(obj).__name__)
 
     def req_num(self):
         self.request_number += 1
@@ -903,7 +958,7 @@ class StreamClient(EnumEnforcer):
             yield response, code, content
 
     def _absorb(self, what, offender, frame=None, service=None,
-                cause=None):
+                cause=None, force=False):
         """Records a message this client cannot use.
 
         Two things happen to it, and each earns its place:
@@ -932,7 +987,12 @@ class StreamClient(EnumEnforcer):
         # The first few of each kind, then powers of ten. A fixed modulus would
         # go quiet after the third occurrence and say nothing more until the
         # thousandth, hiding the shape of an early burst.
-        if n > 3 and not _is_power_of_ten(n):
+        # `force` is the first sighting of a service or channel name. The
+        # counter above is keyed per kind, so without this the callback
+        # coalesces across *names* and a fourth new service reaches no
+        # handler at all -- bounded, because a first sighting happens at
+        # most `_MAX_REPORTED_SHAPES` times.
+        if not force and n > 3 and not _is_power_of_ten(n):
             return
 
         self.logger.warning(
@@ -1331,7 +1391,12 @@ class StreamClient(EnumEnforcer):
           does not read. The last two are messages this client is dropping
           because Schwab added something, rather than because anything is
           malformed, and they are the ones a consumer cannot see any other
-          way: no handler of theirs fires for either. These arrive as
+          way: no handler of theirs fires for either. **Every distinct
+          service or channel name reaches this callback at least once**,
+          which the coalescing below would otherwise prevent -- it counts
+          per kind, so without that guarantee a fourth new service arriving
+          beside three others would never be reported at all. These arrive
+          as
           :class:`UnusableMessage`, whose ``message`` is the offending value as
           it arrived. These are *coalesced*: the first three on a connection,
           then powers of ten, with the running count in the message. A
@@ -1563,9 +1628,9 @@ class StreamClient(EnumEnforcer):
             # Named once per service beside the absorb, which coalesces
             # across every unknown service because its counter is keyed on
             # the fixed string above.
-            _report_new_shape('service', service)
+            first = _report_new_shape('service', service)
             self._absorb('a message for a service this version does not know',
-                         service, frame=msg, service=service)
+                         service, frame=msg, service=service, force=first)
             return
 
         relabel_failed = False
@@ -1685,11 +1750,11 @@ class StreamClient(EnumEnforcer):
             # Reported and then carried on past: the channels that *are*
             # understood still hold real data, and refusing the frame over an
             # unread compartment would turn an addition into an outage.
-            for channel in sorted(map(str, unknown_channels)):
-                _report_new_shape('channel', channel)
+            names = sorted(_safe_name(c) for c in unknown_channels)
+            first = any([_report_new_shape('channel', n) for n in names])
             self._absorb(
                     'a frame carrying a channel this version does not read',
-                    sorted(map(str, unknown_channels)), frame=msg)
+                    names, frame=msg, force=first)
 
         # response
         if 'response' in msg:

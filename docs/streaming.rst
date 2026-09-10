@@ -287,7 +287,8 @@ and a message this client cannot use at all. :meth:`add_error_handler
 group; it is deliberately the only place that does, because this page and two
 docstrings each carried their own copy and only one of the three was widened
 when the list grew. That last group arrives as ``UnusableMessage``, whose ``message``
-attribute is the offending value exactly as it arrived, alongside ``cause`` (the
+attribute is the offending value as it arrived --- the sorted list of names,
+for an unread channel --- alongside ``cause`` (the
 exception which made it unusable, where there was one) and ``count``/``total``
 as integers.
 
@@ -1342,13 +1343,17 @@ nowhere official.
   looks in. Your handlers never fire for either, so without a report they
   are invisible from inside a consumer.
 
-  Both *are* reported the way every other dropped message is --- a
-  ``WARNING``, and an :class:`UnusableMessage` through
-  :func:`add_error_handler
-  <schwaby.streaming.StreamClient.add_error_handler>`, counted per kind and
-  coalesced after the first few so a systematic change cannot become a log
-  flood. What appeared is on the exception's ``message``: the service name
-  for a service, the sorted list of channel names for a channel.
+  Both *are* reported --- a ``WARNING``, and an :class:`UnusableMessage`
+  through :func:`add_error_handler
+  <schwaby.streaming.StreamClient.add_error_handler>`. **Every distinct
+  service or channel name is named at least once, in both**, and everything
+  after that first sighting is coalesced so a systematic change cannot become
+  a log flood. The coalescing counts per *kind*, which is why the first
+  sighting is guaranteed separately: without it a fourth new service arriving
+  beside three others would never be reported at all.
+
+  What appeared is on the exception's ``message``: the service name for a
+  service, the sorted list of channel names for a channel.
 
   A service you simply registered no handler for is **not** reported. That is
   your own choice, and a line per message on a feed you deliberately ignored

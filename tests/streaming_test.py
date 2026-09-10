@@ -8850,6 +8850,116 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         streaming._reported_fields.clear()
 
     @no_duplicates
+    def test_the_new_shape_report_keeps_its_own_promises(self):
+        """Its dedup, cap, truncation and kind discriminator were all GREEN.
+
+        Every one of those is stated in its own log line or in the changelog
+        -- "reported once, not per message", bounded, per kind -- and none
+        was pinned by anything.
+        """
+        streaming._reported_shapes.clear()
+
+        # Once, not per message.
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            self.assertTrue(streaming._report_new_shape('service', 'SVC_A'))
+            for _ in range(5):
+                self.assertFalse(
+                        streaming._report_new_shape('service', 'SVC_A'))
+        self.assertEqual(1, len(got.output))
+
+        # The kind is part of the identity: a channel named like a service is
+        # a different fact about the venue.
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            self.assertTrue(streaming._report_new_shape('channel', 'SVC_A'))
+
+        # A venue-controlled name is bounded; the set never shrinks.
+        streaming._reported_shapes.clear()
+        streaming._report_new_shape('service', 'S' * 100000)
+        self.assertLessEqual(
+                max(len(n) for _, n in streaming._reported_shapes), 64)
+
+        # And the count is capped, with a line saying so rather than going
+        # quiet in a way that looks like nothing new.
+        streaming._reported_shapes.clear()
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            for i in range(streaming._MAX_REPORTED_SHAPES * 3):
+                streaming._report_new_shape('service', 'SVC_%d' % i)
+        self.assertEqual(streaming._MAX_REPORTED_SHAPES,
+                         len(streaming._reported_shapes))
+        self.assertIn('as many as it will name', '\n'.join(got.output))
+        streaming._reported_shapes.clear()
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_channel_name_that_cannot_be_named_does_not_escape(
+            self, ws_connect):
+        # A top-level frame key is whatever the decoder produced, and
+        # `StreamJsonDecoder` is a public extension point -- the same
+        # argument that made `relabel_message` handle a non-string key.
+        # `str()` of a wide integer raises past the digit limit.
+        streaming._reported_shapes.clear()
+        socket = await self.login_and_get_socket(ws_connect)
+        delivered = []
+        self.client.add_level_one_equity_handler(delivered.append)
+
+        class Unnameable:
+            def __str__(self):
+                raise RuntimeError('no name for you')
+
+            def __hash__(self):
+                return 7
+
+        class Decoder(streaming.StreamJsonDecoder):
+            def decode_json_string(self, raw):
+                frame = json.loads(raw)
+                frame[Unnameable()] = [{'x': 1}]
+                frame[10 ** 5000] = [{'x': 1}]
+                return frame
+
+        self.client.set_json_decoder(Decoder())
+        socket.recv.side_effect = [json.dumps(
+                self.streaming_entry('LEVELONE_EQUITIES', 'SUBS'))]
+
+        # Debug on deliberately. `_pretty` runs only for a debug line, so
+        # without this the frame never reaches the `repr` fallback and the
+        # test passes for want of ever getting there -- which is exactly how
+        # its red-proof case came back green the first time.
+        logger = streaming.get_logger()
+        previous = logger.level
+        logger.setLevel(logging.DEBUG)
+        try:
+            await self.client.handle_message()
+        finally:
+            logger.setLevel(previous)
+
+        # Reported rather than escaping, and the data beside it delivered.
+        self.assertEqual(1, len(delivered))
+        self.assertEqual(1, self.client._absorbed)
+        streaming._reported_shapes.clear()
+
+    @no_duplicates
+    def test_fields_and_shapes_do_not_share_a_budget(self):
+        # 254 declared field ids across 14 tables against 64 slots. Sharing
+        # one budget let the lesser event consume it and leave a dropped
+        # service unnamed -- the defect `_report_new_shape` exists to close.
+        streaming._reported_fields.clear()
+        streaming._reported_shapes.clear()
+        fields = streaming.StreamClient.LevelOneEquityFields
+        raw = {'key': 'F'}
+        raw.update({str(i): 'x'
+                    for i in range(
+                        200, 200 + streaming._MAX_REPORTED_FIELDS * 2)})
+        fields.relabel_message(raw, copy.deepcopy(raw))
+        self.assertEqual(streaming._MAX_REPORTED_FIELDS,
+                         len(streaming._reported_fields))
+        # Saturated on one side, untouched on the other.
+        self.assertEqual(set(), streaming._reported_shapes)
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            self.assertTrue(streaming._report_new_shape('service', 'SVC_X'))
+        streaming._reported_fields.clear()
+        streaming._reported_shapes.clear()
+
+    @no_duplicates
     @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_every_unknown_service_is_named_at_least_once(
             self, ws_connect):
@@ -8867,7 +8977,11 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         distinct id.
         """
         streaming._reported_fields.clear()
+        streaming._reported_shapes.clear()
         socket = await self.login_and_get_socket(ws_connect)
+        reported = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: reported.append(service))
         names = ['SVC_%s' % c for c in 'ABCDE']
         with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
             for name in names:
@@ -8880,13 +8994,20 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         for name in names:
             with self.subTest(service=name):
                 self.assertIn(name, blob)
+        # And through `add_error_handler`, which is the half a consumer
+        # actually branches on. `_absorb` coalesces per kind, so without a
+        # forced first sighting the fourth and fifth reach no handler at all.
+        await self.client._drain_pending_reports()
+        self.assertEqual(set(names), set(reported))
         streaming._reported_fields.clear()
+        streaming._reported_shapes.clear()
 
     @no_duplicates
     @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_every_unknown_channel_is_named_at_least_once(
             self, ws_connect):
         streaming._reported_fields.clear()
+        streaming._reported_shapes.clear()
         socket = await self.login_and_get_socket(ws_connect)
         names = ['chan%s' % c for c in 'ABCDE']
         with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
