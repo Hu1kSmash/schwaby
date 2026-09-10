@@ -45,6 +45,66 @@ class DecodeDecimalTest(unittest.TestCase):
                                  decode_decimal(field))
 
     @no_duplicates
+    def test_lo_carries_the_whole_mantissa_past_32_bits(self):
+        # Measured shape, invented values. A production ACCT_ACTIVITY archive
+        # of 5,843 decimal objects carried `lo` alone in every one, as a
+        # string of digits, and 129 were wider than 32 bits: fill
+        # `PrincipalAmmount`, and the estimated amounts on OrderCreated, ten
+        # digits at signScale 12 or 13. Read whole, each of the 33 fill
+        # principals equalled price times quantity from the same message.
+        # This decoder refused all 129 while it held `lo` to 32 bits.
+        for field, expected in (
+                ({'lo': '4294967296', 'signScale': 12}, '4294.967296'),
+                ({'lo': '6860000000', 'signScale': 12}, '6860'),
+                ({'lo': '6860000000', 'signScale': 13}, '-6860'),
+                ({'lo': '9999999999', 'signScale': 12}, '9999.999999')):
+            with self.subTest(value=field):
+                self.assertEqual(decimal.Decimal(expected),
+                                 decode_decimal(field))
+        # Positive control on the widest value that decoded before.
+        self.assertEqual(decimal.Decimal('4294.967295'),
+                         decode_decimal({'lo': '4294967295', 'signScale': 12}))
+
+    @no_duplicates
+    def test_a_lone_lo_is_bounded_by_the_dotnet_mantissa(self):
+        # 96 bits is the widest mantissa a System.Decimal has. The longest
+        # `lo` measured was ten digits, so this bound is the encoding's rather
+        # than the sample's.
+        widest = 2 ** 96 - 1
+        for member in (widest, str(widest), '000' + str(widest)):
+            with self.subTest(value=member):
+                self.assertEqual(decimal.Decimal(widest),
+                                 decode_decimal({'lo': member}))
+        for member in (2 ** 96, str(2 ** 96), '1' + '0' * 29):
+            with self.subTest(value=member):
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal({'lo': member, 'signScale': 12})
+        # Past `int()`'s digit limit, which raises a bare ValueError rather
+        # than a SchwabError unless the length is checked first.
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal({'lo': '9' * 5000, 'signScale': 12})
+
+    @no_duplicates
+    def test_beside_mid_or_hi_each_member_is_still_32_bits(self):
+        # A `lo` wider than 32 bits next to a `mid` or `hi` is two layouts at
+        # once: read whole it is one number, read as a member it overlaps the
+        # next one. No payload has carried `mid` or `hi` at all, so nothing
+        # says which was meant, and it is refused rather than guessed. The
+        # last case is the one a layout chosen on `mid` alone would get wrong,
+        # by reading `lo` whole and dropping `hi`.
+        for value in ({'lo': str(2 ** 32), 'mid': 1, 'signScale': 12},
+                      {'lo': '1', 'mid': str(2 ** 32), 'signScale': 12},
+                      {'lo': '1', 'hi': 2 ** 32, 'signScale': 12},
+                      {'lo': str(2 ** 32), 'hi': 1}):
+            with self.subTest(value=value):
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal(value)
+        # Positive control: the same slots at 32 bits decode.
+        self.assertEqual(decimal.Decimal('8589.934591'),
+                         decode_decimal({'lo': str(2 ** 32 - 1), 'mid': 1,
+                                         'signScale': 12}))
+
+    @no_duplicates
     def test_an_odd_signscale_is_negative(self):
         # Schwab's own worked example, and the field it was observed on:
         # principal is negative on a buy because the cash goes out.
@@ -90,9 +150,10 @@ class DecodeDecimalTest(unittest.TestCase):
 
     @no_duplicates
     def test_the_mantissa_spans_three_fields(self):
-        # Reasoned from the .NET layout, not observed -- no captured payload
-        # has carried a non-zero mid. At signScale 12 `lo` alone tops out at
-        # 4294.967295, so a lo-only decoder returns 705.032704 for $5,000.
+        # Reasoned from the .NET layout, not observed. No captured payload has
+        # carried `mid` or `hi` at all -- Schwab sends the whole mantissa in
+        # `lo` -- so this is the reading for a payload that ever does, and
+        # the only one those names support.
         self.assertEqual(
                 decimal.Decimal('5000'),
                 decode_decimal({'lo': '705032704', 'mid': 1, 'signScale': 12}))
@@ -235,7 +296,8 @@ class DecodeDecimalTest(unittest.TestCase):
                     {'lo': '1_0', 'signScale': 12},      # PEP 515 underscore
                     {'lo': '\u00b2', 'signScale': 12},   # isdigit, int refuses
                     {'lo': '\u0663', 'signScale': 12},   # isdigit, int accepts
-                    {'lo': str(2 ** 32), 'signScale': 12},  # wider than a member
+                    {'lo': str(2 ** 96), 'signScale': 12},  # past a mantissa
+                    {'lo': str(2 ** 32), 'mid': 1},      # past a member
                     'NaN', 'Infinity', float('nan'), float('inf')):
             with self.subTest(value=bad):
                 with self.assertRaises(SchwabError):
@@ -254,9 +316,12 @@ class DecodeDecimalTest(unittest.TestCase):
         # it an assertRaises passes just as well when the fixture never
         # reached the member at all.
         for name in ('lo', 'mid', 'hi'):
+            # A lone `lo` is the whole mantissa and may be 96 bits wide; a
+            # `mid` or `hi` is one 32-bit member of the three-member layout.
+            too_wide = 2 ** 96 if name == 'lo' else 2 ** 32
             for corrupt in (1.9, float('inf'), True, False, '-1', '1_0',
                             ' 1', '1 ', '', '0x10', '\u00b2', '\u0663',
-                            [1], {'a': 1}, 2 ** 32, -1):
+                            [1], {'a': 1}, too_wide, -1):
                 with self.subTest(member=name, value=corrupt):
                     with self.assertRaises(UnusableDecimalScale):
                         decode_decimal({name: corrupt, 'signScale': 12})
@@ -363,12 +428,22 @@ class DecodeDecimalTest(unittest.TestCase):
         # cases above all strip to '1', so `lstrip` alone satisfies them and
         # the length check never runs -- exactly the shape that reads as a
         # working guard while proving nothing.
-        for width in (11, 4301, 100000):
-            with self.subTest(nonzero_width=width):
+        #
+        # One past each width at the low end: thirty digits for a lone `lo`,
+        # which may carry the whole 96-bit mantissa, and eleven for the
+        # 32-bit scale and a `mid`. Eleven used to be the `lo` case too, and
+        # an eleven-digit `lo` is an ordinary value now.
+        for lo_width, member_width in ((30, 11), (4301, 4301),
+                                       (100000, 100000)):
+            with self.subTest(nonzero_width=lo_width):
                 with self.assertRaises(UnusableDecimalScale):
-                    decode_decimal({'lo': '1' * width, 'signScale': 12})
+                    decode_decimal({'lo': '1' * lo_width, 'signScale': 12})
                 with self.assertRaises(UnusableDecimalScale):
-                    decode_decimal({'lo': '1', 'signScale': '1' * width})
+                    decode_decimal({'lo': '1',
+                                    'signScale': '1' * member_width})
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal({'lo': '1', 'mid': '1' * member_width,
+                                    'signScale': 12})
 
     def test_an_object_that_is_not_a_decimal_is_refused_not_read_as_zero(self):
         # The mantissa-less shortcut returns zero without inspecting
@@ -481,6 +556,10 @@ class DecodeDecimalTest(unittest.TestCase):
                                 ({'signScale': 12}, '0'),
                                 ({}, '0'),
                                 ({'lo': '6860000', 'signScale': 13}, '-6.86'),
+                                # The measured shape of a fill principal
+                                # over 32 bits; the value is invented.
+                                ({'lo': '6860000000', 'signScale': 12},
+                                 '6860'),
                                 ({'lo': '705032704', 'mid': 1,
                                   'signScale': 12}, '5000')):
             with self.subTest(value=value):

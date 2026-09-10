@@ -213,7 +213,7 @@ def _decode_bare(value):
     the mantissa members either way, and for three review rounds it was the
     permissive one.
     `decimal.Decimal`'s parser accepts more than `int`'s does, so every token
-    `_unsigned_32` refuses decoded here instead: ``'1_0'`` as ten,
+    `_unsigned` refuses decoded here instead: ``'1_0'`` as ten,
     ``'\u0663'`` as three, ``' 12 '`` and ``'+12'`` and ``'\uff11\uff12'``
     as twelve. All of them are `json.loads`-reachable and none of them raised.
     """
@@ -273,14 +273,18 @@ def _decode_bare(value):
     return result
 
 
-def _unsigned_32(member, name, value):
+def _unsigned(member, name, value, bits):
     """One place that decides what a decimal member is.
 
     An `int` that is not a `bool`, or a string of ASCII digits, and in either
-    case inside an unsigned 32-bit range. `bool` is excluded because `int(True)`
-    is 1 and `int(False)` is 0, so a JSON `true` in a mantissa would decode as a
-    number rather than as the corruption it is -- the same reason the order
-    setters refuse one.
+    case inside an unsigned range ``bits`` wide. `bool` is excluded because
+    `int(True)` is 1 and `int(False)` is 0, so a JSON `true` in a mantissa
+    would decode as a number rather than as the corruption it is -- the same
+    reason the order setters refuse one.
+
+    ``bits`` is 96 for a ``lo`` carrying the whole mantissa, which is what
+    Schwab sends, and 32 for the scale and for each member of the
+    three-member layout.
     """
     if isinstance(member, bool) or not isinstance(member, (int, str)):
         ok = False
@@ -295,19 +299,19 @@ def _unsigned_32(member, name, value):
             # bare `ValueError` that is not a SchwabError, and the range
             # check below cannot run until `int()` has returned. Leading
             # zeros are stripped rather than counted so a padded member is
-            # judged on its value: the widest member is 4294967295, ten
-            # digits.
+            # judged on its value: the widest has as many digits as
+            # `2 ** bits - 1`, ten at 32 bits and twenty-nine at 96.
             digits = member.lstrip('0') or '0'   # an all-zero member
-            ok = len(digits) <= 10
+            ok = len(digits) <= len(str(2 ** bits - 1))
             member = int(digits) if ok else 0
         else:
             member = 0
     else:
         ok = True
-    if not ok or not 0 <= member < 2 ** 32:
+    if not ok or not 0 <= member < 2 ** bits:
         raise UnusableDecimalScale(
-                '{} is not an unsigned 32-bit integer: {}'.format(
-                    name, _safe_repr(value)))
+                '{} is not an unsigned {}-bit integer: {}'.format(
+                    name, bits, _safe_repr(value)))
     return member
 
 
@@ -320,19 +324,20 @@ def decode_decimal(value):
 
         {"lo": "6860000", "signScale": 12}       ->  Decimal('6.860000')
 
-    a 96-bit integer mantissa split across ``lo``, ``mid`` and ``hi``, and a
-    ``signScale`` packing the scale in its magnitude and the sign in its
-    parity. The conversion is undocumented publicly; Schwab's Trader API
-    support confirmed it in writing, and it reproduces every payload anyone
-    here has captured, including Schwab's own worked example
+    a 96-bit integer mantissa, which arrives whole in ``lo`` as a string of
+    digits, and a ``signScale`` packing the scale in its magnitude and the
+    sign in its parity. The conversion is undocumented publicly; Schwab's
+    Trader API support confirmed it in writing, and it reproduces every
+    payload anyone here has captured, including Schwab's own worked example
     ``{"lo": "40000000", "signScale": 13}`` -> ``Decimal('-40.000000')``.
 
     Five things this gets right that a first attempt usually does not, each of
     which is a wrong number rather than an error:
 
-    * **The mantissa spans three fields.** Reading ``lo`` alone truncates
-      anything over ``4294.967295`` at ``signScale`` 12 --- a principal, a
-      total, or a share price reaches that easily.
+    * **The mantissa does not fit in 32 bits.** ``lo`` carries all of it, and
+      a fill principal above ``4294.967295`` at ``signScale`` 12 needs more.
+      A decoder that treats ``lo`` as one 32-bit member of .NET's three
+      refuses the largest amounts on the feed, or wraps them.
     * **An odd** ``signScale`` **means negative.** The sign is not the side:
       direction is ``BuySellCode``, and this branch exists so a genuinely
       negative field, such as principal on a buy, does not decode positive.
@@ -360,9 +365,12 @@ def decode_decimal(value):
                   which arrives as the ``SUBSCRIBED`` ack's ``MESSAGE_DATA``
                   and reaches here from any consumer decoding fields
                   generically.
-    :raises UnusableDecimalScale: if any member is not an unsigned 32-bit
-                                  integer, if the ``signScale`` is outside
-                                  ``0..64``, or if the object carries any
+    :raises UnusableDecimalScale: if a lone ``lo`` is not an unsigned
+                                  integer below ``2 ** 96``, if any member
+                                  of a ``mid`` or ``hi`` layout is not an
+                                  unsigned 32-bit integer, if the
+                                  ``signScale`` is outside ``0..64``, or if
+                                  the object carries any
                                   key that is not one of ``lo``, ``mid``,
                                   ``hi`` and ``signScale`` --- see below. An
                                   object carrying *none* of the four is
@@ -499,8 +507,8 @@ def decode_decimal(value):
     # `null` is an absence here, exactly as it is in the member loop: the two
     # follow one rule and briefly did not.
     scale_member = value.get('signScale')
-    scale = _unsigned_32(0 if scale_member is None else scale_member,
-                         'signScale', value)
+    scale = _unsigned(0 if scale_member is None else scale_member,
+                      'signScale', value, 32)
 
     # Bounded explicitly rather than left to the arithmetic to refuse.
     # `10 ** (scale // 2)` on a hostile exponent builds an astronomical integer
@@ -519,10 +527,10 @@ def decode_decimal(value):
         # order's absent limit price, and LeavesQuantity on a final fill.
         #
         # All three parts, not `lo` alone: the serializer omits zero members,
-        # so a value whose low 32 bits happen to be zero arrives as
-        # `{"mid": 1, ...}` and keying on `lo` would decode it as zero -- the
-        # same slice-reading defect this function exists to fix, in the guard
-        # that precedes it.
+        # so under the three-member layout -- never captured, but the only
+        # reading the names support -- a value whose low 32 bits are zero
+        # would arrive as `{"mid": 1, ...}`, and keying on `lo` would decode
+        # it as zero.
         #
         # Returning `Decimal(0)` rather than falling through is normalisation
         # and only that, now the scale above is validated either way: falling
@@ -539,15 +547,35 @@ def decode_decimal(value):
     # becomes a confident wrong number. Each fix enumerated one more exception
     # type and the next round found another shape.
     #
-    # So this asks what a member *is* instead. A .NET Decimal carries three
-    # unsigned 32-bit mantissa members and a scale; anything that is not one
-    # of those is refused, once, here.
-    mantissa = 0
-    for name, shift in (('lo', 0), ('mid', 32), ('hi', 64)):
-        member = value.get(name)
-        if member is None:
-            continue
-        mantissa += _unsigned_32(member, name, value) << shift
+    # So this asks what a member *is* instead: an unsigned integer of a
+    # stated width. Anything else is refused, once, here.
+    #
+    # The width depends on the layout. Schwab sends the whole mantissa in
+    # `lo`, as a string of digits -- measured on 5,843 objects from a
+    # production ACCT_ACTIVITY archive, every one of which carried `lo`
+    # alone -- and a fill principal above 4294.967295 at signScale 12 needs
+    # more than 32 bits to do it. This used to read `lo` as the first of a
+    # .NET Decimal's three 32-bit members and refused every such object: 129
+    # in that archive, 33 of them fill principals, each of which equalled
+    # price times quantity from the same message once read whole. A lone
+    # `lo` is bounded by the .NET mantissa itself, 96 bits.
+    #
+    # An object that carries `mid` or `hi` is read as the three-member
+    # layout, each member 32 bits. That layout has never been captured; it
+    # is kept because it is the only reading those names support. A `lo`
+    # wider than 32 bits beside one is both layouts at once, so it is refused
+    # rather than guessed. The choice is made on `mid` *and* `hi`: keyed on
+    # `mid` alone, `{"lo": ..., "hi": 1}` would read `lo` whole and drop `hi`
+    # without a word.
+    if value.get('mid') is None and value.get('hi') is None:
+        mantissa = _unsigned(value.get('lo'), 'lo', value, 96)
+    else:
+        mantissa = 0
+        for name, shift in (('lo', 0), ('mid', 32), ('hi', 64)):
+            member = value.get(name)
+            if member is None:
+                continue
+            mantissa += _unsigned(member, name, value, 32) << shift
 
     # Built from a string, sign included, because every *operation* on a
     # Decimal applies the caller's context and only construction does not.

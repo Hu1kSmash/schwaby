@@ -1214,29 +1214,36 @@ it refuses costs that field; decoded in one ``try``, it costs the message:
 
 .. danger::
 
-  **Read** ``lo`` **alone and a large enough number decodes to a smaller one,
-  silently.** The encoding is a serialized .NET ``System.Decimal``: a 96-bit
-  mantissa split across ``lo``, ``mid`` and ``hi``, where the true value is
-  ``lo + (mid << 32) + (hi << 64)``. At ``signScale`` 12 --- six decimal
-  places --- ``lo`` alone tops out at **4294.967295**. A principal amount, a
-  total, or a share price above roughly $4,295 needs ``mid``, and a decoder
-  ignoring it returns a plausible wrong number with no exception:
+  **The whole mantissa arrives in** ``lo``, **and it does not fit in 32
+  bits.** A serialized .NET ``System.Decimal`` has a 96-bit mantissa, and the
+  obvious reading of ``lo`` is the low 32 bits of it, with ``mid`` and ``hi``
+  carrying the rest. That is not what Schwab sends. In 5,843 decimal objects
+  from a production ``ACCT_ACTIVITY`` archive, every one carried ``lo`` alone,
+  as a string of digits, and 129 of them were wider than 32 bits:
 
   .. code-block:: python
 
-    {"lo": "705032704", "mid": 1, "signScale": 12}
-    # lo alone       ->    705.032704
-    # lo + mid<<32   ->   5000.000000      <- the actual value
+    {"lo": "6860000000", "signScale": 12}     # captured shape, invented value
+    # lo as one 32-bit member   ->  refused, or wrapped to a smaller number
+    # lo as the whole mantissa  ->  6860.000000      <- the actual value
 
-  :ref:`Unconfirmed <confidence_tags>`. No captured payload has carried a
-  non-zero ``mid`` or ``hi``, on either feed anyone here has watched --- this
-  is reasoned from the .NET layout rather than observed. It is documented
-  anyway because a value that does not fit in 32 bits cannot be sent in ``lo``
-  alone, so the alternative to reading all three is waiting for a large enough
-  number to find out. **If you have a payload with** ``mid`` **set, please**
-  `open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__ **with the
-  field** --- it would turn the most consequential guess on this page into a
-  fact.
+  Those 129 were ``PrincipalAmmount`` on ``OrderFillCompleted`` --- Schwab's
+  spelling --- and ``EstimatedPrincipalAmount``, ``EstimatedPrincipalAmnt`` and
+  ``EstimatedNetAmount`` on ``OrderCreated``. Read whole, every one of the 33
+  fill principals equalled price times quantity from the same message. At
+  ``signScale`` 12 anything from ``4294.967296`` up needs the extra width, so a
+  decoder holding ``lo`` to 32 bits loses most real fill principals --- loudly
+  if it refuses them, silently if it wraps them. This library refused them
+  until it was checked against that archive.
+
+  ``decode_decimal`` reads a lone ``lo`` as the whole mantissa, up to the 96
+  bits the encoding allows. An object that does carry ``mid`` or ``hi`` is read
+  as the three-member layout, ``lo + (mid << 32) + (hi << 64)`` with each
+  member held to 32 bits, and a ``lo`` wider than that beside one is refused.
+  That layout is :ref:`Unconfirmed <confidence_tags>`: reasoned from .NET, and
+  no captured payload has carried ``mid`` or ``hi`` at all. **If you have one,
+  please** `open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__
+  **with the field.**
 
 ``Decimal`` rather than a float, deliberately: these are money, and
 :meth:`set_price <schwaby.orders.generic.OrderBuilder.set_price>` has refused a
@@ -1286,11 +1293,10 @@ nowhere official.
 
   **"No mantissa" means none of** ``lo``, ``mid`` **or** ``hi``, not an absent
   ``lo``. The serializer omits zero members --- including the scale, see
-  below --- so a value whose low 32 bits
-  happen to be zero arrives as ``{"mid": 1, "signScale": 12}`` --- which is
-  ``4294.967296``, and which a guard keyed on ``lo`` alone reads as zero. That
-  is the same slice-reading defect as reading ``lo`` for the mantissa, in the
-  guard that runs immediately before it.
+  below. Under the three-member layout above, which has never been captured, a
+  value whose low 32 bits are zero would arrive as
+  ``{"mid": 1, "signScale": 12}`` --- ``4294.967296`` --- and a guard keyed on
+  ``lo`` alone would read it as zero.
 
 .. danger::
 
