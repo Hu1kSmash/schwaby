@@ -196,12 +196,21 @@ deliberately does not.
   session refreshes an expired access token on the way past, and when the
   token endpoint answers with a server error this class is raised out of the
   call itself --- with ``exc.response`` describing the token request rather
-  than the one you made. A refresh the endpoint rejects with a JSON error
-  body is translated to :class:`~schwaby.utils.TokenRefreshError` instead. A
-  rejection with any other body --- an empty or HTML 400, 401, 403 or 429 ---
-  raises ``json.JSONDecodeError`` out of the call, because the token response
-  is parsed as JSON. What Schwab's token endpoint sends in those cases has not
-  been observed.
+  than the one you made.
+
+  Below 500, whatever the status, the token response is parsed as JSON, and
+  what comes out of the call depends on the body:
+
+  - a JSON object that is not a usable token --- one carrying an ``error``
+    key, or any other object without an access token --- raises
+    :class:`~schwaby.utils.TokenRefreshError`. Nothing is stored, and the next
+    call tries the refresh again;
+  - JSON that is not an object raises ``TypeError``;
+  - a body that is not JSON at all, such as an empty body or an HTML page,
+    raises ``json.JSONDecodeError``.
+
+  What Schwab's token endpoint sends in the last two cases has not been
+  observed.
 
   **It covers HTTP status, not the network.** A timeout or a dropped
   connection raises one of ``httpx2``'s transport errors ---

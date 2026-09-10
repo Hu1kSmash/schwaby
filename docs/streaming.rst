@@ -1416,19 +1416,19 @@ negative field does not decode positive. Across that production archive only
 four fields were ever negative: ``EstimatedPrincipalAmount``,
 ``EstimatedPrincipalAmnt`` and ``EstimatedNetAmount``, negative on a buy
 because the cash goes out, and ``Mid``, negative on the sell orders where the
-side could be checked --- the opposite way round. ``Bid``, ``Ask``,
-``LimitPrice``, ``ExecutionPrice``, ``PrincipalAmmount`` and every quantity
-were positive throughout. Two fields whose signs followed the side in opposite
-directions are reason enough: do not infer direction from the sign of anything.
+side was checked --- the opposite way round. ``Bid``, ``Ask``, ``LimitPrice``,
+``ExecutionPrice``, ``PrincipalAmmount`` and every quantity were positive
+throughout. Two fields whose signs followed the side in opposite directions are
+reason enough: do not infer direction from the sign of anything.
 
 .. danger::
 
-  **A quote's** ``Mid`` **decodes negative on a sell order.** Its magnitude is
-  exactly ``(Bid + Ask) / 2`` from the same quote, 563 times of 563, but its
-  sign followed the order's side. On the 182 quotes whose message also carried
-  ``BuySellCode``, every buy had an even ``signScale`` and every sell an odd
-  one --- 88 and 94 of them, with no exceptions. That is the opposite way round
-  from the amounts above, and Schwab documents neither.
+  **A quote's** ``Mid`` **decoded negative on every sell order checked.** Its
+  magnitude is exactly ``(Bid + Ask) / 2`` from the same quote, 563 times of
+  563, but its sign followed the order's side. On the 182 quotes whose message
+  also carried ``BuySellCode``, every buy had an even ``signScale`` and every
+  sell an odd one --- 88 and 94 of them, with no exceptions. That is the
+  opposite way round from the amounts above, and Schwab documents neither.
 
   ``Mid`` arrives in three containers: ``QuoteOnOrderAcceptance`` on
   ``OrderCreated`` and ``ChangeCreated``, ``QuoteOnOrderEntry`` on
@@ -1446,7 +1446,10 @@ directions are reason enough: do not infer direction from the sign of anything.
   ``-12.345678`` into ``12.3457``, while ``copy_abs()`` gives ``12.345678``.
   To compute a mid from the same quote's ``Bid`` and ``Ask`` instead, do the
   arithmetic under a context with enough precision, and trap ``Inexact`` so a
-  result that would have to round raises instead:
+  result that would have to round raises ``decimal.Inexact`` instead. That is
+  an ``ArithmeticError``, not a
+  :class:`~schwaby.contrib.util.UnusableDecimalScale`, so the per-field
+  handler above does not catch it:
 
   .. code-block:: python
 

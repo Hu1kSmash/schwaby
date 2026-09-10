@@ -317,6 +317,11 @@ class TokenRefreshError(SchwabError):
     not recognize -- the conservative direction, since treating a recoverable
     failure as terminal would stop an application which only needed to try
     again.
+
+    Not every failed refresh is one of these. A server error from the token
+    endpoint raises :class:`~schwaby.utils.HTTPStatusError`, and a response
+    that is not a JSON object raises ``json.JSONDecodeError`` or
+    ``TypeError``.
     '''
 
     def __init__(self, message, *, token_age=None, refresh_token_invalid=False):

@@ -295,6 +295,13 @@ token-shaped:
       else:
           retry_later()
 
+Not every failure to refresh arrives as ``TokenRefreshError``. A server error
+from the token endpoint raises :class:`~schwaby.utils.HTTPStatusError`, a
+dropped connection raises one of ``httpx2``'s transport errors, and a response
+body that is not a JSON object raises ``json.JSONDecodeError`` or ``TypeError``
+--- :class:`~schwaby.utils.HTTPStatusError` sets out which is which. An
+unattended program that means to retry has to catch those as well.
+
 .. autoclass:: schwaby.utils.TokenRefreshError
 
 **Retrying a dead refresh token cannot work, and the retries are not free.**
