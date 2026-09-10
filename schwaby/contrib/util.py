@@ -307,6 +307,12 @@ def _unsigned(member, name, value, bits):
         else:
             member = 0
     else:
+        # A plain int, not whatever subclass arrived. The member is formatted
+        # into the result, and a subclass decides its own `str` and `format`,
+        # so it could decode as a different number or raise -- and a custom
+        # JSON decoder can hand one over. `int.__index__` is int's own
+        # conversion, which the subclass cannot override.
+        member = int.__index__(member)
         ok = True
     if not ok or not 0 <= member < 2 ** bits:
         raise UnusableDecimalScale(
@@ -578,7 +584,10 @@ def decode_decimal(value):
         mantissa = 0 if lo is None else _unsigned(lo, 'lo', value, 96)
     else:
         mantissa = 0
-        for name, shift in (('lo', 0), ('mid', 32), ('hi', 64)):
+        # Widest first, so a corrupt `mid` or `hi` is named as itself. In the
+        # other order a ten-digit `lo` -- ordinary on its own -- is refused
+        # first, and the message sends whoever reads it to the wrong field.
+        for name, shift in (('hi', 64), ('mid', 32), ('lo', 0)):
             member = value.get(name)
             if member is None:
                 continue

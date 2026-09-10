@@ -99,10 +99,58 @@ class DecodeDecimalTest(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(UnusableDecimalScale):
                     decode_decimal(value)
+        # A corrupt `mid` or `hi` is named as itself, not blamed on a `lo`
+        # that is ordinary on its own.
+        for value, name in (({'lo': '6860000000', 'hi': False}, 'hi'),
+                            ({'lo': '6860000000', 'mid': ''}, 'mid')):
+            with self.subTest(named=name):
+                with self.assertRaisesRegex(UnusableDecimalScale,
+                                            '^' + name + ' is not'):
+                    decode_decimal(value)
         # Positive control: the same slots at 32 bits decode.
         self.assertEqual(decimal.Decimal('8589.934591'),
                          decode_decimal({'lo': str(2 ** 32 - 1), 'mid': 1,
                                          'signScale': 12}))
+
+    @no_duplicates
+    def test_an_int_subclass_decodes_as_its_value(self):
+        # `json.loads` never produces one, but a custom decoder can. The
+        # member is formatted into the result, and a subclass decides its own
+        # `str` and `format`, so unless it is reduced to a plain int it can
+        # decode as another number, or raise past the one `except` callers
+        # are told to write. The three-member path reduced it by accident,
+        # through `<<`; the lone-lo path did not.
+        class Shown(int):
+            def __str__(self):
+                return '999'
+            __repr__ = __str__
+
+            def __format__(self, spec):
+                return '999'
+
+        class Raises(int):
+            def __str__(self):
+                raise RuntimeError('boom')
+            __repr__ = __str__
+
+            def __format__(self, spec):
+                raise RuntimeError('boom')
+
+        for cls in (Shown, Raises):
+            with self.subTest(member=cls.__name__):
+                self.assertEqual(
+                        decimal.Decimal('0.000005'),
+                        decode_decimal({'lo': cls(5), 'signScale': 12}))
+                self.assertEqual(
+                        decimal.Decimal('4294.967301'),
+                        decode_decimal({'lo': cls(5), 'mid': cls(1),
+                                        'signScale': 12}))
+                self.assertEqual(
+                        decimal.Decimal('-0.000005'),
+                        decode_decimal({'lo': cls(5), 'signScale': cls(13)}))
+                # Out of range, and the refusal cannot raise on it either.
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal({'lo': '1', 'signScale': cls(65)})
 
     @no_duplicates
     def test_an_odd_signscale_is_negative(self):
@@ -261,10 +309,10 @@ class DecodeDecimalTest(unittest.TestCase):
 
     @no_duplicates
     def test_a_mantissa_carried_only_in_mid_is_not_read_as_zero(self):
-        # The serializer omits zero members, so a value whose low 32 bits are
-        # zero arrives without `lo`. Keying the mantissa-less guard on `lo`
-        # alone decoded that as zero -- the slice-reading defect this function
-        # exists to fix, in the guard immediately before it.
+        # The serializer omits zero members, so under the three-member layout
+        # a value whose low 32 bits are zero would arrive without `lo`.
+        # Keying the mantissa-less guard on `lo` alone decoded that as zero.
+        # Reasoned, not observed: no captured payload has carried `mid`.
         self.assertEqual(decimal.Decimal('4294.967296'),
                          decode_decimal({'mid': 1, 'signScale': 12}))
         self.assertEqual(decimal.Decimal('4294.967296'),
@@ -429,10 +477,13 @@ class DecodeDecimalTest(unittest.TestCase):
         # the length check never runs -- exactly the shape that reads as a
         # working guard while proving nothing.
         #
-        # One past each width at the low end: thirty digits for a lone `lo`,
-        # which may carry the whole 96-bit mantissa, and eleven for the
-        # 32-bit scale and a `mid`. Eleven used to be the `lo` case too, and
-        # an eleven-digit `lo` is an ordinary value now.
+        # The first pair is one digit past each width: thirty for a lone
+        # `lo`, which may carry the whole 96-bit mantissa, and eleven for a
+        # `mid`. An eleven-digit `lo` used to be the case here and is an
+        # ordinary value now. That pair is refused by the range check, not
+        # the length check -- the length check decides nothing short of
+        # `int()`'s own limit, which only the wider pairs reach -- and the
+        # scale is refused by its 0..64 bound before either.
         for lo_width, member_width in ((30, 11), (4301, 4301),
                                        (100000, 100000)):
             with self.subTest(nonzero_width=lo_width):
