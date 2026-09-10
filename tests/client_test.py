@@ -2783,10 +2783,48 @@ class _TestClient:
     def test_a_locally_raised_unsupported_token_type_is_not_confused(self):
         # authlib raises UnsupportedTokenTypeError locally with the same error
         # code Schwab uses as its outer wrapper. Without the nested body it is
-        # not evidence the refresh token is dead, and must not be read as such.
+        # not evidence the refresh token is dead, and must not be read as such
+        # -- while the stored token has an expiry, since authlib refreshes it
+        # once it lapses, and the refresh can replace it.
         from authlib.integrations.base_client.errors import (
                 UnsupportedTokenTypeError)
 
+        self.mock_session.token = {'access_token': 'a', 'token_type': 'mac',
+                                   'expires_at': 9999999999}
+        self.mock_session.get.side_effect = UnsupportedTokenTypeError()
+
+        with self.assertRaises(TokenRefreshError) as cm:
+            self.client.get_quote(SYMBOL)
+
+        self.assertFalse(cm.exception.refresh_token_invalid)
+
+    @no_duplicates
+    def test_a_local_unsupported_token_type_without_expiry_is_terminal(self):
+        # With no expiry the stored token is never refreshed, so a token
+        # authlib cannot send fails the same way on every call and nothing is
+        # ever sent: retrying cannot help. A token file damaged before
+        # refreshes were checked looks exactly like this.
+        from authlib.integrations.base_client.errors import (
+                UnsupportedTokenTypeError)
+
+        self.mock_session.token = {'message': 'Unauthorized',
+                                   'refresh_token': 'r'}
+        self.mock_session.get.side_effect = UnsupportedTokenTypeError()
+
+        with self.assertRaises(TokenRefreshError) as cm:
+            self.client.get_quote(SYMBOL)
+
+        self.assertTrue(cm.exception.refresh_token_invalid)
+        self.assertIn('login flow has to be completed again', str(cm.exception))
+
+    @no_duplicates
+    def test_a_local_unsupported_token_type_with_an_unreadable_token_stays_retryable(self):
+        # When the stored token cannot be read, whether it expires is unknown,
+        # and calling a failure terminal wrongly is the worse mistake.
+        from authlib.integrations.base_client.errors import (
+                UnsupportedTokenTypeError)
+
+        self.mock_session.token = None
         self.mock_session.get.side_effect = UnsupportedTokenTypeError()
 
         with self.assertRaises(TokenRefreshError) as cm:
