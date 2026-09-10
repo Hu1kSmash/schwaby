@@ -1235,7 +1235,7 @@ nowhere official.
   Prices scaled by six places, sizes with no scale at all, in the same object.
   $13.72 with 19200 on the ask is a coherent quote; 0.0192 shares is not.
 
-  This library *refused* the shape until 4.2.0, on the reasoning that a scale
+  This library *refused* the shape at first, on the reasoning that a scale
   which is missing cannot be told from one that was lost --- which sounds
   careful and cost both sizes on every quote carrying them. If your decoder
   treats an absent ``signScale`` as an error, or guesses 12 because that is

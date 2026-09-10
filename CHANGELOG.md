@@ -22,7 +22,9 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
-## Unreleased
+## 4.2.0
+
+*2026-09-09*
 
 ### `schwaby.contrib.util.decode_decimal`
 
@@ -32,7 +34,7 @@ Schwab streams money and quantities on `ACCT_ACTIVITY` as a serialized .NET
 `System.Decimal` — `{"lo": "6860000", "signScale": 12}` — not as numbers. The
 encoding is undocumented publicly; Schwab's Trader API support confirmed the
 conversion in writing. Every consumer ends up writing this, and the first
-attempt is reliably wrong in at least one of four ways, each of which is a
+attempt is reliably wrong in at least one of five ways, each of which is a
 **wrong number rather than an error**:
 
 - the mantissa spans `lo`, `mid` and `hi`, so reading `lo` alone truncates
@@ -42,14 +44,67 @@ attempt is reliably wrong in at least one of four ways, each of which is a
 - an object with a `signScale` and no mantissa is **zero**, not unknown — it
   arrives that way as `LeavesQuantity` on the final fill of a completed order,
   where reading it as unknown reports a complete fill as outstanding;
+- an object with a mantissa and **no `signScale` at all** is scale 0, not an
+  error and not the usual 12. `AskSize` and `BidSize` arrive as
+  `{"lo": "19200"}` beside an `Ask` of `{"lo": "13720000", "signScale": 12}`
+  in the same quote — $13.72 with 19200 on the ask. Guessing 12 there is
+  wrong by a factor of a million; refusing it loses both sizes on every
+  quote;
 - `10 ** (signScale // 2)` on a hostile scale builds an astronomical integer
   and hangs the thread, which a per-item `try`/`except` cannot rescue.
 
 It returns a `decimal.Decimal`, never a float, so a decoded price can be fed
-straight back into `set_price`. A mantissa with no scale raises
-`UnusableDecimalScale` rather than guessing, because the guess that suggests
-itself is wrong by a factor of a million when it is wrong and says nothing when
-it is right.
+straight back into `set_price`.
+
+Every member is validated by shape — an unsigned 32-bit integer, or a string
+of ASCII digits inside that range — rather than coerced with `int()` and the
+resulting exceptions enumerated. That distinction is the whole of this
+function's review history and it is worth stating, because coercion fails in
+both directions: `int()` raises a bare `ValueError` on some corruption and
+silently *accepts* the rest. `int(1.9)` is 1, `int(True)` is 1, `int('1_0')`
+is 10 under PEP 515, and `int('٣')` is 3. Bare values go through the same
+validation, because `decimal.Decimal`'s parser is more permissive still — it
+takes `'1_0'`, `' 12 '`, `'+12'`, `'12_'` where `int` refuses it outright, and
+every Unicode decimal digit. Anything that is not a number this encoding could
+have carried raises `UnusableDecimalScale`, which is both a `SchwabError` and
+a `ValueError`, so one `except` around each field keeps the rest of the
+message.
+
+#### What five review rounds on it found
+
+Worth recording, because the function is 80 lines and every round found
+something, and because the shape of what they found is the argument for
+shipping a tested one rather than a documentation sample:
+
+- **The caller's `decimal` context changes the answer.** Construction of a
+  `Decimal` is context-free; every *operation* is not, including `scaleb` and
+  unary minus. A consumer who sets `getcontext().prec = 6` elsewhere in their
+  process — an ordinary thing to do when formatting money — got `1234.57` for
+  a price of `1234.5678`. Fixed by building the value from a string with the
+  sign in it; a first fix that negated a string-built positive was exact for
+  positive values and rounding for negative ones, which is the branch
+  `EstimatedPrincipalAmount` arrives on.
+- **A scale is bounded, not computed with.** Leaving it to the arithmetic is
+  not enough: every scale between roughly two and four million underflows to a
+  zero that compares equal to zero, and zero is what a completed fill looks
+  like.
+- **The library refused a shape Schwab actually sends.** The `{"lo": "19200"}`
+  case above. It raised, and the docstring said the shape had never been
+  observed, while a capture carried eight of them. Found by decoding real
+  traffic rather than by reading the code — the only finding of the five
+  rounds that reading could not have produced.
+- **A guard's exception list covers the shapes you thought of.** Three
+  consecutive rounds each added an exception type to the coercion path and the
+  next round found a shape raising a different one, or none at all. Replaced
+  with shape validation, which is what the bullet above describes.
+- **The fix landed on one branch and not its sibling.** Members were validated
+  while bare values, four lines away, still went to `Decimal`'s permissive
+  parser. Both go through one list now, driven by one test, so they cannot
+  drift apart again.
+
+None of this changes a decoded value for any payload anyone has captured: all
+37 decimal objects in the reference capture decode to the same numbers before
+and after, except the eight that used to raise.
 
 This library still models nothing else inside `MESSAGE_DATA`, and this does not
 change that — it decodes one primitive encoding, in `contrib`, alongside the
