@@ -1042,8 +1042,11 @@ Note ``CANCELED`` with one L. These are values of the REST ``status`` field ---
 what :meth:`get_order <schwaby.client.Client.get_order>` returns --- and the
 ``MESSAGE_TYPE`` tokens below are a different vocabulary that does not map onto
 them one for one. ``FILLED``, ``CANCELED`` and ``REJECTED`` have been observed
-ending an order. ``EXPIRED`` and ``REPLACED`` are
-:ref:`Unconfirmed <confidence_tags>`: included by reading, and never captured.
+ending an order, and ``REPLACED`` ending each id that a
+:ref:`price change <account_activity_price_change>` retired --- five of five,
+on an option order. No equity order's replacement has been captured.
+``EXPIRED`` is :ref:`Unconfirmed <confidence_tags>`: included by reading, and
+never captured.
 
 **``MESSAGE_TYPE`` tokens observed.** These are the tokens **as they appear on
 the wire**, and most of them are CamelCase. ``SUBSCRIBED`` is a genuine
@@ -1460,20 +1463,23 @@ of it.
 .. _account_activity_price_change:
 
 **A price change to a working order gives it a new order id.** It does not
-amend the order in place. Captured on one working two-leg option order whose
-limit price was changed three times, each change produced items for two ids:
+amend the order in place. Captured on two option orders --- a two-leg order
+whose limit price was changed three times, and a single-leg order changed five
+times --- each change produced items for two ids:
 
-- the **new** id: ``ChangeCreated`` and ``ChangeAccepted`` once, and per leg
+- the **new** id: ``ChangeCreated`` and ``ChangeAccepted``, and for each leg
   ``OrderMonitorCreated``, ``ExecutionRequested``, ``ExecutionRequestCreated``,
   ``OrderMonitorCompleted`` and ``ExecutionRequestCompleted``;
-- the **old** id: ``CancelAccepted`` once, and per leg ``ExecutionRequested``,
+- the **old** id: ``CancelAccepted``, and for each leg ``ExecutionRequested``,
   ``ExecutionCreated``, ``OrderUROutCompleted`` and
   ``ExecutionRequestCompleted``.
 
-Those are the types each id carried, not their order. Items for the two ids
-interleave within a single message, so a handler cannot expect one order's
-items to finish before the other's begin. The ``ExecutionCreated`` on the old
-id is the order coming off the book, not a trade.
+Those are the types each id carried, not their order or how many of each ---
+``ExecutionRequestCompleted`` has appeared more than once for a leg on the old
+id. Items for the two ids interleave within a message, so a handler cannot
+expect one order's items to finish before the other's begin. The
+``ExecutionCreated`` on the old id is the order coming off the book, not a
+trade.
 
 .. danger::
 
@@ -1481,35 +1487,42 @@ id is the order coming off the book, not a trade.
    --- or any type containing ``CANCEL`` --- as "this order is gone" concludes
    that a working order was cancelled while it goes on working under the new
    id, and nothing raises. The ``CancelRequestType`` on those items read
-   ``ClientCancel`` in all three changes, so that field does not separate a
-   change from a cancel.
+   ``ClientCancel`` in every change, so that field does not separate a change
+   from a cancel.
 
-   The link is on the new id's ``ChangeCreated``: its ``ParentSchwabOrderID``
-   named the id it replaced, in all three. ``LifecycleSchwabOrderID`` named the
-   original order on every ``ChangeCreated`` and every ``CancelAccepted``, the
-   same value throughout the chain. Following either held for every change
-   captured.
+   **REST does not connect them either.** :meth:`get_order
+   <schwaby.client.Client.get_order>` read ``REPLACED`` on each of the five
+   retired ids of the single-leg order, and that top-level ``status`` is the
+   only place it differed from a cancel. Each retired order's activity
+   collection held a single ``EXECUTION`` activity reading ``CANCELED``, so
+   code reading activities sees a cancel. None of the retired orders carried a
+   key whose name mentions a parent or a replacement, and nothing captured lets
+   a program holding only a retired id find its successor through REST.
 
-   What :meth:`get_order <schwaby.client.Client.get_order>` reports for the old
-   id afterwards has not been checked. ``REPLACED`` and ``CANCELED`` are both
-   in :attr:`Client.Order.TERMINAL_STATUSES
-   <schwaby.client.Client.Order.TERMINAL_STATUSES>`, so the old id reads as
-   ended either way --- and if it reads ``CANCELED``, nothing in the REST
-   status says the order continues.
+   The only link captured is on the stream, on the new id's ``ChangeCreated``:
+   its ``ParentSchwabOrderID`` named the id it replaced, in every change.
+   ``LifecycleSchwabOrderID`` named the original order on every
+   ``ChangeCreated`` and every ``CancelAccepted``, the same value throughout
+   the chain. A fresh order's ``OrderCreated``, captured on an option order,
+   carried no ``ParentSchwabOrderID``, and its ``LifecycleSchwabOrderID`` named
+   itself.
 
-No ``OrderReplaced`` type appeared in any of the three changes. Those three are
+No ``OrderReplaced`` type appeared in any of the eight changes. Those eight are
 the only sample, so its absence elsewhere is not evidence.
 
 ``OrderMonitorCreated`` and ``OrderMonitorCompleted`` have been captured only
-inside these changes. A written note from an earlier hand-placed order recorded
-the four change and monitor types in upper case, as belonging to a resting
-order; the spellings above are the captured ones, and whether an order left
-resting unchanged produces the monitor types is not established.
+inside changes to an order resting on the book. A marketable option order that
+filled without resting produced neither. Whether an order left resting and
+never changed produces them is not established. A written note from an earlier
+hand-placed order recorded the four change and monitor types in upper case; the
+spellings above are the captured ones.
 
-A program that never changes a working order will not see these until someone
-changes one by hand in the same account, from Schwab's own interface --- which
-is how these were captured. No item in a captured change was a fill, and there
-are many: each change to that two-leg order produced more than twenty. Consider
+A program that never changes a working order will not see the change types
+until someone changes one by hand in the same account, from Schwab's own
+interface --- which is how these were captured. No item in a captured change
+was a fill; the order that filled did so in a later message of its own, as
+``OrderFillCompleted``. Changes are also numerous: each produced more than
+twenty items on the two-leg order and thirteen on the single-leg one. Consider
 logging them below the level you use for fills.
 
 **A change to a working order is worth separating from the rest.** For an order

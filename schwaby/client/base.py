@@ -429,14 +429,17 @@ class BaseClient(EnumEnforcer):
         #:
         #: Schwab's documentation lists every status and never says which are
         #: terminal, so this is a reading rather than a contract. ``FILLED``,
-        #: ``CANCELED`` and ``REJECTED`` have been observed ending an order.
-        #: ``EXPIRED`` and ``REPLACED`` are
-        #: :ref:`Unconfirmed <confidence_tags>`: included by reading, and
-        #: never captured.
+        #: ``CANCELED`` and ``REJECTED`` have been observed ending an order,
+        #: and ``REPLACED`` ending each id a price change retired, on an
+        #: option order; no equity order's replacement has been captured.
+        #: ``EXPIRED`` is :ref:`Unconfirmed <confidence_tags>`: included by
+        #: reading, and never captured.
         #:
         #: ``REPLACED`` is terminal for *that order id*. The order continues
         #: under a new id, so anything tracking the old one sees it end while
-        #: the work goes on.
+        #: the work goes on --- and no key captured on the retired order names
+        #: its successor. The link is on the stream; see
+        #: :ref:`price changes <account_activity_price_change>`.
         #:
         #: This describes the REST ``status`` field. The ``MESSAGE_TYPE``
         #: tokens on ``ACCT_ACTIVITY`` are a different vocabulary and do not
