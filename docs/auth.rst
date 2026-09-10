@@ -334,8 +334,9 @@ have retried through is worse off than one which retried a little too long.
    nesting, so this is one account on one day rather than a specification.
    Both placements are accepted, in case it is ever corrected.
 
-Only a refusal or an unusable answer from the token endpoint, or a stored token
-that cannot be refreshed, is reported this way. A connection failure
+Only a refusal from the token endpoint, a JSON answer that is not a usable
+token, or a stored token that cannot be refreshed or sent, is reported this
+way. A connection failure
 while refreshing raises the ``httpx2`` exception it always did, because a
 connection failure while refreshing and one while fetching a quote are the same
 problem and cannot be told apart from inside the library.

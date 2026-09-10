@@ -54,8 +54,8 @@ handle on it.
 
 .. warning::
 
-  Since 3.0.0 this raises where it used to return ``None``, which means
-  **anything between the call and its return value is now skipped** on the
+  This raises rather than returning ``None``, which means
+  **anything between the call and its return value is skipped** on the
   failing path rather than running with a ``None`` in hand. In one live
   deployment that was the bookkeeping which records an order as the program's
   own, and skipping it made the system report its own orders as manual trades.
@@ -204,7 +204,8 @@ deliberately does not.
   - a JSON object carrying an ``error`` key is Schwab rejecting the refresh,
     and raises :class:`~schwaby.utils.TokenRefreshError`;
   - any other JSON that is not a usable bearer token --- an object without an
-    access token, a list, a string, ``null`` --- also raises
+    access token or a usable expiry, one whose refresh token is present but
+    empty, a list, a string, ``null`` --- also raises
     :class:`~schwaby.utils.TokenRefreshError`. Nothing is stored, and the next
     call tries the refresh again;
   - a body that is not JSON at all, such as an empty body or an HTML page,
