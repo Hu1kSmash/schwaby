@@ -978,6 +978,63 @@ class FindAccountHashTest(unittest.TestCase):
             find_account_hash(accounts, '11111111')
 
     @no_duplicates
+    def test_a_hash_read_through_dict_itself_too(self):
+        class Lying(dict):
+            def get(self, key, default=None):
+                return 'HASH-OTHER' if key == 'hashValue' else dict.get(
+                        self, key, default)
+
+            def __getitem__(self, key):
+                return self.get(key)
+
+        accounts = [Lying(accountNumber='11111111', hashValue='HASH-A')]
+        self.assertEqual('HASH-A', find_account_hash(accounts, '11111111'))
+
+    @no_duplicates
+    def test_a_faked_class_is_not_taken_for_the_real_type(self):
+        class FakeDict:
+            __class__ = dict
+
+        class FakeStr:
+            __class__ = str
+
+        class FakeList:
+            __class__ = list
+
+        for accounts in (FakeList(), [FakeDict()],
+                         [{'accountNumber': FakeStr(), 'hashValue': 'H'}],
+                         [{'accountNumber': '11111111', 'hashValue': FakeStr()}]):
+            with self.subTest(accounts=accounts):
+                with self.assertRaises(UnusableAccountNumbersError):
+                    find_account_hash(accounts, '11111111')
+        with self.assertRaisesRegex(TypeError, 'must be a str'):
+            find_account_hash(self.ACCOUNTS, FakeStr())
+
+    @no_duplicates
+    def test_a_list_subclass_cannot_put_a_count_in_the_message(self):
+        class Counting(list):
+            def __len__(self):
+                return 11111111
+
+        with self.assertRaises(AccountNumberNotFoundError) as cm:
+            find_account_hash(Counting(self.ACCOUNTS), '33333333')
+        self.assertNotIn('11111111', str(cm.exception))
+        self.assertIn('none of the 2 accounts', str(cm.exception))
+
+    @no_duplicates
+    def test_a_type_name_is_read_without_trusting_a_metaclass(self):
+        class Meta(type):
+            @property
+            def __name__(cls):
+                raise RuntimeError('metaclass raised')
+
+        class Odd(metaclass=Meta):
+            pass
+
+        with self.assertRaisesRegex(TypeError, 'must be a str'):
+            find_account_hash(self.ACCOUNTS, Odd())
+
+    @no_duplicates
     def test_the_hash_returned_is_a_plain_str(self):
         class Named(str):
             def __str__(self):

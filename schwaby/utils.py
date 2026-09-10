@@ -349,13 +349,15 @@ def find_account_hash(account_numbers, account_number):
     :raises UnusableAccountNumbersError: The list is not that shape, or has
                                          that number more than once.
     '''
-    if not isinstance(account_number, str):
+    # Types are checked through type() rather than isinstance, which a class
+    # can satisfy by faking __class__.
+    if not issubclass(type(account_number), str):
         raise TypeError(
                 'account_number must be a str, as Schwab types it, not a '
                 '{}'.format(_type_name(account_number)))
     account_number = str.__str__(account_number)
 
-    if not isinstance(account_numbers, list):
+    if not issubclass(type(account_numbers), list):
         raise UnusableAccountNumbersError(
                 'expected the list get_account_numbers() returns, not a '
                 '{}'.format(_type_name(account_numbers)))
@@ -365,13 +367,15 @@ def find_account_hash(account_numbers, account_number):
     # subclass could otherwise answer the check one way and the match another.
     malformed = ('an entry is not an accountNumber and hashValue pair of '
                  'strings')
+    entries = list.__getitem__(account_numbers, slice(None))
     hashes = []
-    for entry in list.__getitem__(account_numbers, slice(None)):
-        if not isinstance(entry, dict):
+    for entry in entries:
+        if not issubclass(type(entry), dict):
             raise UnusableAccountNumbersError(malformed)
         number = dict.get(entry, 'accountNumber')
         hash_value = dict.get(entry, 'hashValue')
-        if not (isinstance(number, str) and isinstance(hash_value, str)):
+        if not (issubclass(type(number), str)
+                and issubclass(type(hash_value), str)):
             raise UnusableAccountNumbersError(malformed)
         number = str.__str__(number)
         hash_value = str.__str__(hash_value)
@@ -383,7 +387,7 @@ def find_account_hash(account_numbers, account_number):
     if not hashes:
         raise AccountNumberNotFoundError(
                 'none of the {} accounts listed has that account '
-                'number'.format(len(account_numbers)))
+                'number'.format(len(entries)))
     if len(hashes) > 1:
         raise UnusableAccountNumbersError(
                 'that account number is listed {} times'.format(len(hashes)))
