@@ -22,6 +22,122 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 4.4.0
+
+*2026-09-10*
+
+Nothing is removed or renamed. Three names are added, one new `WARNING` can
+appear on a stream you already use, and the account activity documentation
+is corrected where it said more than was ever observed.
+
+### `schwaby.utils.HTTPStatusError`
+
+The exception a client call's `raise_for_status()` raises, under a name this
+library owns. It is `httpx2.HTTPStatusError` re-exported rather than
+subclassed, so an `isinstance` check against either name holds.
+
+It exists because the failure it prevents is silent. `httpx2` and `httpx`
+share no exception hierarchy, so a handler written against the other package
+never matches — no error, the `except` simply does not run — and the only way
+to know which class to catch was to find out which HTTP package happened to be
+installed. `httpx2` is the only one this library depends on.
+
+It is **not** a `SchwabError`, and the docs say so: `except SchwabError` is
+documented as covering what this library defines, and this class is defined
+elsewhere.
+
+### `Client.Order.TERMINAL_STATUSES`
+
+The five order statuses after which an order stops changing: `FILLED`,
+`REJECTED`, `CANCELED`, `EXPIRED` and `REPLACED`. `AsyncClient.Order` is the
+same class and has it too.
+
+**It holds strings, not enum members.** `Client.Order.Status` is a plain
+`Enum`, so `'FILLED' in {Status.FILLED}` is `False`, and a set of members
+would call the raw string a REST response carries in `order['status']` not
+terminal — silently, on a fill path. The values are taken from the members, so
+the two cannot drift.
+
+What it claims is narrower than its name:
+
+- Schwab's documentation lists every status and never says which are
+  terminal. This is a reading, not a contract.
+- `FILLED`, `CANCELED` and `REJECTED` have been observed ending an order, and
+  `REPLACED` ending all five ids a price change retired on an option order.
+  `EXPIRED` is included by reading, has never been captured, and is tagged
+  Unconfirmed.
+- `REPLACED` is terminal for that order id; the work continues under a new
+  one, and no key captured on the retired order names it.
+- It describes the REST `status` field. The account activity stream's message
+  types are a different vocabulary and do not map onto it one for one.
+
+### `StreamClient.ACCOUNT_ACTIVITY_MESSAGE_TYPES`, and a warning for any other type
+
+Schwab documents the `ACCT_ACTIVITY` `MESSAGE_TYPE` vocabulary nowhere. The
+new constant holds the fourteen types that have been captured on the wire.
+
+**Use it to notice a type, not to classify one.** Only fourteen have been
+captured, so an exact match against the set misses a real message whose type
+has simply never been recorded. Classify by substring, case-insensitively, as the
+streaming documentation has said all along.
+
+A message of any other type is delivered to your handler exactly as before.
+What changes is that it no longer passes silently: it is logged **once per
+type, at `WARNING`, on the `schwaby.streaming` logger**. It is log-only and
+does not reach `add_error_handler`, because nothing failed.
+
+**Expect it to fire.** Expiry and partial fill have never been captured, so a
+process may log each of those once. If you
+alert on `WARNING` from `schwaby.streaming`, you will see them. The line names
+the type; reporting it is how the set grows.
+
+The comparison is case-insensitive, so `ORDERCREATED` is not reported as new.
+A shortened token such as `ORDERUROUT` is a different type and is. At most 64
+distinct types are named per process, each cut to 64 characters, and quoted so
+a newline in one cannot forge a second log line.
+
+The constant sits on `StreamClient` rather than beside the field on
+`AccountActivityFields`, because a set in an `Enum` body silently becomes a
+member of it — which would add a field to every account activity message.
+
+### Documentation
+
+- **An order can fill before `place_order` returns.** A single account
+  activity push has been seen carrying a market order from `OrderCreated`
+  through `OrderFillCompleted` before the placing call handed back the order
+  id. A handler that decides an order is its own by looking up ids it already
+  holds files that fill as someone else's, with no error. Seen once, not
+  reproduced, and no rate is given.
+- **Level one equity bid and ask sizes are documented as shares**, not round
+  lots. Tagged Unconfirmed: the evidence is magnitude, not a measurement
+  against an order of known size, and the comment names the measurement that
+  would settle it. Equities only.
+- **A price change to a working order gives it a new order id, and retires
+  the old id with `CancelAccepted`.** A handler that reads that as "this order
+  is gone" concludes a working order was cancelled while it goes on working
+  under the new id. REST reads the retired id as `REPLACED`, but its activity
+  reads `CANCELED` and nothing captured on it leads to the new order. The link
+  is on the stream: the new id's `ChangeCreated` carries `ParentSchwabOrderID`,
+  naming the id it replaced. Captured over eight changes on two option orders;
+  the change and monitor types are in the exported set with their captured
+  spellings, and no `OrderReplaced` type appeared.
+- **The account activity observation log no longer states what was never
+  observed.**
+  - The order id was said to appear under at least seven spellings. One has
+    been observed, `SchwabOrderID`.
+  - The symbol was said to appear under four keys "in descending order of
+    preference". Lowercase `symbol` was never observed, the order was a
+    parser's policy rather than Schwab's, and the page now says which message
+    carries which key.
+  - A claim about what an option leg's symbol holds is withdrawn; no option
+    order has been captured.
+  - Five message types that carry no symbol at any depth are now named, since
+    a symbol lookup on them returns nothing rather than raising.
+  - All five terminal statuses were titled "observed to be terminal" while
+    two had never been captured.
+  - Keys naming related orders' ids end in `SchwabOrderID` too, so the order
+    id block now says to match that key exactly.
+
 ## 4.3.0
 
 *2026-09-10*
