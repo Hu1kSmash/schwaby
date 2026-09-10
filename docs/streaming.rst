@@ -276,7 +276,8 @@ an error handler:
 .. code-block:: python
 
   def on_stream_error(service, exception, message):
-      alert('schwaby stream: %s raised %r' % (service, exception))
+      # %r, not %s: service is whatever Schwab sent, line breaks included.
+      alert('schwaby stream: %r raised %r' % (service, exception))
 
   stream_client.add_error_handler(on_stream_error)
 

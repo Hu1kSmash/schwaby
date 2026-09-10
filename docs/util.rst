@@ -205,7 +205,7 @@ deliberately does not.
     and raises :class:`~schwaby.utils.TokenRefreshError`;
   - any other JSON that is not a usable bearer token --- an object without an
     access token or a usable expiry, one whose refresh token is present but
-    empty, a list, a string, ``null`` --- also raises
+    empty or not a string, a list, a string, ``null`` --- also raises
     :class:`~schwaby.utils.TokenRefreshError`. Nothing is stored, and the next
     call tries the refresh again;
   - a body that is not JSON at all, such as an empty body or an HTML page,

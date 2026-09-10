@@ -530,9 +530,14 @@ understood, so a stack trace `on the issue tracker
 +++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 Tokens can only be refreshed for approximately seven days, at which point Schwab
-refuses to refresh your token and you need to recreate it. This error is thrown
-by the library in response to Schwab's refusal. :ref:`See here to learn about
-how tokens work. <token_expiration>`.
+refuses to refresh your token and you need to recreate it. A refusal during a
+call reaches you as :class:`~schwaby.utils.TokenRefreshError`, with authlib's
+``OAuthError`` as its ``__cause__``. :ref:`See here to learn about how tokens
+work. <token_expiration>`.
+
+A login raises ``OAuthError`` itself, with the code
+``unusable_token_response``, when the token endpoint answers with something
+that is not a usable token. Nothing is written.
 
 
 ++++++++++++++++++++++
