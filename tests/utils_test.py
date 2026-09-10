@@ -58,6 +58,71 @@ class HTTPStatusErrorTest(unittest.TestCase):
                 lambda request: httpx2.Response(status, request=request))
         return client
 
+    @staticmethod
+    def _refreshing_client(token_response):
+        # An access token that has already expired, so the session refreshes
+        # it on the way past -- through the real authlib path, which is what
+        # the documented behaviour depends on.
+        import httpx2
+        from schwaby.auth import client_from_access_functions
+
+        token = {'access_token': 'a', 'refresh_token': 'r',
+                 'token_type': 'Bearer', 'expires_in': 3600, 'expires_at': 1}
+        requests = []
+
+        def handler(request):
+            requests.append(request.url.path)
+            if request.url.path.endswith('/oauth/token'):
+                return token_response(request)
+            return httpx2.Response(200, json={}, request=request)
+
+        client = client_from_access_functions(
+                'api-key', 'app-secret',
+                lambda: {'creation_timestamp': 9999999999, 'token': token},
+                lambda *args, **kwargs: None)
+        client.session._transport = httpx2.MockTransport(handler)
+        return client, requests
+
+    @no_duplicates
+    def test_a_server_error_refreshing_the_token_raises_out_of_the_call(self):
+        # Documented: a 5xx from the token endpoint escapes the call itself,
+        # before any response is handed back, and describes the token request
+        # rather than the one that was made.
+        import httpx2
+        client, requests = self._refreshing_client(
+                lambda request: httpx2.Response(503, request=request))
+        with self.assertRaises(HTTPStatusError) as caught:
+            client.get_quote('F')
+        self.assertTrue(
+                str(caught.exception.response.url).endswith('/oauth/token'))
+        self.assertEqual(['/v1/oauth/token'], requests)
+
+    @no_duplicates
+    def test_a_refresh_rejected_with_an_error_body_is_a_refresh_error(self):
+        import httpx2
+        from schwaby.utils import TokenRefreshError
+        client, _ = self._refreshing_client(
+                lambda request: httpx2.Response(
+                    400, json={'error': 'invalid_grant'}, request=request))
+        with self.assertRaises(TokenRefreshError):
+            client.get_quote('F')
+
+    @no_duplicates
+    def test_a_refresh_rejected_without_a_json_body_is_neither(self):
+        # Documented as a limit, so pinned: the token response is parsed as
+        # JSON, and an empty 4xx body is not JSON. If this ever becomes a
+        # TokenRefreshError, the docs should say so.
+        import httpx2
+        import json
+        from schwaby.utils import TokenRefreshError
+        client, _ = self._refreshing_client(
+                lambda request: httpx2.Response(401, request=request))
+        with self.assertRaises(Exception) as caught:
+            client.get_quote('F')
+        self.assertIsInstance(caught.exception, json.JSONDecodeError)
+        self.assertNotIsInstance(caught.exception, TokenRefreshError)
+        self.assertNotIsInstance(caught.exception, HTTPStatusError)
+
     @no_duplicates
     def test_it_is_the_class_the_http_package_defines(self):
         import httpx2
