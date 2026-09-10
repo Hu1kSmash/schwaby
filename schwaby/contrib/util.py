@@ -237,21 +237,24 @@ def _safe_repr(value):
     than the arithmetic.
     """
     try:
-        text = repr(value)
+        # A plain str, for the reason `_safe_key` gives.
+        text = str.__str__(repr(value))
     except Exception:
         # Not just ValueError. `json.loads` yields plain dicts, whose `repr`
         # raises only the integer digit limit -- but `StreamJsonDecoder` is a
         # public extension point, which is the same argument that made
         # `relabel_message` handle a non-string key.
-        return '<{} that cannot be formatted>'.format(_type_name(value))
-    text = str.__str__(text)   # a plain str, for the reason `_safe_key` gives
-    text = text if len(text) <= 200 else text[:197] + '...'
-    # A plain dict's repr escapes a newline, but a value's own `__repr__` need
-    # not -- a mapping type or a str subclass from a custom decoder supplies
-    # one -- and every refusal ends with this text, so it could forge a line.
+        text = '<{} that cannot be formatted>'.format(_type_name(value))
+    # A plain dict's repr escapes a newline, but neither a value's own
+    # `__repr__` nor a class name need -- a mapping type or a str subclass
+    # from a custom decoder supplies both -- and every refusal ends with this
+    # text, so either could forge a line. Cut, escaped, and cut again, since
+    # escaping one character can take ten.
+    if len(text) > 200:
+        text = text[:197] + '...'
     if not text.isprintable():
         text = ''.join(c if c.isprintable() else repr(c)[1:-1] for c in text)
-    return text
+    return text if len(text) <= 200 else text[:197] + '...'
 
 
 def _decode_bare(value):

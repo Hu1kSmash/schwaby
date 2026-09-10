@@ -326,6 +326,50 @@ class DecodeDecimalTest(unittest.TestCase):
                 with self.assertRaises(UnusableDecimalScale) as caught:
                     decode_decimal(value)
                 self.assertNotIn('\n', str(caught.exception))
+                # Positive control: the value is still described, escaped.
+                self.assertIn('CRITICAL:schwaby.orders', str(caught.exception))
+
+        # A class name reaches the same text when the repr itself raises.
+        def unformattable(self):
+            raise RuntimeError('boom')
+
+        Named = type('X>' + forged + '<', (), {'__repr__': unformattable})
+        with self.assertRaises(UnusableDecimalScale) as caught:
+            decode_decimal(Named())
+        self.assertNotIn('\n', str(caught.exception))
+        self.assertIn('CRITICAL:schwaby.orders', str(caught.exception))
+
+        # And a class name is bounded before it is used.
+        Long = type('N' * 100000, (), {'__repr__': unformattable})
+        with self.assertRaises(UnusableDecimalScale) as caught:
+            decode_decimal(Long())
+        self.assertLess(len(str(caught.exception)), 400)
+
+        # And bounded after escaping, which can take one character to ten.
+        class Wide:
+            def __repr__(self):
+                return '\U000e0001' * 500
+
+        with self.assertRaises(UnusableDecimalScale) as caught:
+            decode_decimal(Wide())
+        self.assertLess(len(str(caught.exception)), 400)
+
+    @no_duplicates
+    def test_the_once_per_key_report_line_is_escaped(self):
+        # The report line quotes each name; a newline in a key must arrive
+        # escaped, not as a second line.
+        util._reported_keys.clear()
+        self.addCleanup(util._reported_keys.clear)
+        forged = 'x\r\nCRITICAL:schwaby.orders:order 123 FILLED'
+        with self.assertLogs(util.get_logger(), level='WARNING') as got:
+            with self.assertRaises(UnusableDecimalScale):
+                decode_decimal({'lo': '1', forged: 0})
+        report = [line for line in got.output
+                  if 'inside a decimal object' in line]
+        self.assertEqual(1, len(report))
+        self.assertNotIn('\n', report[0])
+        self.assertNotIn('\r', report[0])
+        self.assertIn('CRITICAL:schwaby.orders', report[0])
 
     @no_duplicates
     def test_the_once_per_key_report_line_is_bounded(self):
