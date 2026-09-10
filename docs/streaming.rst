@@ -992,22 +992,34 @@ that no amount of reasoning here will, and account and asset mix differ enough
 that someone else's feed is genuinely different evidence. Being told we are
 wrong is the point of publishing these rather than keeping them.
 
-**The order identifier appears under at least seven spellings**, and which one
-you get depends on the message:
+**The order identifier has been observed under one spelling:**
+``SchwabOrderID``. No other spelling has been seen in any capture. An order id
+from the REST API does not come from a payload at all --- it is in the
+``Location`` header of the :meth:`place_order
+<schwaby.client.Client.place_order>` response, which
+:ref:`extract_order_id <extract_order_id>` reads.
+
+**The symbol has been observed under three keys.** ``Symbol`` appears on
+``OrderCreated``, ``OrderAccepted``, ``ExecutionRequested`` and
+``OrderFillCompleted``. ``PrimaryMarketSymbol`` and ``UnderlyingSymbol``
+appear only on ``OrderCreated``, where each order leg's ``Security`` block
+carries all three keys together. ``OrderCreated`` also carries a second
+``Symbol`` in each leg's ``QuoteOnOrderAcceptance`` block, so a search by key
+name finds two. A lowercase ``symbol`` has never been seen.
 
 .. code-block:: python
 
-  ('SchwabOrderID', 'schwabOrderID', 'OrderID', 'orderId',
-   'OrderKey', 'orderKey', 'order_id')
+  ('Symbol', 'PrimaryMarketSymbol', 'UnderlyingSymbol')
 
-**The symbol appears under four**, in descending order of preference:
+**Several messages carry no symbol at all.** ``ExecutionRequestCreated``,
+``ExecutionRequestCompleted``, ``CancelAccepted``, ``OrderUROutCompleted`` and
+``ExecutionCreated`` have none of these keys at any depth, so attributing one
+to an instrument means joining on the order id --- and a symbol lookup there
+returns nothing rather than raising. The last three come from a small sample
+on a single account.
 
-.. code-block:: python
-
-  ('Symbol', 'symbol', 'PrimaryMarketSymbol', 'UnderlyingSymbol')
-
-``Symbol`` is the tradeable ticker, and is an OCC option string for an option
-leg. The other two are fallbacks for shapes that carry only those.
+Every capture behind these is an equity order. What these keys hold on an
+option order has not been observed.
 
 **Order statuses that end an order** are exported as
 :attr:`Client.Order.TERMINAL_STATUSES
