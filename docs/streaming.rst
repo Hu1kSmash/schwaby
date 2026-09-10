@@ -1242,83 +1242,36 @@ nowhere official.
   the common value, ``AskSize`` and ``BidSize`` are what it gets wrong: the
   second guess is off by a factor of a million with nothing raised.
 
-.. note::
+.. danger::
 
-  **A key you do not recognise inside a decimal object is almost certainly a
-  schema addition, and ignoring it is the right move.** The encoding is
-  positional --- ``lo``, ``mid`` and ``hi`` are fixed slices of one 96-bit
-  mantissa and ``signScale`` is the scale --- so a fifth key does not move the
-  other four. Refuse it and a field Schwab adds one morning takes down every
-  money and quantity value on the feed at once, which is a far worse outcome
-  than not knowing what the new key means.
+  **Any key you do not recognise inside a decimal object means the object
+  cannot be trusted, and** ``decode_decimal`` **refuses it.**
 
-  Two things are *not* safe to ignore. An object carrying **none** of those
-  four is not a decimal object at all, and the mantissa-less rule above would
-  decode it as a genuine zero. And an unrecognised key beside a **missing**
-  component is ambiguous --- the unknown key may be that component, renamed:
+  The temptation is to ignore the key and decode the rest --- the encoding is
+  positional, so a fifth key does not move the other four. That is true and
+  it is not the problem. The problem is that an unrecognised key may be a
+  *renamed* one, and from inside a payload the two are indistinguishable: the
+  serializer omits whatever is zero, so a component missing because it was
+  renamed looks exactly like one missing because it is zero.
 
   .. code-block:: python
 
-    {"lo": "6860000", "SignScale": 12}    # scale renamed, and no signScale
+    {"lo": "6860000", "SignScale": 12}    # a rename, or an addition?
 
-  Read with the absent-scale rule that is ``6860000``, so a $6.86 limit price
-  becomes **$6,860,000**. The mirror --- a renamed mantissa beside a real
-  scale --- reads as zero. Both are confident wrong numbers, and refusing is
-  the only answer that is not one.
+  Read as an addition, there is no ``signScale``, so the absent-scale rule
+  applies and a **$6.86 limit price decodes as $6,860,000**. Three attempts at
+  telling the two cases apart each missed a spelling of "missing" --- the key
+  absent, the key present and ``null``, the key present and ``0`` --- and the
+  last of those cannot be told apart at all, because ``signScale: 0``
+  genuinely means scale 0.
 
-  ``decode_decimal`` does all three: it ignores an added key on an otherwise
-  complete object and logs it once per key on ``schwaby.contrib.util``,
-  refuses an object with none of the four, and refuses one whose missing
-  component could be the key it does not recognise. The cost of the last is
-  that a payload legitimately omitting a component --- an ``AskSize`` with no
-  scale, a $0 commission with no mantissa --- raises while the added key is
-  unknown, which is a loud failure one release from a fix rather than a
-  silent one nobody finds.
-
-  If you see that log line, please `open an issue
-  <https://github.com/Hu1kSmash/schwaby/issues>`__ with the field --- the
-  encoding is undocumented publicly and a capture is the only way anyone
-  learns what a new key means.
-
-.. note::
-
-  **A field id this library has no name for is delivered to your handler
-  under its numeric key**, while every field it does know is relabeled as
-  usual. A field Schwab adds reaches you rather than breaking you.
-
-  It is also logged, once per field per table, on the ``schwaby.streaming``
-  logger --- because being delivered and being *noticed* are different
-  things, and the field tables are only as current as the last time someone
-  looked. If you see that line, please `open an issue
-  <https://github.com/Hu1kSmash/schwaby/issues>`__ with the id and the value.
-
-  Note this is not reported through :func:`add_error_handler
-  <schwaby.streaming.StreamClient.add_error_handler>`: nothing was absorbed
-  and nothing failed. It is a change in the venue, which is an operator's
-  concern rather than a caller's.
-
-.. warning::
-
-  **A whole service, or a whole channel, that this version does not know is
-  a different matter: the messages are dropped.** There is no handler to
-  route an unknown service to and no field table to relabel it with, and a
-  channel this version does not read is a compartment of the frame nobody
-  looks in.
-
-  Both are reported the way every other dropped message is --- a ``WARNING``,
-  and an :class:`UnusableMessage` through :func:`add_error_handler
-  <schwaby.streaming.StreamClient.add_error_handler>`, counted per kind and
-  coalesced after the first few so a systematic change cannot become a log
-  flood. What appeared is on the exception's ``message`` --- the service
-  name for a service, and the sorted list of channel names for a channel.
-
-  A service you simply registered no handler for is **not** reported. That is
-  your own choice, and a line per message on a feed you deliberately ignored
-  is noise rather than news.
-
-  The frame is not dropped over an unread channel --- the compartments that
-  *are* understood still hold real data, and refusing the whole frame would
-  turn an addition into an outage.
+  **So the cost is paid deliberately.** A key Schwab adds arrives on every
+  decimal object at once, so every money and quantity field raises until
+  ``schwaby`` knows about it. That is loud, it is catchable per field, and the
+  key is named in the log on the first message --- against a silent wrong
+  price on a funded account, it is not a close call. If you see it, please
+  `open an issue <https://github.com/Hu1kSmash/schwaby/issues>`__ with the
+  field.
 
 **The sign is not the side.** Fill quantities and prices arrive positive, with
 an even ``signScale``; buy versus sell comes from ``BuySellCode``. The odd

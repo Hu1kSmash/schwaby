@@ -24,67 +24,46 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ## Unreleased
 
-### A field Schwab adds no longer takes the feed down
+### An unrecognised key in a decimal object is refused, and said out loud
 
-4.2.0 made `decode_decimal` refuse a decimal object carrying any key it did
-not recognise. That was the wrong direction and this reverses it.
+4.2.0 refused a decimal object carrying any key it did not recognise, with no
+message beyond the exception. This keeps the refusal, adds the report, and
+records why the middle ground between them does not exist.
 
-The reasoning behind the refusal was that an unknown key could be a renamed
-mantissa, and decoding around it would report a real value as zero — which is
-what a $0 commission and a completed fill look like. True, and it ignored how
-the two failures differ in blast radius. **A key Schwab adds appears on every
-decimal object at once**, so refusing it turns a harmless schema addition into
-every money and quantity field on the feed failing together, on a morning
-nobody chose. The encoding is positional — `lo`, `mid` and `hi` are fixed
-slices of one 96-bit mantissa — so a fifth key does not move the other four.
+The middle ground is the obvious idea: ignore a key on an object that looks
+complete, refuse one where a component is missing, on the reasoning that the
+unknown key might be that component renamed. It was built and then broken
+three times, each break a **$6.86 limit price decoding as $6,860,000**:
 
-So an unrecognised key alongside `lo`, `mid`, `hi` or `signScale` is now
-**ignored and logged once per key** on the `schwaby.contrib.util` logger,
-which `enable_bug_report_logging` now collects. An object carrying **none** of
-those four is still refused: that is not a decimal object, and the
-mantissa-less rule would decode it as a genuine zero.
+    {"lo": "6860000", "SignScale": 12}                       # key absent
+    {"lo": "6860000", "signScale": null, "SignScale": 12}    # key null
+    {"lo": "6860000", "signScale": 0,    "SignScale": 12}    # key zero
 
-An unrecognised key beside a **missing** component is refused rather than
-ignored, because the unknown key may be that component under a new name. The
-first version of this ignored it, and enumerated only one of the two ways that
-goes wrong:
+"Missing" has more spellings than anyone enumerates, and the third cannot be
+closed at all — `signScale: 0` genuinely means scale 0, so refusing it would
+refuse a real `AskSize`. Measured against a captured session, the middle
+ground also bought nothing it claimed to: under a rename that keeps the old
+key at its default, **27 of 37 objects still decoded to a wrong number**,
+which is exactly what no guard at all does. It had the cost of refusing and
+the risk of not refusing.
 
-    {"Lo": "6860000", "signScale": 12}    # mantissa renamed -> read as 0
-    {"lo": "6860000", "SignScale": 12}    # scale renamed    -> read as 6860000
+So: **any unrecognised key refuses the object**, and the key is logged once,
+on the `schwaby.contrib.util` logger, which `enable_bug_report_logging` now
+collects.
 
-The second is the one that matters. With no `signScale` the absent-scale rule
-applies, so a **$6.86 limit price decodes as $6,860,000** — six orders of
-magnitude, silently, on the field this feed exists to carry. Both are refused
-now, and a rename is caught on the first message that carries it.
+**The cost is real and is chosen.** A key Schwab adds arrives on every decimal
+object at once, so every money and quantity field raises until `schwaby` knows
+it. That is loud, it happens on the first message, the key is named, and
+`UnusableDecimalScale` is catchable per field — so a caller wrapping each
+field, as the docs have always said to, keeps the rest of the message. The
+alternative on this feed is a silent wrong price on a funded account.
 
-"Present" means carrying a value, not merely having the key — the same rule
-the mantissa and the scale already applied. Asked the other way, an explicit
-`{"signScale": null}` slipped the guard and then met the absent-scale rule,
-which is the same defect through a different door.
-
-**One gap remains, and it is inherent rather than chosen.** `lo`, `mid` and
-`hi` are omitted individually when zero, so the absence of one carries no
-information, and a renamed *member* beside a surviving member cannot be told
-from an ordinary omission:
-
-    {"lo": "705032704", "Mid": 1, "signScale": 12}   ->  705.032704
-
-which is $5,000.00 read seven times low — the truncation this decoder exists
-to prevent. Nothing can detect it; the unknown key is logged on the first
-message carrying it, and that is the whole of the warning available. An
-earlier draft of this entry said both rename directions were refused. That was
-true of a renamed *component* and not of a renamed member of one.
-
-The cost is real and is the right way round: a payload that legitimately omits
-a component — an `AskSize` with no scale, a $0 commission with no mantissa —
-raises while an added key is still unknown, rather than being guessed at. Every
-complete object still decodes and names the new key in the log immediately, so
-the fix is one release away, and `UnusableDecimalScale` is catchable per field.
-
-If you see that warning, please [open an
-issue](https://github.com/Hu1kSmash/schwaby/issues) with the field. The
-encoding is undocumented publicly and a capture is the only way anyone learns
-what a new key means.
+One thing this closes that the middle ground could not: a renamed *member* of
+the mantissa. `{"lo": "705032704", "Mid": 1, "signScale": 12}` is $5,000.00
+and decoded as `705.032704` — seven times low, silently — because `lo`, `mid`
+and `hi` are omitted individually when zero, so the absence of one carries no
+information. An earlier draft of this entry called that an inherent gap. It is
+inherent only if you are trying to decode around the unknown key.
 
 ### A field Schwab adds to a stream is now visible, not just survivable
 

@@ -387,67 +387,6 @@ class DecodeDecimalTest(unittest.TestCase):
         self.assertEqual(decimal.Decimal(0), decode_decimal({}))
         self.assertEqual(decimal.Decimal(0), decode_decimal({'signScale': 12}))
 
-    def test_a_key_schwab_adds_later_does_not_take_the_feed_down(self):
-        # The direction this was decided in, and why. A key Schwab adds
-        # appears on *every* decimal object at once, so refusing one turns a
-        # schema addition into every money and quantity field raising
-        # together. The encoding is positional in lo/mid/hi/signScale and a
-        # fifth key does not move the other four, so it is ignored.
-        util._reported_keys.clear()
-        for value, expected in (
-                ({'lo': '13720000', 'signScale': 12, 'flags': 0}, '13.72'),
-                ({'lo': '705032704', 'mid': 1, 'signScale': 12, 'f': 0},
-                 '5000'),
-                ({'lo': '6860000', 'signScale': 13, 'IsNeg': True}, '-6.86')):
-            with self.subTest(value=value):
-                self.assertEqual(decimal.Decimal(expected),
-                                 decode_decimal(value))
-
-    def test_a_key_schwab_adds_later_is_reported_once_per_key(self):
-        # Once per distinct key, not once per message: this fires on a live
-        # feed, where per-message is a log flood and per-key is what an
-        # operator can act on.
-        util._reported_keys.clear()
-        with self.assertLogs(util.get_logger(), level='WARNING') as caught:
-            decode_decimal({'lo': '1', 'signScale': 12, 'flags': 0})
-            decode_decimal({'lo': '2', 'signScale': 12, 'flags': 0})
-            decode_decimal({'lo': '3', 'signScale': 12, 'flags': 0})
-        self.assertEqual(1, len(caught.output))
-        self.assertIn("'flags'", caught.output[0])
-        # A *second* new key is worth its own line.
-        with self.assertLogs(util.get_logger(), level='WARNING') as caught:
-            decode_decimal({'lo': '1', 'signScale': 12, 'scale': 6})
-        self.assertEqual(1, len(caught.output))
-        self.assertIn("'scale'", caught.output[0])
-        self.assertNotIn("'flags'", caught.output[0])
-
-    def test_the_unknown_key_report_is_bounded(self):
-        # The thing being counted is corruption-controlled and the set never
-        # shrinks, so it is capped rather than unbounded.
-        util._reported_keys.clear()
-        for i in range(util._MAX_REPORTED_KEYS * 3):
-            decode_decimal({'lo': '1', 'signScale': 12, 'k%d' % i: 0})
-        self.assertLessEqual(len(util._reported_keys),
-                             util._MAX_REPORTED_KEYS)
-
-        # One key per call is a fixture sized to the guard rather than to the
-        # thing the guard names. The cap is justified by input nobody here
-        # controls, so the case that matters is one object carrying more keys
-        # than the cap: checking the cap and *then* calling `update` let all
-        # of them in.
-        util._reported_keys.clear()
-        crowded = {'lo': '1', 'signScale': 12}
-        crowded.update({'k%d' % i: 0
-                        for i in range(util._MAX_REPORTED_KEYS * 20)})
-        decode_decimal(crowded)
-        self.assertLessEqual(len(util._reported_keys),
-                             util._MAX_REPORTED_KEYS)
-        # And it still decodes after the cap is reached.
-        self.assertEqual(decimal.Decimal('0.000001'),
-                         decode_decimal({'lo': '1', 'signScale': 12,
-                                         'one more': 0}))
-        util._reported_keys.clear()
-
     def test_a_renamed_key_is_refused_in_either_direction(self):
         # An unknown key beside a *missing* component is ambiguous: the
         # unknown key may be that component under a new name. Both directions
@@ -496,40 +435,116 @@ class DecodeDecimalTest(unittest.TestCase):
                 decode_decimal(json.loads(
                     '{"lo": "19200", "signScale": null}')))
 
-    def test_a_renamed_mantissa_member_is_the_gap_that_remains(self):
-        """Stated because it cannot be closed, and I claimed it was.
+    def test_any_unrecognised_key_refuses_the_object(self):
+        """The whole rule, and it is the whole rule on purpose.
 
-        `lo`, `mid` and `hi` are omitted individually when zero, so the
-        absence of one carries no information and a renamed member beside a
-        surviving member is indistinguishable from an ordinary omission. The
-        commit that added the refusal said "both halves refuse now"; this is
-        the half that does not, and it is a silent truncation -- the defect
-        this decoder was written for.
+        Three rounds of review broke the version that tried to decode around
+        an unknown key: it ignored one on an object that looked complete and
+        refused one where a component was missing, and "missing" turned out
+        to have more spellings than anyone enumerates -- absent, null, and
+        zero, each a $6.86 limit price decoding as $6,860,000. The last of
+        those cannot be closed, because `signScale: 0` genuinely means scale
+        0. Measured against a real capture the clever version also bought
+        nothing: 27 of 37 objects still decoded wrong under a rename that
+        keeps the old key at its default.
         """
+        for value in (
+                # A key alongside a complete object -- a schema addition.
+                {'lo': '13720000', 'signScale': 12, 'flags': 0},
+                {'lo': '705032704', 'mid': 1, 'signScale': 12, 'f': 0},
+                {'lo': '6860000', 'signScale': 13, 'IsNeg': True},
+                # A component missing, in each of its three spellings.
+                {'lo': '6860000', 'SignScale': 12},
+                {'lo': '6860000', 'signScale': None, 'SignScale': 12},
+                {'lo': '6860000', 'signScale': 0, 'SignScale': 12},
+                {'lo': '6860000', 'signScale': '0', 'SignScale': 12},
+                # A renamed member of the mantissa, which the previous
+                # version documented as an inherent gap. It is not one.
+                {'lo': '705032704', 'Mid': 1, 'signScale': 12},
+                # An object that is not one of these at all.
+                {'symbol': 'AAPL', 'quantity': 100}):
+            with self.subTest(value=value):
+                util._reported_keys.clear()
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal(value)
         util._reported_keys.clear()
-        self.assertEqual(
-                decimal.Decimal('5000'),
-                decode_decimal({'lo': '705032704', 'mid': 1, 'signScale': 12}))
-        # Renamed, and seven times low. Not refused, and cannot be.
+
+    def test_every_real_payload_still_decodes(self):
+        # The control on the rule above. Refusing everything would satisfy
+        # it, and these are the shapes a live account actually sends --
+        # including the two that omit a component, which is what made the
+        # clever version look necessary.
+        for value, expected in (({'lo': '13720000', 'signScale': 12}, '13.72'),
+                                ({'lo': '19200'}, '19200'),
+                                ({'signScale': 12}, '0'),
+                                ({}, '0'),
+                                ({'lo': '6860000', 'signScale': 13}, '-6.86'),
+                                ({'lo': '705032704', 'mid': 1,
+                                  'signScale': 12}, '5000')):
+            with self.subTest(value=value):
+                self.assertEqual(decimal.Decimal(expected),
+                                 decode_decimal(value))
+
+    def test_the_refusal_says_it_is_a_schema_change_not_corruption(self):
+        # Two messages, because they are different events for whoever reads
+        # them: the venue changing under everyone, and a caller passing the
+        # wrong object.
+        with self.assertRaises(UnusableDecimalScale) as caught:
+            decode_decimal({'lo': '1', 'signScale': 12, 'flags': 0})
+        self.assertIn('does not know', str(caught.exception))
+        with self.assertRaises(UnusableDecimalScale) as caught:
+            decode_decimal({'symbol': 'AAPL'})
+        self.assertIn('not a decimal object', str(caught.exception))
+        util._reported_keys.clear()
+
+    def test_an_added_key_is_still_reported_once_per_key(self):
+        # The refusal names the key on every field of every message. The log
+        # line is the once-per-key operator signal that says this is new
+        # rather than broken, and it is what a bug report carries.
+        util._reported_keys.clear()
         with self.assertLogs(util.get_logger(), level='WARNING') as caught:
-            renamed = decode_decimal(
-                    {'lo': '705032704', 'Mid': 1, 'signScale': 12})
-        self.assertEqual(decimal.Decimal('705.032704'), renamed)
-        # The one warning available is that the key was seen at all.
-        self.assertIn("'Mid'", caught.output[0])
+            for i in range(3):
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal({'lo': str(i), 'signScale': 12, 'flags': 0})
+        self.assertEqual(1, len(caught.output))
+        self.assertIn("'flags'", caught.output[0])
+        util._reported_keys.clear()
+
+    def test_the_unknown_key_report_is_bounded(self):
+        # The set never shrinks and what goes into it is the venue's to
+        # choose, so it is capped -- in count, and per key in length.
+        util._reported_keys.clear()
+        for i in range(util._MAX_REPORTED_KEYS * 3):
+            with self.assertRaises(UnusableDecimalScale):
+                decode_decimal({'lo': '1', 'signScale': 12, 'k%d' % i: 0})
+        self.assertLessEqual(len(util._reported_keys),
+                             util._MAX_REPORTED_KEYS)
+
+        # One object carrying more keys than the cap: a fixture that adds one
+        # per call is sized to the guard rather than to the input the guard's
+        # own comment names.
+        util._reported_keys.clear()
+        crowded = {'lo': '1', 'signScale': 12}
+        crowded.update({'k%d' % i: 0
+                        for i in range(util._MAX_REPORTED_KEYS * 20)})
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal(crowded)
+        self.assertLessEqual(len(util._reported_keys),
+                             util._MAX_REPORTED_KEYS)
         util._reported_keys.clear()
 
     def test_a_key_that_cannot_be_named_does_not_escape(self):
         # A key is whatever the decoder produced. `str()` of a wide integer
-        # raises past sys.get_int_max_str_digits(), and the report and the
-        # refusal message both name the unknown keys.
+        # raises past sys.get_int_max_str_digits(), and both the report and
+        # the refusal message name the unknown keys.
         util._reported_keys.clear()
-        self.assertEqual(
-                decimal.Decimal('0.000001'),
-                decode_decimal({'lo': '1', 'signScale': 12, 10 ** 6000: 0}))
+        with self.assertRaises(UnusableDecimalScale) as caught:
+            decode_decimal({'lo': '1', 'signScale': 12, 10 ** 6000: 0})
+        self.assertIn('cannot be named', str(caught.exception))
         # Bounded in length, not only in count: the set never shrinks.
         util._reported_keys.clear()
-        decode_decimal({'lo': '1', 'signScale': 12, 'k' * 5000: 0})
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal({'lo': '1', 'signScale': 12, 'k' * 5000: 0})
         self.assertLessEqual(max(len(k) for k in util._reported_keys), 64)
         util._reported_keys.clear()
 
@@ -574,37 +589,6 @@ class DecodeDecimalTest(unittest.TestCase):
         self.assertEqual(decimal.Decimal(0), decode_decimal({}))
         with self.assertRaises(UnusableDecimalScale):
             decode_decimal({'Foo': 1})
-
-    def test_an_added_key_costs_the_objects_that_omit_a_component(self):
-        """What the refusal above costs, stated rather than discovered.
-
-        The serializer omits what is zero, so a real payload can arrive with
-        no scale (`AskSize`) or no mantissa (a $0 commission). Once an
-        unrecognised key is also present those become ambiguous, and they
-        raise until the key is known.
-
-        That is the right way round -- every complete object still decodes
-        and names the new key immediately, so the fix is one release away,
-        and `UnusableDecimalScale` is catchable per field -- but it is a real
-        cost and it should fail loudly here if anyone changes their mind.
-        """
-        for value in ({'lo': '19200', 'flags': 0},        # no scale
-                      {'signScale': 12, 'flags': 0}):     # no mantissa
-            with self.subTest(value=value):
-                util._reported_keys.clear()
-                with self.assertRaises(UnusableDecimalScale):
-                    decode_decimal(value)
-        # Positive control: the same objects without the added key are fine,
-        # and a complete object with the added key is fine.
-        util._reported_keys.clear()
-        self.assertEqual(decimal.Decimal(19200),
-                         decode_decimal({'lo': '19200'}))
-        self.assertEqual(decimal.Decimal(0), decode_decimal({'signScale': 12}))
-        self.assertEqual(
-                decimal.Decimal('13.72'),
-                decode_decimal({'lo': '13720000', 'signScale': 12,
-                                'flags': 0}))
-        util._reported_keys.clear()
 
     def test_a_dict_subclass_whose_get_and_getitem_disagree_is_catchable(self):
         # The comment above the loop says why the members use `.get`; the

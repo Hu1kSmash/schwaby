@@ -69,9 +69,6 @@ _BARE_NUMBER = re.compile(
 #: :func:`_report_unknown_keys` for why that direction rather than refusing.
 _DECIMAL_KEYS = frozenset(('lo', 'mid', 'hi', 'signScale'))
 
-#: The mantissa side of that. Named because an absent mantissa and an absent
-#: scale are different questions once an unrecognised key is in play.
-_MANTISSA_KEYS = frozenset(('lo', 'mid', 'hi'))
 
 #: How many distinct unknown keys to name in the log before giving up. A cap
 #: rather than an unbounded set, because the thing being counted is attacker-
@@ -84,37 +81,16 @@ _reported_keys = set()
 def _report_unknown_keys(unknown):
     """Say once, per distinct key, that Schwab sent something new.
 
-    The alternative was refusing the object, which this function did for one
-    release. That is the loud direction and it is the wrong one *here*: a key
-    Schwab adds appears on every decimal object at once, so refusing turns a
-    schema addition into every money and quantity field on the feed raising
-    together -- a dead feed, from a change that costs nothing to ignore. The
-    encoding is positional in `lo`/`mid`/`hi`/`signScale`; a fifth key does
-    not move the other four.
+    The object itself is refused --- see `decode_decimal` for why that is
+    the whole rule --- so the caller already gets an exception naming the
+    key, on every decimal field of every message. This line is the operator
+    signal beside it: once per key, saying *this is a schema change rather
+    than a bad value*, and greppable without a code change.
 
-    What is *not* ignored is an object carrying none of the four -- not a
-    decimal object at all -- or one whose *missing* component the unknown key
-    could be, since guessing there is a wrong number in both directions.
-
-    One gap remains and it is inherent rather than chosen. `lo`, `mid` and
-    `hi` are omitted individually when zero, so the absence of one carries no
-    information, and a renamed *member* beside a surviving member cannot be
-    told from an ordinary omission:
-
-        {"lo": "705032704", "Mid": 1, "signScale": 12}   ->  705.032704
-
-    which is the truncation this decoder exists to prevent, seven times low.
-    Nothing here can detect that; the unknown key is logged on the first
-    message carrying it, and that is the whole of the warning available.
-
-    Reported once per distinct key rather than once per message: this fires
-    on a live feed, where a per-message line is a flood and a flood is its own
-    way of hiding the message.
-
-    Once per *process*, not per connection: the set is module-level and is not
-    cleared by `login` or `close`, which do clear the absorbed counters. That
-    is deliberate --- a key Schwab added is a fact about the venue, not about
-    one socket --- and it means two clients in one process share the
+    Once per *process*, not per connection: the set is module-level and is
+    not cleared by `login` or `close`, which do clear the absorbed counters.
+    That is deliberate --- a key Schwab added is a fact about the venue, not
+    about one socket --- and it means two clients in one process share the
     suppression.
     """
     room = _MAX_REPORTED_KEYS - len(_reported_keys)
@@ -132,17 +108,17 @@ def _report_unknown_keys(unknown):
     if len(_reported_keys) >= _MAX_REPORTED_KEYS:
         get_logger().warning(
                 'That is %d distinct unknown keys, which is as many as '
-                'schwaby will name. Any further ones decode the same way and '
-                'are not reported.', _MAX_REPORTED_KEYS)
+                'schwaby will name. Any further ones are refused the same '
+                'way and are not reported.', _MAX_REPORTED_KEYS)
     get_logger().warning(
             'Schwab sent %s inside a decimal object, which this version of '
-            'schwaby does not know about. The value still decodes -- the '
-            'encoding is positional and an added key does not move the '
-            'others -- and this is reported once per key, not per message. '
-            'If you see this, please open an issue at '
-            'https://github.com/Hu1kSmash/schwaby/issues so the field can be '
-            'documented: it is undocumented publicly and a capture is the '
-            'only way anyone learns what it means.',
+            'schwaby does not know about. Every decimal field carrying it is '
+            'refused until schwaby knows the key -- an unrecognised key may '
+            'be a renamed one, and decoding around it is a wrong price where '
+            'it is. Reported once per key, not per message. Please open an '
+            'issue at https://github.com/Hu1kSmash/schwaby/issues with the '
+            'field: it is undocumented publicly and a capture is the only '
+            'way anyone learns what a new key means.',
             ', '.join(repr(k) for k in fresh))
 
 
@@ -385,23 +361,24 @@ def decode_decimal(value):
                                   plausible wrong number rather than an
                                   error.
 
-                                  A key **alongside** those four is a schema
-                                  addition rather than corruption, and on an
-                                  object carrying both a mantissa and a
-                                  ``signScale`` it is ignored and logged
-                                  once: a key Schwab adds arrives on every
-                                  decimal object at once, and refusing it
-                                  would turn a harmless addition into every
-                                  money and quantity field failing together.
+                                  **Any** unrecognised key refuses the
+                                  object. Not decoded around: an
+                                  unrecognised key may be a renamed one, and
+                                  from inside a payload the two are
+                                  indistinguishable --- the serializer omits
+                                  what is zero, so a component that is
+                                  missing because it was renamed looks
+                                  exactly like one that is missing because
+                                  it is zero.
 
-                                  It is **refused** where a component is
-                                  missing, because the unknown key may be
-                                  that component renamed and guessing is a
-                                  wrong number either way. So a payload that
-                                  legitimately omits one --- an ``AskSize``
-                                  with no scale, a $0 commission with no
-                                  mantissa --- raises while an added key is
-                                  still unknown.
+                                  The cost is deliberate. A key Schwab adds
+                                  arrives on every decimal object at once, so
+                                  every money and quantity field raises until
+                                  ``schwaby`` knows the key --- a loud,
+                                  same-day failure, catchable per field, and
+                                  the key is named in the log on the first
+                                  message. The alternative on this feed is a
+                                  silent wrong price.
     :raises UnusableDecimalScale: if a non-object value is not a number, or
                                   carries an exponent past 64 in either
                                   direction. The empty string reaches this
@@ -424,59 +401,51 @@ def decode_decimal(value):
     keys = set(value)
     unknown = keys - _DECIMAL_KEYS
     if unknown:
-        # *Present* means carrying a value, which is the same rule the
-        # mantissa loop and the scale below both apply -- they treat an
-        # explicit JSON null as an absence, deliberately and with a test.
-        # Asking a different question here was the two-walks-disagree shape
-        # inside one function: keyed on mere presence,
-        # `{"lo": "6860000", "signScale": null, "SignScale": 12}` slipped the
-        # guard, then met the absent-scale rule, and decoded $6.86 as
-        # $6,860,000 again -- the exact defect this refusal exists to close.
-        present = {k for k in keys & _DECIMAL_KEYS
-                   if value.get(k) is not None}
-        if keys & _DECIMAL_KEYS and (
-                not present & _MANTISSA_KEYS or 'signScale' not in present):
-            # An unknown key beside a *missing* component is ambiguous: the
-            # unknown key may be that component, renamed. Both directions are
-            # a silent wrong number if guessed at, and they are not
-            # symmetric in cost:
-            #
-            #   {"lo": "6860000", "SignScale": 12}
-            #
-            # has no `signScale`, so the absent-scale rule would read it at
-            # scale 0 and turn a $6.86 limit price into $6,860,000. The
-            # mirror, a renamed mantissa beside a real scale, reads as zero.
-            # Refusing is the only answer that is not a confident wrong
-            # number, and it catches a rename on the first message.
-            #
-            # This costs something and the cost is the right way round: if
-            # Schwab *adds* a key, objects that legitimately omit a component
-            # -- an AskSize with no scale, a $0 commission with no mantissa --
-            # raise until the key is known, while every complete object still
-            # decodes and names the new key in the log immediately.
-            raise UnusableDecimalScale(
-                    'decimal object is missing its {} and carries {}, which '
-                    'may be that component under a new name: {}'.format(
-                        'mantissa' if not present & _MANTISSA_KEYS
-                        else 'signScale',
-                        _safe_keys(unknown),
-                        _safe_repr(value)))
+        # Any unrecognised key refuses the object. Outright, with no attempt
+        # to decode around it.
+        #
+        # This was three attempts at something cleverer, and the record is
+        # the argument. The clever version ignored a key on an object that
+        # looked complete and refused one where a component was missing, on
+        # the reasoning that the unknown key might be that component renamed.
+        # It could not be made to work, because "missing" has more spellings
+        # than anyone enumerates: the key absent, the key present and null,
+        # the key present and zero. Three review rounds found those three,
+        # each a $6.86 limit price decoding as $6,860,000, and the third
+        # cannot be closed at all -- `signScale: 0` genuinely means scale 0,
+        # so refusing it would refuse a real `AskSize`.
+        #
+        # Measured against a real capture, the clever version also bought
+        # nothing: against a rename that keeps the old key at its default,
+        # 27 of 37 objects decoded to a wrong number, which is exactly what
+        # no guard at all does. It had the cost of refusing and the risk of
+        # not refusing.
+        #
+        # So: the cost of this is that a key Schwab *adds* -- which arrives
+        # on every decimal object at once -- makes every money and quantity
+        # field raise until schwaby knows the key. That is a loud, same-day,
+        # catchable failure, and `UnusableDecimalScale` is per field, so a
+        # caller wrapping each one keeps the rest of the message. The
+        # alternative on this feed is a silent wrong price on a funded
+        # account, and between those two there is no contest.
+        _report_unknown_keys(unknown)
         if not keys & _DECIMAL_KEYS:
-            # None of the four. Not a decimal object at all -- a PascalCase
-            # `{"Lo": ..., "SignScale": ...}`, or an unrelated object
-            # entirely -- and it would otherwise fall straight through the
-            # mantissa-less shortcut below and decode as a genuine zero,
-            # which is what a $0 commission and a completed fill look like.
+            # Not a decimal object at all -- a PascalCase
+            # `{"Lo": ..., "SignScale": ...}`, or something unrelated. Worth
+            # its own message: this is a caller's mistake, where the branch
+            # below is the venue changing under everyone.
             raise UnusableDecimalScale(
                     'not a decimal object -- no lo, mid, hi or signScale, '
                     'only {}: {}'.format(
                         _safe_keys(unknown),
                         _safe_repr(value)))
-        # A key *alongside* the four is a schema addition, not corruption.
-        # Ignored, and said out loud once, for the reasons on
-        # `_report_unknown_keys`. This direction was chosen deliberately:
-        # refusing made a field Schwab adds take the whole feed down.
-        _report_unknown_keys(unknown)
+        raise UnusableDecimalScale(
+                'decimal object carries {}, which this version of schwaby '
+                'does not know. Refused rather than decoded around, because '
+                'an unrecognised key may be a renamed one and the difference '
+                'is not visible from here: {}'.format(
+                    _safe_keys(unknown),
+                    _safe_repr(value)))
 
     # The scale is read, validated and bounded *before* the mantissa-less
     # shortcut, not after. That shortcut returns without looking at anything
