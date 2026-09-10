@@ -1,3 +1,4 @@
+import collections.abc
 import decimal
 import json
 import logging
@@ -59,9 +60,10 @@ MAX_EXPONENT = 64
 #: are validated against; the two paths refuse the same tokens now.
 #:
 #: The exponent is bounded here, at four significant digits, and not left to
-#: the magnitude check after construction: an exponent of 10**18 or more makes
-#: `decimal.Decimal` itself raise `InvalidOperation` -- neither a SchwabError
-#: nor a ValueError -- before that check can run.
+#: the magnitude check after construction: an exponent near 10**18 or beyond
+#: -- the limit is on the adjusted exponent, and differs by sign -- makes
+#: `decimal.Decimal` itself raise `InvalidOperation`, neither a SchwabError nor
+#: a ValueError, before that check can run.
 _BARE_NUMBER = re.compile(
         r'-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?0*[0-9]{1,4})?\Z')
 
@@ -167,10 +169,29 @@ def _safe_keys(unknown):
     # joined bare a newline in one forged a second line wherever the
     # exception was logged -- including through the recipe the streaming
     # docs give for logging it.
-    names = [repr(name) for name in sorted(map(_safe_key, unknown))]
+    # Each quoted name is bounded too: `repr` escapes a character to as many
+    # as ten, so a 64-character name could quote to 640.
+    names = []
+    for name in sorted(map(_safe_key, unknown)):
+        quoted = repr(name)
+        names.append(quoted if len(quoted) <= 80 else quoted[:77] + '...')
     if len(names) <= 8:
         return ', '.join(names)
     return '{} and {} more'.format(', '.join(names[:8]), len(names) - 8)
+
+
+def _type_name(value):
+    """A value's type name, for a message about a value that could not be read.
+
+    Read through `type`'s own descriptor. `type(x).__name__` consults the
+    metaclass first, and a metaclass can make that raise inside the very
+    branch written not to.
+    """
+    try:
+        name = type.__dict__['__name__'].__get__(type(value))
+    except Exception:
+        name = 'object'
+    return name if len(name) <= 64 else name[:61] + '...'
 
 
 def _safe_key(key):
@@ -188,7 +209,7 @@ def _safe_key(key):
         # straight into `_reported_keys`, which never shrinks -- the exact
         # scenario the length bound exists for, through the branch written
         # to be safe.
-        text = '<{} that cannot be named>'.format(type(key).__name__)
+        text = '<{} that cannot be named>'.format(_type_name(key))
     # A plain `str`: `str()` hands back a subclass untouched when `__str__`
     # returns one, and its own `len`, `hash` and slicing would run next.
     text = str.__str__(text)
@@ -212,7 +233,7 @@ def _safe_repr(value):
         # raises only the integer digit limit -- but `StreamJsonDecoder` is a
         # public extension point, which is the same argument that made
         # `relabel_message` handle a non-string key.
-        return '<{} that cannot be formatted>'.format(type(value).__name__)
+        return '<{} that cannot be formatted>'.format(_type_name(value))
     text = str.__str__(text)   # a plain str, for the reason `_safe_key` gives
     return text if len(text) <= 200 else text[:197] + '...'
 
@@ -230,21 +251,21 @@ def _decode_bare(value):
     ``'\u0663'`` as three, ``' 12 '`` and ``'+12'`` and ``'\uff11\uff12'``
     as twelve. All of them are `json.loads`-reachable and none of them raised.
     """
-    if isinstance(value, bool) or value is None:
+    kind = type(value)   # not `isinstance`; see `decode_decimal`
+    if issubclass(kind, bool) or value is None:
         # `None` is handled by the caller; a bool is not a number here for the
         # same reason it is not one in a mantissa.
         raise UnusableDecimalScale(
                 'not a number: {}'.format(_safe_repr(value)))
 
     # Each branch works on the exact built-in type, never the subclass that
-    # arrived. A subclass decides its own `str`, `bit_length` and
+    # arrived. A subclass decides its own `str`, `isascii`, `bit_length` and
     # `is_finite`, so it could decode as another number or raise past the one
     # `except` callers write. `json.loads` never produces one; a custom
-    # decoder can. A plain `str` is not reduced: the pattern and `Decimal`
-    # read its characters, which a subclass cannot change.
-    if isinstance(value, decimal.Decimal):
+    # decoder can.
+    if issubclass(kind, decimal.Decimal):
         value = result = decimal.Decimal(value)
-    elif isinstance(value, int):
+    elif issubclass(kind, int):
         value = int.__index__(value)
         # Bounded before conversion, cheaply. `decimal.Decimal(int)` is
         # fine at any width -- measured, and the comment here said otherwise
@@ -261,12 +282,13 @@ def _decode_bare(value):
                     'a {}-bit integer is outside +/-1E{}, so it is not a '
                     'real value'.format(value.bit_length(), MAX_EXPONENT))
         result = decimal.Decimal(value)
-    elif isinstance(value, float):
+    elif issubclass(kind, float):
         # `str` of a float is short, ASCII and never surprising; going
         # through it stops the binary expansion coming along.
         value = float.__float__(value)
         result = decimal.Decimal(str(value))
-    elif isinstance(value, str):
+    elif issubclass(kind, str):
+        value = str.__str__(value)
         if not (value.isascii() and _BARE_NUMBER.match(value)):
             # The empty string reaches here from the SUBSCRIBED ack.
             raise UnusableDecimalScale(
@@ -307,9 +329,10 @@ def _unsigned(member, name, value, bits):
     Schwab sends, and 32 for the scale and for each member of the
     three-member layout.
     """
-    if isinstance(member, bool) or not isinstance(member, (int, str)):
+    kind = type(member)   # not `isinstance`; see `decode_decimal`
+    if issubclass(kind, bool) or not issubclass(kind, (int, str)):
         ok = False
-    elif isinstance(member, str):
+    elif issubclass(kind, str):
         # The plain text, as `int.__index__` below gives the plain value: a
         # subclass's own `isdigit` and `lstrip` would otherwise decide it.
         member = str.__str__(member)
@@ -362,9 +385,9 @@ def decode_decimal(value):
     ``{"lo": "40000000", "signScale": 13}`` -> ``Decimal('-40.000000')``.
 
     Five things this gets right that a first attempt usually does not, each of
-    which is a wrong number rather than an error:
+    which costs a value, usually as a wrong number rather than an error:
 
-    * **The mantissa does not fit in 32 bits.** ``lo`` carries all of it, and
+    * **The mantissa can be wider than 32 bits.** ``lo`` carries all of it, and
       a fill principal above ``4294.967295`` at ``signScale`` 12 needs more.
       A decoder that treats ``lo`` as one 32-bit member of .NET's three
       refuses the largest amounts on the feed, or wraps them.
@@ -383,9 +406,9 @@ def decode_decimal(value):
       capture --- costs both sizes on every quote it appears in.
     * **A** ``Decimal`` **is returned, never a float.** These are money;
       :meth:`OrderBuilder.set_price
-      <schwaby.orders.generic.OrderBuilder.set_price>` has refused floats
-      since 2.1.0 for the reason :ref:`price_strings` gives, so a decoded value
-      can be fed straight back into a reprice.
+      <schwaby.orders.generic.OrderBuilder.set_price>` refuses floats for the
+      reason :ref:`price_strings` gives, so a decoded value can be fed
+      straight back into a reprice.
 
     :param value: A decimal object, or a number or string. A non-object is
                   validated and returned as a :class:`~decimal.Decimal`. That
@@ -450,25 +473,44 @@ def decode_decimal(value):
     if value is None:
         return None
 
-    if not isinstance(value, dict):
+    # Routed on `type()`, not `isinstance`, here and in the helpers: an
+    # `isinstance` check also believes an object's `__class__`, so a mock or a
+    # proxy claiming to be a dict passed it and then failed dict's own
+    # methods with a bare TypeError. Any `Mapping` is a decimal object, not
+    # only a dict -- a `UserDict` or a `mappingproxy` was refused as "not a
+    # number".
+    if not issubclass(type(value), collections.abc.Mapping):
         return _decode_bare(value)
 
-    # `set(value)`, not `value.keys() - ...`: a mapping whose `keys()` does
-    # not return a set view makes the difference operator raise a bare
-    # TypeError, and this module promises every failure is a SchwabError.
+    # Read once, through the mapping's own `items()`, into a plain dict, and
+    # every read below is from that copy: a `get` that answered differently
+    # the second time chose the lone-lo layout and dropped `mid`. Through the
+    # mapping's own method rather than `dict.items`, which reads dict's
+    # storage directly and so saw nothing in a dict subclass keeping its data
+    # elsewhere -- measured, `DotMap` decoded a $5,000 principal as a clean
+    # zero. A mapping whose `items()` cannot be read is refused.
     #
-    # Read once, from what the mapping actually stores, into a plain dict.
-    # `dict.items` is dict's own view, so a subclass's `__iter__`, `get` and
-    # `keys` never run -- measured, and it still reads the `OrderedDict` that
-    # `object_pairs_hook` produces. Every read below is from that copy: a
-    # `get` that answered differently the second time chose the lone-lo
-    # layout and dropped `mid`. JSON object keys are always plain strings, so
-    # anything else is an unknown key, named but never hashed or compared.
+    # JSON object keys are always strings. A str key is reduced to its plain
+    # text before it is compared, so a subclass cannot run its own `__eq__` or
+    # `__hash__`; anything that is not a str is an unknown key, named but never
+    # hashed or compared. Two keys with the same plain text are refused, since
+    # only one of them can be the member.
+    try:
+        pairs = [(key, member) for key, member in value.items()]
+    except Exception:
+        raise UnusableDecimalScale(
+                'a mapping whose items could not be read: {}'.format(
+                    _safe_repr(value))) from None
     fields = {}
     unknown = []
-    for key, member in dict.items(value):
-        if type(key) is str and key in _DECIMAL_KEYS:
-            fields[key] = member
+    for key, member in pairs:
+        name = str.__str__(key) if issubclass(type(key), str) else None
+        if name is not None and name in fields:
+            raise UnusableDecimalScale(
+                    'decimal object carries {!r} twice: {}'.format(
+                        name, _safe_repr(value)))
+        if name in _DECIMAL_KEYS:
+            fields[name] = member
         else:
             unknown.append(key)
     if unknown:
@@ -544,10 +586,8 @@ def decode_decimal(value):
     # 19200 shares, which is coherent; 0.0192 shares is not. So the shape is
     # ordinary traffic, and refusing it cost both sizes on every quote.
     #
-    # `.get`, not `value['signScale']`, for the same reason the members use
-    # it -- and because a dict subclass whose `get` and `__getitem__`
-    # disagree would otherwise escape as a `KeyError`. An explicit JSON
-    # `null` is an absence here, exactly as it is in the member loop: the two
+    # `.get` on the plain copy, so an absent key and an explicit JSON `null`
+    # are one absence here, exactly as they are in the member loop: the two
     # follow one rule and briefly did not.
     scale_member = fields.get('signScale')
     scale = _unsigned(0 if scale_member is None else scale_member,
@@ -595,8 +635,8 @@ def decode_decimal(value):
     #
     # The width depends on the layout. Schwab sends the whole mantissa in
     # `lo`, as a string of digits -- measured on 5,843 objects from a
-    # production ACCT_ACTIVITY archive, every one of which carried `lo`
-    # alone -- and a fill principal above 4294.967295 at signScale 12 needs
+    # production ACCT_ACTIVITY archive, none of which carried `mid` or
+    # `hi` -- and a fill principal above 4294.967295 at signScale 12 needs
     # more than 32 bits to do it. This used to read `lo` as the first of a
     # .NET Decimal's three 32-bit members and refused every such object: 129
     # in that archive, 33 of them fill principals, each of which equalled

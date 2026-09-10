@@ -1,6 +1,7 @@
 import decimal
 import collections
 import json
+import types
 import unittest
 
 from schwaby.contrib import util
@@ -154,6 +155,124 @@ class DecodeDecimalTest(unittest.TestCase):
                     decode_decimal({'lo': '1', 'signScale': cls(65)})
 
     @no_duplicates
+    def test_a_mapping_that_keeps_its_data_elsewhere_decodes(self):
+        # `DotMap` subclasses OrderedDict and keeps its data in its own store,
+        # so dict's storage is empty. Read through `dict.items`, a $5,000
+        # principal decoded as a clean zero -- the worst wrong answer on this
+        # feed. Read through the mapping's own `items()`, it is the value.
+        class Stored(dict):
+            def __init__(self, **fields):
+                super().__init__()
+                self._store = dict(fields)
+
+            def items(self):
+                return self._store.items()
+
+            def get(self, key, default=None):
+                return self._store.get(key, default)
+
+            def __iter__(self):
+                return iter(self._store)
+
+            def __len__(self):
+                return len(self._store)
+
+        self.assertEqual([], list(dict.items(Stored(lo='1'))))   # the trap
+        self.assertEqual(decimal.Decimal('-5000'),
+                         decode_decimal(Stored(lo='5000000000',
+                                               signScale=13)))
+        # Any mapping, not only a dict.
+        for mapping in (collections.UserDict(lo='6860000', signScale=12),
+                        types.MappingProxyType(
+                            {'lo': '6860000', 'signScale': 12})):
+            with self.subTest(mapping=type(mapping).__name__):
+                self.assertEqual(decimal.Decimal('6.86'),
+                                 decode_decimal(mapping))
+
+    @no_duplicates
+    def test_a_str_subclass_key_is_its_plain_text(self):
+        self.addCleanup(util._reported_keys.clear)
+
+        class Key(str):
+            # str's own hash, so two of these never collide while the test
+            # builds its dict -- only the decoder could reach `__eq__`.
+            __hash__ = str.__hash__
+
+            def __eq__(self, other):
+                raise RuntimeError('boom')
+
+        self.assertEqual(decimal.Decimal('6.86'),
+                         decode_decimal({Key('lo'): '6860000',
+                                         Key('signScale'): 12}))
+
+        # Two keys with the same plain text cannot both be the member. This
+        # pair can share a dict because it hashes and compares by identity.
+        class Twin(str):
+            __eq__ = object.__eq__
+
+            def __hash__(self):
+                return 7
+
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal({Twin('lo'): '1', 'lo': '2'})
+
+    @no_duplicates
+    def test_a_claimed_class_is_not_believed(self):
+        # `isinstance` also believes `__class__`, so each of these passed a
+        # type check and then failed the real type's own method with a bare
+        # TypeError, past the one `except` callers write.
+        def claiming(cls):
+            class Claim:
+                @property
+                def __class__(self):
+                    return cls
+            return Claim()
+
+        from unittest.mock import MagicMock
+        for value in (MagicMock(spec=dict), claiming(str), claiming(int),
+                      claiming(float), claiming(decimal.Decimal),
+                      {'lo': claiming(str), 'signScale': 12},
+                      {'lo': MagicMock(spec=int), 'signScale': 12}):
+            with self.subTest(value=type(value).__name__):
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal(value)
+
+    @no_duplicates
+    def test_an_unnameable_type_does_not_escape_the_message(self):
+        # The fallback that names an unprintable value read `type(x).__name__`,
+        # which consults the metaclass first.
+        self.addCleanup(util._reported_keys.clear)
+
+        class Meta(type):
+            @property
+            def __name__(cls):
+                raise RuntimeError('boom')
+
+        class Unprintable(metaclass=Meta):
+            def __str__(self):
+                raise RuntimeError('boom')
+            __repr__ = __str__
+
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal({'lo': '1', Unprintable(): 0})
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal(Unprintable())
+
+    @no_duplicates
+    def test_quoted_key_names_stay_bounded(self):
+        # Quoting escapes a character to as many as ten, so the size bound on
+        # the refusal has to hold for the alphabet that expands, not only the
+        # one that does not.
+        self.addCleanup(util._reported_keys.clear)
+        keys = {'\U000e0001' * 70 + str(i): 0 for i in range(9)}
+        for value in (dict(keys, lo='1'), keys):
+            with self.subTest(with_lo='lo' in value):
+                with self.assertRaises(UnusableDecimalScale) as caught:
+                    decode_decimal(value)
+                self.assertLess(len(str(caught.exception)), 1500)
+                self.assertNotIn('\n', str(caught.exception))
+
+    @no_duplicates
     def test_a_huge_bare_exponent_is_refused_not_escaped(self):
         # `decimal.Decimal` raises InvalidOperation -- neither a SchwabError
         # nor a ValueError -- on an exponent of 10**18 or more, before the
@@ -246,6 +365,13 @@ class DecodeDecimalTest(unittest.TestCase):
         with self.assertRaises(UnusableDecimalScale):
             decode_decimal(Shown())
 
+        # A bare str subclass too: its own `isascii` ran before the pattern.
+        class Ascii(str):
+            def isascii(self):
+                raise RuntimeError('boom')
+
+        self.assertEqual(decimal.Decimal('5'), decode_decimal(Ascii('5')))
+
     @no_duplicates
     def test_a_mapping_is_read_once_from_what_it_stores(self):
         class Hostile(dict):
@@ -278,8 +404,12 @@ class DecodeDecimalTest(unittest.TestCase):
             def __eq__(self, other):
                 raise RuntimeError('boom')
 
-        self.assertEqual(decimal.Decimal('0.000005'),
-                         decode_decimal(Hostile(lo='5', signScale=12)))
+        self.addCleanup(util._reported_keys.clear)
+        # A mapping whose `items()` cannot be read is refused, not bypassed:
+        # bypassing it through dict's storage is what decoded a mapping that
+        # keeps its data elsewhere as zero.
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal(Hostile(lo='5', signScale=12))
         self.assertEqual(decimal.Decimal('4294.967301'),
                          decode_decimal(Fickle(lo='5', mid=1, signScale=12)))
         with self.assertRaises(UnusableDecimalScale):
@@ -904,8 +1034,8 @@ class DecodeDecimalTest(unittest.TestCase):
     def test_a_dict_subclass_whose_get_and_getitem_disagree_is_catchable(self):
         # The scale once used `value['signScale']` and escaped as a KeyError
         # from a mapping whose `get` and `__getitem__` disagree. Fields are
-        # now read from what the mapping stores, through `dict.items`, so a
-        # `get` that invents a key is not consulted at all: this one stores no
+        # now read once through the mapping's `items()`, so a `get` that
+        # invents a key is not consulted at all: this one lists no
         # `signScale`, and decodes at scale 0 like any object without one.
         class Odd(dict):
             def get(self, key, default=None):
