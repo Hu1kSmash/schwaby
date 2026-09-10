@@ -328,6 +328,22 @@ to read the documentation below to learn how much data is available.
    it is the start you asked for.
 
 .. automethod:: schwaby.client.Client.get_price_history_every_minute
+.. note::
+
+   **The newest thirty-minute candle can still be forming.** Thirty-minute
+   candles are labelled with their open time: over four regular sessions of one
+   liquid ETF, each session's first candle was labelled 09:30 US Eastern and
+   its last 15:30. Requested hourly, seconds after half past the hour,
+   :meth:`get_price_history_every_thirty_minutes
+   <schwaby.client.Client.get_price_history_every_thirty_minutes>` has returned
+   the candle that opened at that half hour, which cannot yet have closed. That
+   was seen on liquid ETFs at nearly every request over one day on one account,
+   and not on a thinly traded one; the number of requests was not recorded.
+   :ref:`Seen once, not reproduced <confidence_tags>`. Other frequencies, other
+   times and extended hours were not checked. Before treating the last candle
+   as closed, check that its open time plus thirty minutes is not later than
+   your request.
+
 .. automethod:: schwaby.client.Client.get_price_history_every_five_minutes
 .. automethod:: schwaby.client.Client.get_price_history_every_ten_minutes
 .. automethod:: schwaby.client.Client.get_price_history_every_fifteen_minutes
