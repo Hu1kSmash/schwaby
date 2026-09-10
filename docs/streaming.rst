@@ -1204,10 +1204,11 @@ moment.** Under
 all 218 fill items in a production archive --- 163 distinct fills, since the
 archive can store one message twice --- and they differed on every one, by
 under a second. Both are strings of the form ``YYYY-MM-DD HH:MM:SS.fff`` with
-no offset. ``ExecutionTimeStamp`` reads as US Eastern time: read that way, 106
-of 106 equity fills landed within a minute of the placing program's own zoned
-clock, and read as UTC none did. That was measured in summer only, so whether
-it follows daylight saving is not established. The venue stamp's time zone was
+no offset. ``ExecutionTimeStamp`` reads as US Eastern time. For 106 of those
+fills the placing program had recorded its own zoned placement time: read as
+Eastern, all 106 landed within a minute of it, and read as UTC none did. That
+was measured in summer only, so whether it follows daylight saving is not
+established. The venue stamp's time zone was
 not measured.
 
 **Charges were present on every fill in that archive, zero charges included.**
@@ -1552,10 +1553,10 @@ malformed message and should not be reported as one.
   as plain prose --- ``"Feature not supported"`` has been observed --- so a
   consumer calling ``json.loads`` unconditionally raises on a message that is
   merely informational, on the account feed, at whatever moment Schwab decides
-  to tell you something. Text that is not JSON is a notice, not a broken
-  frame. Text that starts like a JSON object and does not parse is neither: it
-  is a truncated or corrupt payload, and ``parse_message_data`` below raises
-  on it rather than passing it off as a notice.
+  to tell you something. Text that starts like a JSON object and does not
+  parse is a truncated or corrupt payload, and ``parse_message_data`` below
+  raises on it rather than passing it off as a notice. Any other text that is
+  not JSON is a notice, not a broken frame.
 
   That notice arrives as an ordinary ``data``-channel content item whose
   ``MESSAGE_TYPE`` is the empty string, so a handler that dispatches on the

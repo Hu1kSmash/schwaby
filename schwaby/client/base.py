@@ -398,9 +398,10 @@ class BaseClient(EnumEnforcer):
 
     def get_account_numbers(self):
         '''
-        Returns the accounts this token can use, as a list pairing each
-        ``accountNumber`` with the ``hashValue`` to pass whenever referring to
-        that account in API calls. Schwab documents no order for the list, so
+        Returns the accounts this token can use. The response's JSON body is a
+        list pairing each ``accountNumber`` with the ``hashValue`` to pass
+        whenever referring to that account in API calls. Schwab documents no
+        order for the list, so
         use :func:`~schwaby.utils.find_account_hash` to find the hash for a
         number rather than taking the first entry.
         '''

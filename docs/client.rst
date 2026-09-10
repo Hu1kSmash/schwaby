@@ -200,10 +200,10 @@ Account Hashes
 Many methods of this API are parametrized by account. However, the API does not
 accept raw account numbers, but rather account hashes. You can fetch these
 hashes using the ``get_account_numbers`` method :ref:`(link)
-<account_hashes_method>`. It returns a list pairing each account number the
-token can use with the account hash that must be passed when referring to that
-account in API calls, and :func:`~schwaby.utils.find_account_hash` picks out
-the one you mean.
+<account_hashes_method>`. The JSON body of its response is a list pairing each
+account number the token can use with the account hash that must be passed
+when referring to that account in API calls, and
+:func:`~schwaby.utils.find_account_hash` picks out the one you mean.
 
 Here is an example of how to fetch an account hash and use it to place an order:
 
@@ -309,12 +309,13 @@ to read the documentation below to learn how much data is available.
 
 .. note::
 
-   Give any of these a ``start_datetime`` or an ``end_datetime`` and you get
-   that range. No ``period`` is sent alongside it:
+   Give any of these a ``start_datetime`` or an ``end_datetime`` and that is
+   the range requested. No ``period`` is sent alongside it:
    :meth:`Client.get_price_history` documents that the two should not be
    combined, and what Schwab does when they are is not consistent across
    accounts --- it has been reported disregarding the range, and measured
-   honouring it.
+   honouring it. How far back the candles returned can reach is a separate
+   limit, in the next note.
 
 .. note::
 
@@ -327,7 +328,6 @@ to read the documentation below to learn how much data is available.
    differed by symbol. Check the first candle you get back rather than assuming
    it is the start you asked for.
 
-.. automethod:: schwaby.client.Client.get_price_history_every_minute
 .. note::
 
    **The newest thirty-minute candle can still be forming.** Thirty-minute
@@ -344,6 +344,7 @@ to read the documentation below to learn how much data is available.
    as closed, check that its open time plus thirty minutes is not later than
    your request.
 
+.. automethod:: schwaby.client.Client.get_price_history_every_minute
 .. automethod:: schwaby.client.Client.get_price_history_every_five_minutes
 .. automethod:: schwaby.client.Client.get_price_history_every_ten_minutes
 .. automethod:: schwaby.client.Client.get_price_history_every_fifteen_minutes
@@ -366,14 +367,16 @@ Current Quotes
 
 .. note::
 
-   **Quote requests can be rate-limited.** :meth:`get_quotes
+   **Multi-symbol quote requests can be rate-limited.** :meth:`get_quotes
    <schwaby.client.Client.get_quotes>` has returned HTTP 429 in four separate
    minutes of live use, while price history and account requests on the same
-   token in those minutes did not. Schwab's documentation gives a request limit
-   only for placing, replacing and cancelling orders, no ``Retry-After`` header
-   was recorded, and four minutes are not enough to infer a rate. Handle a 429
-   from ``get_quotes``; that other market-data calls were not seen to return
-   one does not mean they cannot.
+   token in those minutes did not. :meth:`get_quote
+   <schwaby.client.Client.get_quote>` was not measured. Schwab's documentation
+   gives a request limit only for placing, replacing and cancelling orders, no
+   ``Retry-After`` header was recorded, and four minutes are not enough to
+   infer a rate. Handle a 429 from ``get_quotes``; that price history and
+   account requests were not seen to return one does not mean they, or any
+   other call, cannot.
 
 .. automethod:: schwaby.client.Client.get_quote
 .. automethod:: schwaby.client.Client.get_quotes

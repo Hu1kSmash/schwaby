@@ -49,7 +49,7 @@ any time in the next six months:
   client = ... # See "Authentication and Client Creation"
 
   client.place_order(
-      account_hash,  # from client.get_account_numbers(), not the account number
+      account_hash,  # from find_account_hash(), not the account number
       equity_buy_limit('GOOG', 1, '1250.00')
           .set_duration(Duration.GOOD_TILL_CANCEL)
           .set_session(Session.SEAMLESS)
