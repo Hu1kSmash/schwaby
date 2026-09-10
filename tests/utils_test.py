@@ -62,7 +62,7 @@ class HTTPStatusErrorTest(unittest.TestCase):
         return client
 
     @staticmethod
-    def _refreshing_client(token_response, writes=None):
+    def _refreshing_client(token_response, writes=None, asynchronous=False):
         # An access token that has already expired, so the session refreshes
         # it on the way past -- through the real authlib path, which is what
         # the documented behaviour depends on.
@@ -83,7 +83,8 @@ class HTTPStatusErrorTest(unittest.TestCase):
                 'api-key', 'app-secret',
                 lambda: {'creation_timestamp': 9999999999, 'token': token},
                 (lambda *args, **kwargs: None) if writes is None
-                else (lambda written, *args, **kwargs: writes.append(written)))
+                else (lambda written, *args, **kwargs: writes.append(written)),
+                asyncio=asynchronous)
         client.session._transport = httpx2.MockTransport(handler)
         client.session._mounts = {}   # see `_client`
         return client, requests
@@ -116,32 +117,101 @@ class HTTPStatusErrorTest(unittest.TestCase):
         self.assertTrue(caught.exception.refresh_token_invalid)
         self.assertEqual(['/v1/oauth/token'], requests)
 
+    @staticmethod
+    def _json_response(status, body, request):
+        # The JSON bytes themselves: `json=None` would send no body at all,
+        # which is the not-JSON case rather than JSON `null`.
+        import httpx2
+        import json
+        return httpx2.Response(status, content=json.dumps(body).encode(),
+                               headers={'Content-Type': 'application/json'},
+                               request=request)
+
+    GOOD_TOKEN = {'access_token': 'NEW', 'refresh_token': 'r2',
+                  'token_type': 'Bearer', 'expires_in': 1800}
+
     @no_duplicates
     def test_a_refresh_response_that_is_not_a_token_is_not_stored(self):
         # authlib takes any JSON object without an `error` key as the new
-        # token. {"message": "Unauthorized"} was written and kept, so every
-        # call after it failed locally without contacting Schwab, until a new
-        # login. Now it is neither: the next call refreshes again, and
-        # recovers once the endpoint does.
-        import httpx2
+        # token, and keeps JSON that is not an object before failing on it.
+        # {"message": "Unauthorized"} was written to the token file, and a
+        # list or a string was kept in memory; either way every call after it
+        # failed without contacting Schwab. Now none is stored: the call
+        # raises, and the next one refreshes again and recovers once the
+        # endpoint does.
         from schwaby.utils import TokenRefreshError
-        answers = [(401, {'message': 'Unauthorized'}),
-                   (200, {'access_token': 'NEW', 'refresh_token': 'r2',
-                          'token_type': 'Bearer', 'expires_in': 1800})]
+        for body in ({'message': 'Unauthorized'}, ['a'], [], 'x', '', None, 7,
+                     {'access_token': 'NEW', 'token_type': 'mac'},
+                     {'access_token': 'NEW', 'token_type': ['Bearer']}):
+            with self.subTest(body=body):
+                answers = [(401, body), (200, self.GOOD_TOKEN)]
+                writes = []
+                client, requests = self._refreshing_client(
+                        lambda request: self._json_response(
+                            *answers.pop(0), request), writes=writes)
+                with self.assertRaises(TokenRefreshError) as caught:
+                    client.get_quote('F')
+                self.assertFalse(caught.exception.refresh_token_invalid)
+                self.assertEqual([], writes)
+                self.assertEqual(200, client.get_quote('F').status_code)
+                self.assertEqual(['/v1/oauth/token', '/v1/oauth/token',
+                                  '/marketdata/v1/F/quotes'], requests)
+                self.assertEqual('NEW', writes[0]['token']['access_token'])
+
+    @no_duplicates
+    def test_the_async_client_does_not_store_a_bad_refresh_response(self):
+        import asyncio
+        from schwaby.utils import TokenRefreshError
+        answers = [(401, ['a']), (200, self.GOOD_TOKEN)]
         writes = []
         client, requests = self._refreshing_client(
-                lambda request: httpx2.Response(
-                    answers[0][0], json=answers.pop(0)[1], request=request),
-                writes=writes)
-        with self.assertRaises(TokenRefreshError) as caught:
-            client.get_quote('F')
-        self.assertFalse(caught.exception.refresh_token_invalid)
-        self.assertEqual([], writes)
-        self.assertEqual(200, client.get_quote('F').status_code)
-        self.assertEqual(['/v1/oauth/token', '/v1/oauth/token',
-                          '/marketdata/v1/F/quotes'], requests)
-        self.assertEqual(1, len(writes))
+                lambda request: self._json_response(*answers.pop(0), request),
+                writes=writes, asynchronous=True)
+
+        async def calls():
+            with self.assertRaises(TokenRefreshError):
+                await client.get_quote('F')
+            self.assertEqual([], writes)
+            return (await client.get_quote('F')).status_code
+
+        self.assertEqual(200, asyncio.run(calls()))
         self.assertEqual('NEW', writes[0]['token']['access_token'])
+
+    @no_duplicates
+    def test_a_client_from_a_login_does_not_store_a_bad_refresh_response(self):
+        # The check was first added where token files and access functions
+        # build their session, and a client returned by a login built its
+        # own, so it went on storing whatever the token endpoint returned.
+        import httpx2
+        from unittest.mock import patch
+        from authlib.integrations.httpx_client import OAuth2Client
+        from schwaby import auth
+        from schwaby.utils import TokenRefreshError
+        expired = {'access_token': 'a', 'refresh_token': 'r',
+                   'token_type': 'Bearer', 'expires_in': 3600,
+                   'expires_at': 1}
+        writes = []
+        context = auth.AuthContext('https://127.0.0.1:8182',
+                                   'https://example.invalid/authorize',
+                                   'state')
+        with patch.object(OAuth2Client, 'fetch_token', return_value=expired):
+            client = auth.client_from_received_url(
+                    'api-key', 'app-secret', context,
+                    'https://127.0.0.1:8182/?code=c&state=state',
+                    lambda written, *args, **kwargs: writes.append(written))
+        self.assertEqual(1, len(writes))   # the login's own write
+
+        answers = [(401, {'message': 'Unauthorized'}), (200, self.GOOD_TOKEN)]
+        client.session._transport = httpx2.MockTransport(
+                lambda request: self._json_response(*answers.pop(0), request)
+                if request.url.path.endswith('/oauth/token')
+                else httpx2.Response(200, json={}, request=request))
+        client.session._mounts = {}
+        with self.assertRaises(TokenRefreshError):
+            client.get_quote('F')
+        self.assertEqual(1, len(writes))
+        self.assertEqual(200, client.get_quote('F').status_code)
+        self.assertEqual('NEW', writes[-1]['token']['access_token'])
 
     @no_duplicates
     def test_a_refresh_rejected_without_a_json_body_is_neither(self):

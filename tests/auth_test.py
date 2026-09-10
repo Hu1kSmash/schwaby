@@ -1684,11 +1684,16 @@ class UsableTokenTest(unittest.TestCase):
 
     @no_duplicates
     def test_a_token_needs_an_access_token_and_its_type(self):
-        self.assertTrue(auth._is_usable_token(
-                {'access_token': 'a', 'token_type': 'Bearer'}))
+        for token in ({'access_token': 'a', 'token_type': 'Bearer'},
+                      {'access_token': 'a', 'token_type': 'bearer'}):
+            with self.subTest(usable=token):
+                self.assertTrue(auth._is_usable_token(token))
         for token in ({'message': 'Unauthorized'}, {'access_token': 'a'},
                       {'token_type': 'Bearer'},
                       {'access_token': '', 'token_type': 'Bearer'},
+                      {'access_token': 'a', 'token_type': 'mac'},
+                      {'access_token': ['a'], 'token_type': 'Bearer'},
+                      {'access_token': 'a', 'token_type': ['Bearer']},
                       None, [], 'token'):
             with self.subTest(token=token):
                 self.assertFalse(auth._is_usable_token(token))

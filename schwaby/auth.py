@@ -169,16 +169,70 @@ def __sweep_stale_token_temp_files(directory):
 def _is_usable_token(token):
     '''Whether a token response can replace the stored token.
 
-    Only the two fields the session needs to use a token at all are required.
-    A stricter test would refuse a real token over a field Schwab might
-    omit, and a refused refresh stops an application that had a working
-    token a moment ago.
+    Only what the session needs to use a token at all is required: an access
+    token, and the ``bearer`` type the session knows how to send. A stricter
+    test would refuse a real token over a field Schwab might omit, and a
+    refused refresh stops an application that had a working token a moment
+    ago.
     '''
     try:
-        return (bool(token.get('access_token'))
-                and bool(token.get('token_type')))
+        access_token = token.get('access_token')
+        token_type = token.get('token_type')
+        return (isinstance(access_token, str) and bool(access_token)
+                and isinstance(token_type, str)
+                and token_type.lower() == 'bearer')
     except Exception:
         return False
+
+
+def _refuse_unusable_token_response(response):
+    '''Refuses a refresh response that is not a usable token, before it is
+    kept.
+
+    authlib takes any JSON object without an ``error`` key as the new token,
+    sets it on the session and then writes it; JSON that is not an object it
+    sets on the session and then fails on. Measured with a mocked token
+    endpoint: ``{"message": "Unauthorized"}`` was written to the token file,
+    and a list or a string was kept in memory, so every call after either
+    failed without contacting Schwab -- until a new login, or a restart.
+
+    Registered as authlib's ``refresh_token_response`` compliance hook, which
+    sees the response before it is parsed, so nothing unusable is stored. A
+    server error and a body that is not JSON are left to authlib, which raises
+    on both without storing anything, and so is a JSON object carrying
+    ``error``, which authlib reports as the rejection it is.
+    '''
+    if response.status_code >= 500:
+        return response
+    try:
+        body = response.json()
+    except ValueError:
+        return response
+    if isinstance(body, dict) and ('error' in body or _is_usable_token(body)):
+        return response
+    raise OAuthError(
+            error='unusable_token_response',
+            description='the token endpoint answered with something that is '
+                        'not a token, so it was not stored')
+
+
+def _new_session(session_class, api_key, app_secret, token, update_token):
+    '''The refreshing session every client is built on.
+
+    One builder, because there were two: the check on refresh responses was
+    first added where token files and access functions build their session,
+    and a client returned by a login flow built its own and kept storing
+    whatever the token endpoint returned.
+    '''
+    session = session_class(api_key,
+                            client_secret=app_secret,
+                            token=token,
+                            token_endpoint=TOKEN_ENDPOINT,
+                            update_token=update_token,
+                            leeway=300)
+    session.register_compliance_hook(
+            'refresh_token_response', _refuse_unusable_token_response)
+    return session
 
 
 def __make_update_token_func(token_path):
@@ -822,28 +876,6 @@ def client_from_access_functions(api_key, app_secret, token_read_func,
     register_redactions(token)
 
     wrapped_token_write_func = metadata.wrapped_token_write_func()
-    session = None   # bound below; the callback only runs once it exists
-
-    def checked_token_write_func(t, *args, **kwargs):
-        # authlib takes any JSON object the token endpoint returns without an
-        # `error` key as the new token, sets it on the session, and only then
-        # calls this. Measured with a mocked endpoint: a body such as
-        # {"message": "Unauthorized"} was written to the token file and kept
-        # in memory, so every call after it failed locally without
-        # contacting Schwab -- after a restart too -- until a new login.
-        #
-        # So a response that is not a usable token is neither written nor
-        # kept. The session goes back to the last good token, which has
-        # expired, so the next call refreshes again; and the failure is the
-        # OAuthError the client already presents as TokenRefreshError.
-        if not _is_usable_token(t):
-            session.token = metadata.token
-            raise OAuthError(
-                    error='unusable_token_response',
-                    description='the token endpoint answered with something '
-                                'that is not a token, so it was not stored')
-        wrapped_token_write_func(t, *args, **kwargs)
-
     if asyncio:
         # Not `# pragma: no cover`, which is what this said. The exclusion
         # was honest when nothing reached it, and it meant the one line that
@@ -851,23 +883,18 @@ def client_from_access_functions(api_key, app_secret, token_read_func,
         # measurement as well as untested -- so a write that quietly did
         # nothing here would have shown up as neither a failure nor a gap.
         async def oauth_client_update_token(t, *args, **kwargs):
-            checked_token_write_func(t, *args, **kwargs)
+            wrapped_token_write_func(t, *args, **kwargs)
         session_class = AsyncOAuth2Client
         client_class = AsyncClient
     else:
-        oauth_client_update_token = checked_token_write_func
+        oauth_client_update_token = wrapped_token_write_func
         session_class = OAuth2Client
         client_class = Client
 
-    session = session_class(api_key,
-                            client_secret=app_secret,
-                            token=token,
-                            token_endpoint=TOKEN_ENDPOINT,
-                            update_token=oauth_client_update_token,
-                            leeway=300)
     return client_class(
         api_key,
-        session,
+        _new_session(session_class, api_key, app_secret, token,
+                     oauth_client_update_token),
         token_metadata=metadata,
         enforce_enums=enforce_enums)
 
@@ -1001,12 +1028,8 @@ def client_from_received_url(
     # Return a new session configured to refresh credentials
     return client_class(
         api_key,
-        session_class(api_key,
-                      client_secret=app_secret,
-                      token=token,
-                      token_endpoint=TOKEN_ENDPOINT,
-                      update_token=oauth_client_update_token,
-                      leeway=300),
+        _new_session(session_class, api_key, app_secret, token,
+                     oauth_client_update_token),
         token_metadata=metadata_manager, enforce_enums=enforce_enums)
 
 
