@@ -738,6 +738,8 @@ class UtilsTest(unittest.TestCase):
             'MissingLocationHeaderError': (r(), None, 'm'),
             'UnrecognizedLocationError': (r(), 'loc', 'm'),
             'AccountHashMismatchException': (r(), 123, 'BBBB', 'm'),
+            'AccountNumberNotFoundError': ('m',),
+            'UnusableAccountNumbersError': ('m',),
             'TokenRefreshError': ('m',),
             'RedirectTimeoutError': ('m',),
             'RedirectServerExitedError': ('m',),
@@ -876,3 +878,71 @@ class UtilsTest(unittest.TestCase):
         self.assertEqual(order_id, self.utils.extract_order_id(response))
 
 
+from schwaby.utils import (
+        AccountNumberNotFoundError, SchwabError, UnusableAccountNumbersError,
+        find_account_hash)
+
+
+class FindAccountHashTest(unittest.TestCase):
+
+    ACCOUNTS = [{'accountNumber': '11111111', 'hashValue': 'HASH-ONE'},
+                {'accountNumber': '022222222', 'hashValue': 'HASH-TWO'}]
+
+    @no_duplicates
+    def test_the_hash_is_the_account_asked_for_not_the_first(self):
+        self.assertEqual('HASH-TWO',
+                         find_account_hash(self.ACCOUNTS, '022222222'))
+        self.assertEqual('HASH-ONE',
+                         find_account_hash(self.ACCOUNTS, '11111111'))
+
+    @no_duplicates
+    def test_an_account_number_that_is_not_a_str_is_refused(self):
+        # As an int, 022222222 is 22222222, which matches nothing and would
+        # read as "not linked" rather than as a mistake.
+        for number in (22222222, 11111111, 11111111.0, None, b'11111111'):
+            with self.subTest(number=number):
+                with self.assertRaisesRegex(TypeError, 'must be a str'):
+                    find_account_hash(self.ACCOUNTS, number)
+
+    @no_duplicates
+    def test_a_str_subclass_is_read_as_its_text(self):
+        class Number(str):
+            def __eq__(self, other):
+                return False
+            __hash__ = str.__hash__
+
+        self.assertEqual('HASH-ONE',
+                         find_account_hash(self.ACCOUNTS, Number('11111111')))
+
+    @no_duplicates
+    def test_an_unlinked_account_is_its_own_error(self):
+        with self.assertRaises(AccountNumberNotFoundError) as cm:
+            find_account_hash(self.ACCOUNTS, '33333333')
+        self.assertIsInstance(cm.exception, SchwabError)
+        self.assertNotIsInstance(cm.exception, UnusableAccountNumbersError)
+        self.assertNotIn('33333333', str(cm.exception))
+
+    @no_duplicates
+    def test_an_account_listed_twice_is_refused(self):
+        twice = self.ACCOUNTS + [
+                {'accountNumber': '11111111', 'hashValue': 'HASH-OTHER'}]
+        with self.assertRaises(UnusableAccountNumbersError) as cm:
+            find_account_hash(twice, '11111111')
+        self.assertNotIsInstance(cm.exception, AccountNumberNotFoundError)
+        self.assertNotIn('11111111', str(cm.exception))
+
+    @no_duplicates
+    def test_a_response_that_is_not_the_account_list_is_refused(self):
+        # Every entry is checked, including those after the one that matches.
+        good = {'accountNumber': '11111111', 'hashValue': 'HASH-ONE'}
+        for accounts in (good, None, 'HASH-ONE',
+                         [good, None],
+                         [good, ['33333333', 'HASH-THREE']],
+                         [good, {'accountNumber': 33333333, 'hashValue': 'H'}],
+                         [good, {'accountNumber': '33333333', 'hashValue': 7}],
+                         [good, {'accountNumber': '33333333', 'hashValue': ''}],
+                         [good, {'accountNumber': '33333333'}]):
+            with self.subTest(accounts=accounts):
+                with self.assertRaises(UnusableAccountNumbersError) as cm:
+                    find_account_hash(accounts, '11111111')
+                self.assertNotIn('11111111', str(cm.exception))

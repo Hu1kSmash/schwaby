@@ -290,6 +290,88 @@ class AccountHashMismatchException(SchwabError, ValueError):
         self.expected_account_hash = expected_account_hash
 
 
+class AccountNumberNotFoundError(SchwabError):
+    '''
+    Raised by :func:`find_account_hash` when no account in the response has the
+    account number asked for.
+
+    This is an ordinary answer rather than a fault: the token does not cover
+    that account. Its message names neither account number, so it is safe to
+    log.
+    '''
+
+
+class UnusableAccountNumbersError(SchwabError, ValueError):
+    '''
+    Raised by :func:`find_account_hash` when the account list is not the shape
+    :meth:`Client.get_account_numbers
+    <schwaby.client.Client.get_account_numbers>` returns, or lists the account
+    number more than once.
+
+    Either way the answer cannot be trusted to name one account, so no hash is
+    returned. Its message names neither account number.
+    '''
+
+
+def find_account_hash(account_numbers, account_number):
+    '''
+    Returns the account hash for ``account_number``, which is what every
+    account-specific call takes in place of the account number.
+
+    ``account_numbers`` is the parsed response of
+    :meth:`Client.get_account_numbers
+    <schwaby.client.Client.get_account_numbers>`, that is
+    ``client.get_account_numbers().json()``. This makes no request, so it
+    serves the synchronous and asynchronous clients alike.
+
+    A token can cover several accounts and nothing orders the list, so taking
+    the first entry's ``hashValue`` picks an account rather than finding one.
+
+    :param account_numbers: The list ``get_account_numbers()`` returns, of
+                            ``{"accountNumber": ..., "hashValue": ...}``
+                            objects.
+    :param account_number: The account number, as a ``str`` --- Schwab's schema
+                           types it as a string. Anything else is refused
+                           rather than converted, because converting a number
+                           drops any leading zero and then matches nothing.
+    :raises TypeError: ``account_number`` is not a ``str``.
+    :raises AccountNumberNotFoundError: No account has that number.
+    :raises UnusableAccountNumbersError: The list is not that shape, or has
+                                         that number more than once.
+    '''
+    if not isinstance(account_number, str):
+        raise TypeError(
+                'account_number must be a str, as Schwab types it, not a '
+                '{}'.format(type(account_number).__name__))
+    account_number = str.__str__(account_number)
+
+    if not isinstance(account_numbers, list):
+        raise UnusableAccountNumbersError(
+                'expected the list get_account_numbers() returns, not a '
+                '{}'.format(type(account_numbers).__name__))
+
+    hashes = []
+    for entry in account_numbers:
+        if not (isinstance(entry, dict)
+                and isinstance(entry.get('accountNumber'), str)
+                and isinstance(entry.get('hashValue'), str)
+                and entry['hashValue']):
+            raise UnusableAccountNumbersError(
+                    'an entry is not an accountNumber and hashValue pair of '
+                    'strings')
+        if str.__str__(entry['accountNumber']) == account_number:
+            hashes.append(entry['hashValue'])
+
+    if not hashes:
+        raise AccountNumberNotFoundError(
+                'none of the {} accounts listed has that account '
+                'number'.format(len(account_numbers)))
+    if len(hashes) > 1:
+        raise UnusableAccountNumbersError(
+                'that account number is listed {} times'.format(len(hashes)))
+    return hashes[0]
+
+
 def _expiry_authlib_acts_on(expires_at):
     '''Whether authlib will refresh a token carrying this ``expires_at``.
 
