@@ -160,11 +160,11 @@ class BaseClient(EnumEnforcer):
         UnsupportedTokenTypeError is raised locally too, when the stored token
         has no access token of a type authlib can send. It is terminal unless
         authlib will replace that token by itself, which takes an expiry it
-        acts on -- an int, near enough to be reached -- and a refresh token to
-        refresh with. Without both, every call fails the same way and nothing
-        is ever sent. With both, the token is refreshed once the expiry passes,
-        so it stays retryable. It is told apart by class, not by its
-        ``unsupported_token_type`` code, which Schwab uses for its own
+        acts on -- one it reads as an int, near enough to be reached -- and a
+        refresh token to refresh with. Without both, every call fails the same
+        way and nothing is ever sent. With both, the token is refreshed as the
+        expiry nears, so it stays retryable. It is told apart by class, not by
+        its ``unsupported_token_type`` code, which Schwab uses for its own
         rejections -- one of those has been seen to recover.
 
         ``unusable_token_response`` does not come from Schwab either. This

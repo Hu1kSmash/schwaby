@@ -330,8 +330,8 @@ class TokenRefreshError(SchwabError):
     that cannot be used and will not change on its own, which the underlying
     OAuth library reports without contacting Schwab at all -- one with no
     refresh token, or one it cannot send and will never replace by itself: its
-    expiry is missing, not an int, or too far off to be reached, or there is no
-    refresh token to refresh it with.
+    expiry is missing, cannot be read as an int, or is too far off to be
+    reached, or there is no refresh token to refresh it with.
 
     A stored token it cannot send that *will* be refreshed is ``False``,
     although nothing was sent: it is replaced once its expiry passes.

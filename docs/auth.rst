@@ -539,10 +539,13 @@ A refusal during a call reaches you as
 ``unsupported_token_type`` with ``invalid_grant`` nested inside it, and that
 sets ``refresh_token_invalid``.
 
-``OAuthError: invalid_client`` is a different failure. RFC 6749 defines
-``invalid_client`` as the client -- your app key and secret -- failing to
-authenticate, which recreating the token does not fix. This library cannot tell
-it from a transient failure, so ``refresh_token_invalid`` is ``False`` for it.
+``OAuthError: invalid_client`` is reported with ``refresh_token_invalid``
+``False``. RFC 6749 defines ``invalid_client`` as the client -- the app key and
+secret -- failing to authenticate, but Schwab's codes do not always mean what
+the RFC says, and what Schwab means by this one has not been observed here, so
+the library does not guess. If it arrives on a token near or past seven days
+old -- ``token_age`` on the exception says how old -- complete the login flow
+again; otherwise check the app key and secret.
 
 
 +++++++++++++++++++++++++++++++++++++++
