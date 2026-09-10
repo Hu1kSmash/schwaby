@@ -1306,6 +1306,74 @@ class TokenMetadataTest(unittest.TestCase):
                          MOCK_NOW - TOKEN_CREATION_TIMESTAMP)
 
 
+class TokenFileAgeTest(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp_dir.cleanup)
+        self.token_path = os.path.join(self.tmp_dir.name, 'token.json')
+
+    def write(self, text):
+        with open(self.token_path, 'w') as f:
+            f.write(text)
+
+    @no_duplicates
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    def test_the_age_is_the_one_the_client_reports(self):
+        token = {'token': {'access_token': 'a'},
+                 'creation_timestamp': TOKEN_CREATION_TIMESTAMP}
+        self.write(json.dumps(token))
+
+        self.assertEqual(MOCK_NOW - TOKEN_CREATION_TIMESTAMP,
+                         auth.token_file_age(self.token_path))
+        self.assertEqual(
+                auth.TokenMetadata.from_loaded_token(token, None).token_age(),
+                auth.token_file_age(self.token_path))
+
+    @no_duplicates
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    def test_the_file_modification_time_is_not_the_clock(self):
+        # Every refresh rewrites the file, so its mtime moves while the refresh
+        # token's seven days do not.
+        self.write(json.dumps({'token': {'access_token': 'a'},
+                               'creation_timestamp': TOKEN_CREATION_TIMESTAMP}))
+        os.utime(self.token_path, (MOCK_NOW, MOCK_NOW))
+
+        self.assertEqual(MOCK_NOW - TOKEN_CREATION_TIMESTAMP,
+                         auth.token_file_age(self.token_path))
+
+    @no_duplicates
+    def test_a_token_without_a_creation_timestamp_is_refused(self):
+        self.write(json.dumps({'token': {'access_token': 'a'}}))
+
+        with self.assertRaisesRegex(ValueError, 'token format has changed'):
+            auth.token_file_age(self.token_path)
+
+    @no_duplicates
+    def test_a_file_that_is_not_a_json_object_is_refused(self):
+        # A string holding the key's name passed the old membership test and
+        # then failed indexing a string, with nothing about the file.
+        for text in ('[1, 2]', 'null', '7', '"creation_timestamp"',
+                     '["creation_timestamp"]'):
+            with self.subTest(text=text):
+                self.write(text)
+                with self.assertRaisesRegex(ValueError,
+                                            'does not hold a JSON object'):
+                    auth.token_file_age(self.token_path)
+
+    @no_duplicates
+    def test_a_file_that_is_not_json_is_refused(self):
+        self.write('not a token')
+
+        with self.assertRaises(ValueError):
+            auth.token_file_age(self.token_path)
+
+    @no_duplicates
+    def test_a_missing_file_raises_oserror(self):
+        with self.assertRaises(OSError):
+            auth.token_file_age(os.path.join(self.tmp_dir.name, 'absent.json'))
+
+
 class EasyClientTest(unittest.TestCase):
 
     def setUp(self):

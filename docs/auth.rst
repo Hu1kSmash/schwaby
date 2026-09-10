@@ -213,6 +213,11 @@ age of the token <schwaby.client.Client.token_age>`. Note, however, that the
 seven day token age restriction is implemented by Schwab, and so the token may
 become expired sooner *or* later than seven days.
 
+A program that only needs the age --- a monitor, or a job that warns before the
+window closes --- can read it from the token file without building a client:
+
+.. autofunction:: schwaby.auth.token_file_age
+
 
 --------------
 The Token File

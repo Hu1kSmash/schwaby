@@ -345,6 +345,14 @@ class TokenMetadata:
         invent for it -- guessing would either refuse a usable token or keep
         presenting a dead one.
         '''
+        # json.load returns whatever the file held. A list, a string or null
+        # would otherwise fail below with an error about indexing, which says
+        # nothing about the file.
+        if not isinstance(token, dict):
+            raise ValueError(
+                    'The token file does not hold a JSON object, so it is '
+                    'not a token this library wrote. Please delete it and '
+                    'create a new one.')
         if 'creation_timestamp' not in token:
             raise ValueError(
                     'WARNING: The token format has changed since this token '+
@@ -382,6 +390,30 @@ class TokenMetadata:
             'creation_timestamp': self.creation_timestamp,
             'token': token,
         }
+
+
+def token_file_age(token_path):
+    '''Returns the number of seconds since the token in ``token_path`` was
+    created by a login, without building a client.
+
+    This is the number :meth:`Client.token_age
+    <schwaby.client.Client.token_age>` reports, read through the same code, for
+    a monitor or a scheduled job that only needs to know how much of the
+    refresh token's seven days is left.
+
+    It reads the ``creation_timestamp`` this library stores in the file, not
+    the file's modification time. The file is rewritten every time the access
+    token is refreshed, so its modification time says when that last happened,
+    not when the seven days began.
+
+    :param token_path: Path to a token file this library wrote.
+    :raises ValueError: The file is not a token in the format this library
+                        writes: not JSON, not a JSON object, or written
+                        before the creation timestamp was stored.
+    :raises OSError: The file cannot be read.
+    '''
+    return TokenMetadata.from_loaded_token(
+            __token_loader(token_path)(), None).token_age()
 
 
 ################################################################################
