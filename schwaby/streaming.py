@@ -244,6 +244,52 @@ def _report_unknown_field(field_enum_type, field_id):
             field_id, field_enum_type.__name__)
 
 
+#: How many distinct unobserved ``ACCT_ACTIVITY`` types to name before giving
+#: up. The set never shrinks and what goes into it is the venue's to choose.
+_MAX_REPORTED_MESSAGE_TYPES = 64
+
+_reported_message_types = set()
+
+
+def _report_unknown_message_type(name):
+    """Say once that ACCT_ACTIVITY carried a type nobody has captured.
+
+    ``name`` has already been through `_safe_name`, so it is a bounded string
+    that cannot raise.
+
+    Log-only, like an unknown field and for the same reason: the message was
+    delivered, nothing failed, and the news is about the venue rather than the
+    caller's code. Not through `add_error_handler`, which is for messages this
+    client could not use.
+
+    Once per type, compared case-insensitively, and once per process because
+    the log is process-wide. Expiry, replacement and partial fill have never
+    been captured, so a process may see each of those once; a line per message
+    would bury the one that names the missing type.
+    """
+    folded = name.casefold()
+    if (folded in _reported_message_types
+            or len(_reported_message_types) >= _MAX_REPORTED_MESSAGE_TYPES):
+        return
+    _reported_message_types.add(folded)
+    if len(_reported_message_types) >= _MAX_REPORTED_MESSAGE_TYPES:
+        get_logger().warning(
+                'That is %d distinct unobserved ACCT_ACTIVITY message types, '
+                'which is as many as schwaby will name. Any further ones are '
+                'delivered the same way and are not reported.',
+                _MAX_REPORTED_MESSAGE_TYPES)
+    get_logger().warning(
+            'ACCT_ACTIVITY carried message type %r, which is not among the '
+            'types anyone has captured. The message is delivered to your '
+            'handler as usual; this is reported once per type, not per '
+            'message. Classify these messages by substring rather than by '
+            'exact type. If you see this, please open an issue at '
+            'https://github.com/Hu1kSmash/schwaby/issues with the type -- '
+            'Schwab documents this vocabulary nowhere, and a report is how '
+            'the list of observed types grows.',
+            name)
+
+
 class UnexpectedResponse(SchwabError):
     def __init__(self, response, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2089,6 +2135,58 @@ class StreamClient(EnumEnforcer):
         #: The core data for the message. Either JSON-formatted data describing the update, NULL in some cases,
         #: or plain text in case of ERROR.
         MESSAGE_DATA = 3
+
+        @classmethod
+        def relabel_message(cls, old_msg, new_msg):
+            super().relabel_message(old_msg, new_msg)
+            # Relabeling has just put the type under its name. A type outside
+            # the observed vocabulary is still delivered -- this only says so,
+            # once, so that a type nobody has captured becomes known rather
+            # than passing silently. It runs on the data channel only, which is
+            # the only place the type is relabeled at all.
+            token = new_msg.get('MESSAGE_TYPE')
+            if token is not None:
+                known = StreamClient._ACCOUNT_ACTIVITY_MESSAGE_TYPES_FOLDED
+                name = _safe_name(token)
+                if name.casefold() not in known:
+                    _report_unknown_message_type(name)
+
+    #: ``MESSAGE_TYPE`` values observed on a live ``ACCT_ACTIVITY`` feed, as
+    #: they appear on the wire.
+    #:
+    #: A reference for noticing a type nobody has seen before, **not** a
+    #: list to classify messages against. Schwab documents this vocabulary
+    #: nowhere, and only these ten have been captured, so an exact match
+    #: against it will miss a real message whose type has simply never been
+    #: recorded. Classify by substring and case-insensitively, as the
+    #: streaming documentation describes, and use this only to ask whether a
+    #: type is one anyone has seen.
+    #:
+    #: A type outside it is still delivered to your handler, and is logged once
+    #: on ``schwaby.streaming``. A buy rejected for buying power has been
+    #: captured and used only types listed here; expiry, replacement and
+    #: partial fill have not, so the first of each a process receives may log
+    #: once. That is expected, and a report of the type it names is how this
+    #: list grows.
+    #:
+    #: Held on ``StreamClient`` rather than on ``AccountActivityFields``,
+    #: because a set in an ``Enum`` body silently becomes a member, which would
+    #: add a fifth field and change ``key_mapping`` for every such message.
+    ACCOUNT_ACTIVITY_MESSAGE_TYPES = frozenset((
+        'SUBSCRIBED',
+        'OrderCreated', 'OrderAccepted',
+        'ExecutionRequested', 'ExecutionRequestCreated',
+        'ExecutionRequestCompleted', 'OrderFillCompleted',
+        'CancelAccepted', 'ExecutionCreated', 'OrderUROutCompleted',
+    ))
+
+    # Folded once, from the public set, so a case variant of an observed type
+    # is not reported as new -- the documentation already says to match
+    # case-insensitively -- while a genuinely different token, such as the
+    # truncation ``ORDERUROUT``, still is.
+    _ACCOUNT_ACTIVITY_MESSAGE_TYPES_FOLDED = frozenset(
+        message_type.casefold()
+        for message_type in ACCOUNT_ACTIVITY_MESSAGE_TYPES)
 
     async def account_activity_sub(self):
         '''

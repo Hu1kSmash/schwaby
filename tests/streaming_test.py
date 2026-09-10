@@ -9602,6 +9602,150 @@ class LevelOneOptionStrikeFieldTest(IsolatedAsyncioTestCase):
         self.assertNotIn('STRIKE_TYPE', fields.key_mapping().values())
 
 
+class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
+    """ACCT_ACTIVITY types outside the observed vocabulary are named once.
+
+    Schwab documents the MESSAGE_TYPE vocabulary nowhere, and only ten types
+    have been captured. A message of any other type is still delivered; what
+    is new is that it no longer passes silently.
+    """
+
+    fields = streaming.StreamClient.AccountActivityFields
+
+    def setUp(self):
+        streaming._reported_message_types.clear()
+
+    def tearDown(self):
+        streaming._reported_message_types.clear()
+
+    def relabel(self, message_type):
+        raw = {'key': 'account', '1': 'account', '2': message_type,
+               '3': 'data'}
+        new = copy.deepcopy(raw)
+        self.fields.relabel_message(raw, new)
+        return new
+
+    @no_duplicates
+    def test_every_observed_type_is_known(self):
+        observed = streaming.StreamClient.ACCOUNT_ACTIVITY_MESSAGE_TYPES
+        with self.assertNoLogs(streaming.get_logger(), level='WARNING'):
+            for message_type in observed:
+                self.relabel(message_type)
+        # Positive control: the same call does report a type outside it, so
+        # the silence above is not silence everywhere.
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            self.relabel('OrderExpired')
+
+    @no_duplicates
+    def test_a_case_variant_of_an_observed_type_is_not_new(self):
+        # The docs say to match case-insensitively, so an upper-cased observed
+        # type must not be reported as a new one.
+        with self.assertNoLogs(streaming.get_logger(), level='WARNING'):
+            self.relabel('ORDERCREATED')
+            self.relabel('orderfillcompleted')
+
+    @no_duplicates
+    def test_a_truncation_is_not_a_case_variant(self):
+        # ORDERUROUT is not OrderUROutCompleted in another case. It is a
+        # different, shorter token, and folding does not make the two meet.
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            self.relabel('ORDERUROUT')
+        self.assertIn("'ORDERUROUT'", got.output[0])
+
+    @no_duplicates
+    def test_an_unobserved_type_is_still_delivered(self):
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            new = self.relabel('OrderExpired')
+        self.assertEqual('OrderExpired', new['MESSAGE_TYPE'])
+        # Positive control: the rest of the item relabeled as well.
+        self.assertEqual('account', new['ACCOUNT'])
+
+    @no_duplicates
+    def test_it_is_reported_once_per_type_not_per_message(self):
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            for _ in range(3):
+                self.relabel('OrderExpired')
+            self.relabel('orderexpired')   # the same type in another case
+        self.assertEqual(1, len(got.output))
+        # A different type earns its own line.
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            self.relabel('OrderReplaced')
+        self.assertEqual(1, len(got.output))
+        self.assertIn("'OrderReplaced'", got.output[0])
+
+    @no_duplicates
+    def test_an_item_with_no_type_is_not_reported(self):
+        raw = {'key': 'account', '1': 'account'}
+        with self.assertNoLogs(streaming.get_logger(), level='WARNING'):
+            self.fields.relabel_message(raw, copy.deepcopy(raw))
+        # Positive control: the same shape with a type does report.
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            self.relabel('OrderExpired')
+
+    @no_duplicates
+    def test_a_newline_in_a_type_cannot_forge_a_log_line(self):
+        forged = 'X\nWARNING:schwaby.streaming:the feed is healthy'
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            self.relabel(forged)
+        self.assertEqual(1, len(got.output))
+        self.assertNotIn('\nWARNING', got.output[0])
+
+    @no_duplicates
+    def test_the_report_is_bounded(self):
+        cap = streaming._MAX_REPORTED_MESSAGE_TYPES
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            for i in range(cap * 3):
+                self.relabel('Unobserved%d' % i)
+        self.assertEqual(cap, len(streaming._reported_message_types))
+        self.assertIn('as many as schwaby will name', '\n'.join(got.output))
+        # A long type is bounded before it is retained.
+        streaming._reported_message_types.clear()
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            self.relabel('T' * 10000)
+        self.assertLessEqual(
+                max(len(t) for t in streaming._reported_message_types), 64)
+
+    @no_duplicates
+    def test_the_vocabulary_is_not_an_enum_member(self):
+        # A frozenset in an Enum body silently becomes a member, which would
+        # add a fifth field and change key_mapping for every account
+        # activity message. It lives on StreamClient for that reason.
+        self.assertNotIn('ACCOUNT_ACTIVITY_MESSAGE_TYPES',
+                         self.fields.__members__)
+        self.assertEqual(
+                {'0': 'SUBSCRIPTION_KEY', '1': 'ACCOUNT',
+                 '2': 'MESSAGE_TYPE', '3': 'MESSAGE_DATA'},
+                self.fields.key_mapping())
+
+    @no_duplicates
+    def test_it_is_exactly_the_ten_observed_types(self):
+        self.assertEqual(
+                {'SUBSCRIBED', 'OrderCreated', 'OrderAccepted',
+                 'ExecutionRequested', 'ExecutionRequestCreated',
+                 'ExecutionRequestCompleted', 'OrderFillCompleted',
+                 'CancelAccepted', 'ExecutionCreated',
+                 'OrderUROutCompleted'},
+                set(streaming.StreamClient.ACCOUNT_ACTIVITY_MESSAGE_TYPES))
+
+    @no_duplicates
+    async def test_an_unobserved_type_reaches_a_handler(self):
+        client = StreamClient(client=MagicMock())
+        got = []
+        client.add_account_activity_handler(got.append)
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            await client._dispatch_to_handlers(
+                    'ACCT_ACTIVITY',
+                    {'service': 'ACCT_ACTIVITY', 'command': 'SUBS',
+                     'timestamp': 1,
+                     'content': [{'key': 'account', '1': 'account',
+                                  '2': 'OrderExpired', '3': 'data'}]},
+                    relabel=True)
+        self.assertEqual(1, len(got))
+        self.assertEqual('OrderExpired',
+                         got[0]['content'][0]['MESSAGE_TYPE'])
+        self.assertEqual(0, client._absorbed)
+
+
 class UnknownStreamFieldTest(IsolatedAsyncioTestCase):
     """A field Schwab adds reaches a handler. Nobody was told it exists.
 

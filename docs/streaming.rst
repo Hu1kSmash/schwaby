@@ -959,6 +959,8 @@ Account Activity
   :members:
   :undoc-members:
 
+.. autoattribute:: schwaby.streaming::StreamClient.ACCOUNT_ACTIVITY_MESSAGE_TYPES
+
 ----------------------------------------
 What the payload looks like, as observed
 ----------------------------------------
@@ -1039,49 +1041,44 @@ ending an order. ``EXPIRED`` and ``REPLACED`` are
 **``MESSAGE_TYPE`` tokens observed.** These are the tokens **as they appear on
 the wire**, and most of them are CamelCase. ``SUBSCRIBED`` is a genuine
 exception. A consumer comparing against an upper-case ``'ORDERCREATED'``
-matches nothing.
+matches nothing. Schwab documents this vocabulary nowhere at all; a search of
+the whole developer portal returns nothing describing these values.
 
-**Match case-insensitively, and do not assume case is the only difference.**
-``ORDERUROUT`` is not a case variant of ``OrderUROutCompleted`` but a truncation
-of it, and no amount of case folding will make the two meet. A list containing
-it matches nothing at all.
+Ten have been captured, and they are exported as
+:attr:`StreamClient.ACCOUNT_ACTIVITY_MESSAGE_TYPES
+<schwaby.streaming.StreamClient.ACCOUNT_ACTIVITY_MESSAGE_TYPES>`:
 
 .. code-block:: python
 
-  # Measured on a live feed by driving the states deliberately.
   ('SUBSCRIBED', 'OrderCreated', 'OrderAccepted',
-   'CancelAccepted', 'ExecutionCreated', 'OrderUROutCompleted',
+   'ExecutionRequested', 'ExecutionRequestCreated',
+   'ExecutionRequestCompleted', 'OrderFillCompleted',
+   'CancelAccepted', 'ExecutionCreated', 'OrderUROutCompleted')
 
-   # Seen on the same feed over roughly a year, but recorded before the
-   # casing above was measured, so the spelling of these is the observer's
-   # rather than the venue's. Match case-insensitively.
-   'EXECUTIONREQUESTED', 'EXECUTIONREQUESTCREATED',
-   'EXECUTIONREQUESTCOMPLETED', 'ORDERFILLCOMPLETED',
-   'ORDERPARTIALFILL', 'ORDERPARTIALLYFILLED', 'ORDERREJECTED',
-   'ORDERCANCELED', 'ORDERCANCELLED', 'ORDEREXPIRED', 'ORDERREPLACED',
+A message of any other type is still delivered to your handler, and is logged
+once on ``schwaby.streaming``, so that a type nobody has captured becomes known
+rather than passing silently. A buy rejected for buying power has been
+captured, and used only types in that list. **Expiry, replacement and partial
+fill have not been captured**, so the first of each a process receives may log
+once. That is expected; please `open an issue
+<https://github.com/Hu1kSmash/schwaby/issues>`__ with the type it names.
 
-   # A resting order's lifecycle. Attested by a note rather than a frame; see
-   # below.
-   'ORDERMONITORCREATED', 'ORDERMONITORCOMPLETED',
-   'CHANGECREATED', 'CHANGEACCEPTED')
+No other type is known from a captured frame. The absence of others from the
+captures is not evidence either way: the archive most of them come from records
+only fill-bearing and unexpected events, so a type that carries no fill would
+never have been recorded. A resting order's monitor and change types rest on a
+written note rather than a frame, and are a lead rather than an observation.
 
-``ORDERCANCELED`` and ``ORDERCANCELLED`` are both in that second block, and
-**that is not evidence Schwab spells it two ways.** The comment above the block
-says why: those spellings are the observer's, recorded before the casing was
-measured. A list normalised to upper case cannot settle a question about
-spelling, and reading it as though it could is the same error as treating an
-enum member as proof that a key is delivered.
+**Match case-insensitively, and do not assume case is the only difference.**
+``ORDERUROUT`` is not a case variant of ``OrderUROutCompleted`` but a truncation
+of it, and no amount of case folding will make the two meet.
 
-What was actually measured cuts the other way. The one cancel driven
-deliberately, below, produced ``CancelAccepted`` and ``OrderUROutCompleted``
---- neither of which is any case variant of either upper-case token. Schwab
-documents the ``MESSAGE_TYPE`` vocabulary nowhere at all; a search of the whole
-developer portal returns nothing describing these values.
-
-So: **match case-insensitively, and prefer a substring over an enumerated
-set.** A consumer holding an exact list --- including this one --- can miss a
-real cancel and see only silence, which on an order feed is the failure that
-costs something.
+**Classify by substring; use the exported set only to notice.** A consumer
+holding an exact list --- including this one --- can miss a real message and
+see only silence, which on an order feed is the failure that costs something.
+Decide what a message *means* by testing for a fragment such as ``FILL``,
+``CANCEL`` or ``UROUT``, and consult the exported set only to ask whether a
+type is one anyone has seen before.
 
 ``OrderUROutCompleted`` says the order **came off the book**. It does not say
 why, and it is worth resisting the obvious gloss. Calling it "an unsolicited
@@ -1450,34 +1447,34 @@ was recorded in production without the frame being retained and so is attested
 by a note rather than by bytes anyone can still produce. Schwab documents none
 of it.
 
-**The four tokens in that last group belong to resting orders** ---
-``ORDERMONITORCREATED``, ``ORDERMONITORCOMPLETED``, ``CHANGECREATED`` and
-``CHANGEACCEPTED``. They are the lifecycle of a limit or
-stop order sitting on the book, and a program that places only market orders
-will never see them --- it will meet them the first time a human places an order
-by hand in the same account from Schwab's own interface. That is exactly how
-they were observed. If you match ``MESSAGE_TYPE`` against an allow-list, an
-ordinary hand trade will otherwise raise an unknown-shape alert.
+**A resting order produces types that have not been captured.** A limit or stop
+order sitting on the book was recorded producing four more types, noted at the
+time as ``ORDERMONITORCREATED``, ``ORDERMONITORCOMPLETED``, ``CHANGECREATED``
+and ``CHANGEACCEPTED``. A program that places only market orders will not see
+them; it meets them the first time someone places an order by hand in the same
+account from Schwab's own interface, which is how they were recorded.
 
-Their provenance is thinner than the rest of this list, and that is worth
-saying. They were recorded as a vocabulary at the time they were seen, but the
-frames themselves were not retained --- capture on that feed began the following
-day, added in response to the very event that produced them. So these five are
-attested by a contemporaneous note rather than by a frame anyone can still
-produce. They are here because a token you have not heard of costs a consumer an
-alert whether or not the frame survives, but weight them accordingly.
+Their provenance is thinner than that of the captured types above. The frames
+were not retained --- capture on that feed began the following day --- so they
+rest on a contemporaneous note, and the note recorded them in upper case, so
+their spelling on the wire is not known. Match them case-insensitively, like
+everything on this page. They are not in
+:attr:`StreamClient.ACCOUNT_ACTIVITY_MESSAGE_TYPES
+<schwaby.streaming.StreamClient.ACCOUNT_ACTIVITY_MESSAGE_TYPES>`, so an account
+with hand-placed orders can expect each to be logged once, the first time a
+process receives it.
 
 They carry no fill to act on; the authoritative fill remains
-``ORDERFILLCOMPLETED``. They are also chatty: one hand-placed order change was
-observed emitting nineteen messages, sixteen of them from this group, so
+``OrderFillCompleted``. The same note records them as chatty --- one hand-placed
+order change emitting nineteen messages, sixteen of them from this group --- so
 consider logging them below the level you use for fills.
 
-**``CHANGECREATED``, ``CHANGEACCEPTED`` and ``ORDERREPLACED`` mean a working
-order was amended or cancelled.** That is worth separating from the rest. For an
-order your own program placed it is a safety event --- something modified a live
-order mid-flight --- while for an instrument you do not manage it is just
-somebody editing their own order. It is the one distinction in this group that
-changes what an operator should do about it.
+**A change or replacement to a working order is worth separating from the
+rest.** For an order your own program placed, something modifying it mid-flight
+is a safety event; for an instrument you do not manage, it is somebody editing
+their own order. Which types signal it is not established: ``CHANGECREATED``
+and ``CHANGEACCEPTED`` rest on the note above, and no replacement has been
+captured at all.
 
 **Distinguishing a relabeled item from a raw one.** After relabeling, a
 ``data``-channel content item carries ``seq``, ``key``, ``ACCOUNT``,
