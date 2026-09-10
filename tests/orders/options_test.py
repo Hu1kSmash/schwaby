@@ -720,3 +720,54 @@ class OptionSymbolInputTest(unittest.TestCase):
                 op = OptionSymbol('AAPL', self.EXPIRY, given, '100')
                 self.assertEqual(expected, op.contract_type)
                 self.assertIn(expected, op.build())
+
+
+class OptionSymbolLayoutTest(unittest.TestCase):
+    '''parse_symbol reads fixed positions, so a symbol that is not exactly
+    that layout is refused rather than read as a different contract.'''
+
+    @no_duplicates
+    def test_a_symbol_that_is_not_the_fixed_layout_is_refused(self):
+        # Each of the first three used to parse, as a different contract.
+        for symbol in ('SOXL 261120P00125000',     # root padded short: 2061
+                       'SOXL  261120P0012500',     # 7-digit strike: 12.5
+                       'SOXL  261120P001250000',   # 9-digit strike: 1250
+                       'SOXL  261120P00125000 ',   # trailing space
+                       ' SOXL 261120P00125000',    # leading space
+                       'SOXL\t 261120P00125000',   # tab in the padding
+                       'SOXL  2611\uff120P00125000',  # a non-ASCII digit
+                       'SOXL  261120P0012500\u0660',  # a non-ASCII digit
+                       '', 'TQQQ', None, 261120):
+            with self.subTest(symbol=symbol):
+                with self.assertRaisesRegex(
+                        ValueError, 'option symbol must have format'):
+                    OptionSymbol.parse_symbol(symbol)
+
+    @no_duplicates
+    def test_a_well_formed_symbol_still_parses_and_round_trips(self):
+        for symbol, underlying, expiration, contract_type in (
+                ('SOXL  261120P00125000', 'SOXL', datetime.date(2026, 11, 20),
+                 'P'),
+                ('SPY   260116C00450500', 'SPY', datetime.date(2026, 1, 16),
+                 'C'),
+                ('BRK.B 260116C00400000', 'BRK.B', datetime.date(2026, 1, 16),
+                 'C'),
+                ('SPXW  240420C05040000', 'SPXW', datetime.date(2024, 4, 20),
+                 'C'),
+                ('ABCDEF261120P00125000', 'ABCDEF',
+                 datetime.date(2026, 11, 20), 'P')):
+            with self.subTest(symbol=symbol):
+                op = OptionSymbol.parse_symbol(symbol)
+                self.assertEqual(underlying, op.underlying_symbol)
+                self.assertEqual(expiration, op.expiration_date)
+                self.assertEqual(contract_type, op.contract_type)
+                self.assertEqual(symbol, op.build())
+
+    @no_duplicates
+    def test_the_other_refusals_keep_their_messages(self):
+        with self.assertRaisesRegex(ValueError, 'contract type'):
+            OptionSymbol.parse_symbol('SOXL  261120X00125000')
+        with self.assertRaisesRegex(ValueError, 'contract type'):
+            OptionSymbol.parse_symbol('soxl  261120p00125000')
+        with self.assertRaisesRegex(ValueError, 'expiration date must follow'):
+            OptionSymbol.parse_symbol('SOXL  261320P00125000')

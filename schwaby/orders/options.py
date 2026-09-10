@@ -1,6 +1,7 @@
 import decimal
 import math
 import datetime
+import re
 
 from schwaby.orders.generic import OrderBuilder
 
@@ -29,6 +30,13 @@ def _scale_strike(strike_price):
     # it and build() died on `cannot convert Infinity to integer`.
     with decimal.localcontext(decimal.Context(prec=28)):
         return decimal.Decimal(strike_price) * 1000
+
+
+# An option symbol is read from fixed positions: a root of one to six
+# characters padded with spaces to six, six digits of expiration, the contract
+# type, and eight digits of strike in thousandths.
+_SYMBOL_ROOT = re.compile(r'[^\s]{1,6} *')
+_SYMBOL_DIGITS = re.compile(r'[0-9]+')
 
 
 def _parse_expiration_date(expiration_date):
@@ -196,26 +204,29 @@ class OptionSymbol:
             'option symbol must have format ' +
             '[Underlying left justified with spaces to 6 positions][Expiration][P/C][Strike]')
 
-        # Underlying
+        # Every field is read from a fixed position. A symbol of another
+        # length, or with anything but spaces padding the root, shifts a digit
+        # from one field into the next and parses as a different contract: one
+        # space of padding turned a 2026 expiration into 2061, and a
+        # seven-digit strike turned 125 into 12.5.
+        layout_error_str = format_error_str + ', 21 characters in all'
+        if not isinstance(symbol, str) or len(symbol) != 21:
+            raise ValueError(layout_error_str)
+        if not _SYMBOL_ROOT.fullmatch(symbol[:6]):
+            raise ValueError(layout_error_str)
+        if not (_SYMBOL_DIGITS.fullmatch(symbol[6:12])
+                and _SYMBOL_DIGITS.fullmatch(symbol[13:])):
+            raise ValueError(layout_error_str)
+
         underlying = symbol[:6].rstrip()
-        rest = symbol[6:]
+        expiration_date = symbol[6:12]
+        contract_type = symbol[12]
+        if contract_type not in ('C', 'P'):
+            raise ValueError(
+                r'option must have contract type \'C\' r \'\P\', ' +
+                format_error_str)
 
-        # Expiration
-        type_split = rest.split('P')
-        if len(type_split) == 2:
-            expiration_date, strike = type_split
-            contract_type = 'P'
-        else:
-            type_split = rest.split('C')
-            if len(type_split) == 2:
-                expiration_date, strike = type_split
-                contract_type = 'C'
-            else:
-                raise ValueError(
-                    r'option must have contract type \'C\' r \'\P\', ' +
-                    format_error_str)
-
-        strike = str(int(strike) / 1000.0)
+        strike = str(int(symbol[13:]) / 1000.0)
 
         expiration_date = _parse_expiration_date(expiration_date)
 
