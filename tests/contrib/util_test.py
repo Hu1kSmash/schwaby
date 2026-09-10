@@ -1,4 +1,5 @@
 import decimal
+import collections
 import json
 import unittest
 
@@ -151,6 +152,144 @@ class DecodeDecimalTest(unittest.TestCase):
                 # Out of range, and the refusal cannot raise on it either.
                 with self.assertRaises(UnusableDecimalScale):
                     decode_decimal({'lo': '1', 'signScale': cls(65)})
+
+    @no_duplicates
+    def test_a_huge_bare_exponent_is_refused_not_escaped(self):
+        # `decimal.Decimal` raises InvalidOperation -- neither a SchwabError
+        # nor a ValueError -- on an exponent of 10**18 or more, before the
+        # magnitude check can run. Reachable from any JSON string field.
+        for bad in ('1E1000000000000000000', '-1E1000000000000000000',
+                    '1.0E1000000000000000000', '0E-99999999999999999999',
+                    '1E' + '9' * 5000):
+            with self.subTest(value=bad[:30]):
+                with self.assertRaises(UnusableDecimalScale):
+                    decode_decimal(bad)
+        # Positive control: a padded exponent inside the bound still decodes.
+        self.assertEqual(decimal.Decimal('100'),
+                         decode_decimal('1E' + '0' * 30 + '2'))
+        self.assertEqual(decimal.Decimal('0.01'), decode_decimal('1E-2'))
+
+    @no_duplicates
+    def test_a_refusal_cannot_forge_a_log_line(self):
+        # Key names are venue text. Joined bare into the message, a newline in
+        # one forged a second line wherever the exception was logged --
+        # including through the recipe the streaming docs give for it.
+        self.addCleanup(util._reported_keys.clear)
+        forged = 'x\nCRITICAL:schwaby.orders:order 123 FILLED'
+        for value in ({'lo': '6860000', 'signScale': 12, forged: 0},
+                      {forged: 0}):
+            with self.subTest(value=value):
+                with self.assertRaises(UnusableDecimalScale) as caught:
+                    decode_decimal(value)
+                self.assertNotIn('\n', str(caught.exception))
+                # Positive control: the key is still named, quoted.
+                self.assertIn(repr(forged), str(caught.exception))
+
+    @no_duplicates
+    def test_subclasses_decode_as_their_plain_values(self):
+        # `json.loads` never produces a subclass; a custom decoder can. Each
+        # of these decided its own value, or raised past the one `except`
+        # callers write, until inputs were reduced to exact built-in types.
+        class Text(str):
+            def isdigit(self):
+                return True
+
+            def lstrip(self, *args):
+                return '999'
+
+            def __str__(self):
+                raise RuntimeError('boom')
+
+        class Real(float):
+            def __str__(self):
+                return '999'
+            __repr__ = __str__
+
+        class Whole(int):
+            def bit_length(self):
+                raise RuntimeError('boom')
+
+        class Exact(decimal.Decimal):
+            def is_finite(self):
+                raise RuntimeError('boom')
+
+        self.assertEqual(decimal.Decimal('0.000005'),
+                         decode_decimal({'lo': Text('5'), 'signScale': 12}))
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal({'lo': Text('1_0'), 'signScale': 12})
+        self.assertEqual(decimal.Decimal('5'), decode_decimal(Real(5.0)))
+        self.assertEqual(decimal.Decimal(5), decode_decimal(Whole(5)))
+        self.assertEqual(decimal.Decimal('5'), decode_decimal(Exact('5')))
+        self.assertIs(decimal.Decimal, type(decode_decimal(Exact('5'))))
+
+        # And the text a refusal is built from. `str()` and `repr()` hand back
+        # a subclass untouched when the method returns one, so its own
+        # `__hash__` and `__len__` ran inside the code that names the problem.
+        class Name(str):
+            def __hash__(self):
+                raise RuntimeError('boom')
+
+            def __len__(self):
+                raise RuntimeError('boom')
+
+        class Key:
+            def __str__(self):
+                return Name('odd')
+
+        class Shown:
+            def __repr__(self):
+                return Name('odd')
+
+        self.addCleanup(util._reported_keys.clear)
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal({'lo': '1', Key(): 0})
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal(Shown())
+
+    @no_duplicates
+    def test_a_mapping_is_read_once_from_what_it_stores(self):
+        class Hostile(dict):
+            def __iter__(self):
+                raise RuntimeError('boom')
+
+            def items(self):
+                raise RuntimeError('boom')
+
+            def keys(self):
+                raise RuntimeError('boom')
+
+            def get(self, *args):
+                raise RuntimeError('boom')
+
+        class Fickle(dict):
+            # `mid` on the first read, absent on every read after.
+            reads = []
+
+            def get(self, key, default=None):
+                if key == 'mid':
+                    Fickle.reads.append(key)
+                    return 1 if len(Fickle.reads) == 1 else None
+                return dict.get(self, key, default)
+
+        class Unequal:
+            def __hash__(self):
+                return hash('lo')
+
+            def __eq__(self, other):
+                raise RuntimeError('boom')
+
+        self.assertEqual(decimal.Decimal('0.000005'),
+                         decode_decimal(Hostile(lo='5', signScale=12)))
+        self.assertEqual(decimal.Decimal('4294.967301'),
+                         decode_decimal(Fickle(lo='5', mid=1, signScale=12)))
+        with self.assertRaises(UnusableDecimalScale):
+            decode_decimal({Unequal(): '5', 'signScale': 12})
+        # The ordinary subclass a custom decoder produces still decodes.
+        self.assertEqual(
+                decimal.Decimal('6.86'),
+                decode_decimal(json.loads(
+                    '{"lo": "6860000", "signScale": 12}',
+                    object_pairs_hook=collections.OrderedDict)))
 
     @no_duplicates
     def test_an_odd_signscale_is_negative(self):
@@ -763,8 +902,11 @@ class DecodeDecimalTest(unittest.TestCase):
             decode_decimal({'Foo': 1})
 
     def test_a_dict_subclass_whose_get_and_getitem_disagree_is_catchable(self):
-        # The comment above the loop says why the members use `.get`; the
-        # scale then used `value['signScale']` and escaped as a KeyError.
+        # The scale once used `value['signScale']` and escaped as a KeyError
+        # from a mapping whose `get` and `__getitem__` disagree. Fields are
+        # now read from what the mapping stores, through `dict.items`, so a
+        # `get` that invents a key is not consulted at all: this one stores no
+        # `signScale`, and decodes at scale 0 like any object without one.
         class Odd(dict):
             def get(self, key, default=None):
                 return 12 if key == 'signScale' else super().get(key, default)
@@ -772,7 +914,10 @@ class DecodeDecimalTest(unittest.TestCase):
         odd = Odd(lo='6860000')
         with self.assertRaises(KeyError):       # the shape being guarded
             odd['signScale']
-        self.assertEqual(decimal.Decimal('6.86'), decode_decimal(odd))
+        self.assertEqual(decimal.Decimal('6860000'), decode_decimal(odd))
+        # Positive control: the same mapping storing the scale decodes as it.
+        self.assertEqual(decimal.Decimal('6.86'),
+                         decode_decimal(Odd(lo='6860000', signScale=12)))
 
     def test_a_corrupt_scale_is_refused_even_with_no_mantissa_to_scale(self):
         # The mantissa-less shortcut returned before the scale was looked at,

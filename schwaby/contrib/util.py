@@ -57,8 +57,13 @@ MAX_EXPONENT = 64
 #: ``'\uff11\uff12'`` is twelve. Each of those is a corrupt field decoding as
 #: a confident wrong number, which is the same defect the mantissa members
 #: are validated against; the two paths refuse the same tokens now.
+#:
+#: The exponent is bounded here, at four significant digits, and not left to
+#: the magnitude check after construction: an exponent of 10**18 or more makes
+#: `decimal.Decimal` itself raise `InvalidOperation` -- neither a SchwabError
+#: nor a ValueError -- before that check can run.
 _BARE_NUMBER = re.compile(
-        r'-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?\Z')
+        r'-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?0*[0-9]{1,4})?\Z')
 
 #: Every key a serialized ``System.Decimal`` is known to carry. An object with
 #: none of them is not one, and would otherwise take the mantissa-less
@@ -158,7 +163,11 @@ def _safe_keys(unknown):
     it is a smaller problem than the sets -- but an exception a caller logs
     is retained by whatever logs it.
     """
-    names = sorted(map(_safe_key, unknown))
+    # Quoted, like the once-per-key log line. A key is venue text, and
+    # joined bare a newline in one forged a second line wherever the
+    # exception was logged -- including through the recipe the streaming
+    # docs give for logging it.
+    names = [repr(name) for name in sorted(map(_safe_key, unknown))]
     if len(names) <= 8:
         return ', '.join(names)
     return '{} and {} more'.format(', '.join(names[:8]), len(names) - 8)
@@ -180,6 +189,9 @@ def _safe_key(key):
         # scenario the length bound exists for, through the branch written
         # to be safe.
         text = '<{} that cannot be named>'.format(type(key).__name__)
+    # A plain `str`: `str()` hands back a subclass untouched when `__str__`
+    # returns one, and its own `len`, `hash` and slicing would run next.
+    text = str.__str__(text)
     return text if len(text) <= 64 else text[:61] + '...'
 
 
@@ -201,6 +213,7 @@ def _safe_repr(value):
         # public extension point, which is the same argument that made
         # `relabel_message` handle a non-string key.
         return '<{} that cannot be formatted>'.format(type(value).__name__)
+    text = str.__str__(text)   # a plain str, for the reason `_safe_key` gives
     return text if len(text) <= 200 else text[:197] + '...'
 
 
@@ -223,9 +236,16 @@ def _decode_bare(value):
         raise UnusableDecimalScale(
                 'not a number: {}'.format(_safe_repr(value)))
 
+    # Each branch works on the exact built-in type, never the subclass that
+    # arrived. A subclass decides its own `str`, `bit_length` and
+    # `is_finite`, so it could decode as another number or raise past the one
+    # `except` callers write. `json.loads` never produces one; a custom
+    # decoder can. A plain `str` is not reduced: the pattern and `Decimal`
+    # read its characters, which a subclass cannot change.
     if isinstance(value, decimal.Decimal):
-        result = value
+        value = result = decimal.Decimal(value)
     elif isinstance(value, int):
+        value = int.__index__(value)
         # Bounded before conversion, cheaply. `decimal.Decimal(int)` is
         # fine at any width -- measured, and the comment here said otherwise
         # for one commit; it is `str()` and `repr()` that raise a bare
@@ -244,6 +264,7 @@ def _decode_bare(value):
     elif isinstance(value, float):
         # `str` of a float is short, ASCII and never surprising; going
         # through it stops the binary expansion coming along.
+        value = float.__float__(value)
         result = decimal.Decimal(str(value))
     elif isinstance(value, str):
         if not (value.isascii() and _BARE_NUMBER.match(value)):
@@ -289,6 +310,9 @@ def _unsigned(member, name, value, bits):
     if isinstance(member, bool) or not isinstance(member, (int, str)):
         ok = False
     elif isinstance(member, str):
+        # The plain text, as `int.__index__` below gives the plain value: a
+        # subclass's own `isdigit` and `lstrip` would otherwise decide it.
+        member = str.__str__(member)
         # `isdigit` alone is not ASCII: '\u00b2'.isdigit() is True and
         # `int` refuses it, while '\u0663'.isdigit() is True and `int`
         # decodes it as 3. Both are corruption, and only one raises.
@@ -432,8 +456,21 @@ def decode_decimal(value):
     # `set(value)`, not `value.keys() - ...`: a mapping whose `keys()` does
     # not return a set view makes the difference operator raise a bare
     # TypeError, and this module promises every failure is a SchwabError.
-    keys = set(value)
-    unknown = keys - _DECIMAL_KEYS
+    #
+    # Read once, from what the mapping actually stores, into a plain dict.
+    # `dict.items` is dict's own view, so a subclass's `__iter__`, `get` and
+    # `keys` never run -- measured, and it still reads the `OrderedDict` that
+    # `object_pairs_hook` produces. Every read below is from that copy: a
+    # `get` that answered differently the second time chose the lone-lo
+    # layout and dropped `mid`. JSON object keys are always plain strings, so
+    # anything else is an unknown key, named but never hashed or compared.
+    fields = {}
+    unknown = []
+    for key, member in dict.items(value):
+        if type(key) is str and key in _DECIMAL_KEYS:
+            fields[key] = member
+        else:
+            unknown.append(key)
     if unknown:
         # Any unrecognised key refuses the object. Outright, with no attempt
         # to decode around it.
@@ -462,7 +499,7 @@ def decode_decimal(value):
         # caller wrapping each one keeps the rest of the message. The
         # alternative on this feed is a silent wrong price on a funded
         # account, and between those two there is no contest.
-        if not keys & _DECIMAL_KEYS:
+        if not fields:
             # Not a decimal object at all -- a PascalCase
             # `{"Lo": ..., "SignScale": ...}`, or something unrelated. Worth
             # its own message: this is a caller's mistake, where the branch
@@ -512,7 +549,7 @@ def decode_decimal(value):
     # disagree would otherwise escape as a `KeyError`. An explicit JSON
     # `null` is an absence here, exactly as it is in the member loop: the two
     # follow one rule and briefly did not.
-    scale_member = value.get('signScale')
+    scale_member = fields.get('signScale')
     scale = _unsigned(0 if scale_member is None else scale_member,
                       'signScale', value, 32)
 
@@ -528,7 +565,7 @@ def decode_decimal(value):
                 'signScale {} is outside 0..{}, so it is not a real one: '
                 '{}'.format(scale, MAX_SIGN_SCALE, _safe_repr(value)))
 
-    if all(value.get(k) is None for k in ('lo', 'mid', 'hi')):
+    if all(fields.get(k) is None for k in ('lo', 'mid', 'hi')):
         # Measured on three fields of one payload: a $0 commission, a market
         # order's absent limit price, and LeavesQuantity on a final fill.
         #
@@ -579,8 +616,8 @@ def decode_decimal(value):
     # normalisation only, and the arithmetic must not depend on it: read
     # unconditionally, a mantissa-less object that reached this line would
     # raise instead of decoding as the zero it is.
-    if value.get('mid') is None and value.get('hi') is None:
-        lo = value.get('lo')
+    if fields.get('mid') is None and fields.get('hi') is None:
+        lo = fields.get('lo')
         mantissa = 0 if lo is None else _unsigned(lo, 'lo', value, 96)
     else:
         mantissa = 0
@@ -588,7 +625,7 @@ def decode_decimal(value):
         # other order a ten-digit `lo` -- ordinary on its own -- is refused
         # first, and the message sends whoever reads it to the wrong field.
         for name, shift in (('hi', 64), ('mid', 32), ('lo', 0)):
-            member = value.get(name)
+            member = fields.get(name)
             if member is None:
                 continue
             mantissa += _unsigned(member, name, value, 32) << shift
