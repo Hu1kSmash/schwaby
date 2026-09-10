@@ -172,6 +172,18 @@ def _safe_str(value):
     return text if len(text) <= 200 else text[:197] + '...'
 
 
+def _printable(text, bound):
+    """`text` with control characters escaped, and bounded again afterwards.
+
+    A value's own `__repr__`, and a class name, can carry a newline that a
+    plain repr would have escaped, and both reach log lines here. Escaping
+    takes one character to as many as ten, hence the second bound.
+    """
+    if not text.isprintable():
+        text = ''.join(c if c.isprintable() else repr(c)[1:-1] for c in text)
+    return text if len(text) <= bound else text[:bound - 3] + '...'
+
+
 def _type_name(value):
     """A value's type name, for a line about a value that could not be read.
 
@@ -183,7 +195,7 @@ def _type_name(value):
         name = str.__str__(type.__dict__['__name__'].__get__(type(value)))
     except Exception:
         name = 'object'
-    return name if len(name) <= 64 else name[:61] + '...'
+    return _printable(name if len(name) <= 64 else name[:61] + '...', 64)
 
 
 def _safe_value(value):
@@ -206,7 +218,7 @@ def _safe_value(value):
     # raising `__len__` ended the receive loop with nothing logged, and one
     # returning 0 logged the whole frame.
     text = str.__str__(text)
-    return text if len(text) <= 200 else text[:197] + '...'
+    return _printable(text if len(text) <= 200 else text[:197] + '...', 200)
 
 
 def _safe_name(value):

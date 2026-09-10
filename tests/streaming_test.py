@@ -8008,7 +8008,9 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
             self.client._absorb('a thing', 'offender', cause=Boom('x'))
-        self.assertIn('Cause:', '\n'.join(got.output))
+        # The real name, read through type's own descriptor -- not the
+        # fallback, which would say `object`.
+        self.assertIn('Cause: Boom: x', '\n'.join(got.output))
 
     @no_duplicates
     def test_absorbed_warnings_do_not_flood(self):
@@ -9751,6 +9753,50 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
         text = streaming._safe_str(KeyError(Key('2')))
         self.assertIs(str, type(text))
         self.assertLessEqual(len(text), 200)
+
+    @no_duplicates
+    def test_a_type_name_that_is_a_str_subclass_is_read_as_plain_text(self):
+        # A class's `__name__` can be set to a str subclass, and the
+        # descriptor hands it back as it is; its own `__len__` ran next.
+        class Name(str):
+            def __len__(self):
+                raise RuntimeError('boom')
+
+        class Renamed:
+            pass
+
+        Renamed.__name__ = Name('Renamed')
+        self.assertEqual('Renamed', streaming._type_name(Renamed()))
+
+    @no_duplicates
+    def test_a_custom_repr_or_class_name_cannot_forge_a_log_line(self):
+        # A plain repr escapes a newline; a value's own `__repr__` and a class
+        # name need not, and both reach log lines.
+        forged = 'x\nCRITICAL:schwaby.streaming:the feed is healthy'
+
+        class Loud:
+            def __repr__(self):
+                return forged
+
+        Named = type('N' + forged, (), {})
+        for text in (streaming._safe_value(Loud()),
+                     streaming._type_name(Named())):
+            with self.subTest(text=text):
+                self.assertNotIn('\n', text)
+                self.assertIn('CRITICAL', text)
+
+        # Escaping takes one character to four here, so each is bounded again
+        # afterwards: both inputs fit their bound before escaping.
+        class Wide:
+            def __repr__(self):
+                return '\x01' * 200
+
+        Wider = type('\x01' * 64, (), {})
+        for text, bound in ((streaming._safe_value(Wide()), 200),
+                            (streaming._type_name(Wider()), 64)):
+            with self.subTest(bound=bound):
+                self.assertLessEqual(len(text), bound)
+                self.assertTrue(text.startswith('\\x01'))
 
     @no_duplicates
     def test_an_unnameable_type_does_not_escape_a_name(self):
