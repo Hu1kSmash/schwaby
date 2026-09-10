@@ -1403,12 +1403,38 @@ nowhere official.
   *are* understood still hold real data, and refusing the whole frame would
   turn an addition into an outage.
 
-**The sign is not the side.** Fill quantities and prices arrive positive, with
-an even ``signScale``; buy versus sell comes from ``BuySellCode``. The odd
-branch exists so a genuinely negative field does not decode positive, and the
-one it has been observed on is ``EstimatedPrincipalAmount``, negative on a buy
-because the cash goes out. A consumer inferring direction from the sign is
-wrong in a way that looks entirely plausible.
+**The sign is not the side --- except on** ``Mid``. Fill quantities and prices
+arrive positive, with an even ``signScale``; buy versus sell comes from
+``BuySellCode``. The odd branch exists so a genuinely negative field does not
+decode positive. Across that production archive only four fields were ever
+negative: ``EstimatedPrincipalAmount``, ``EstimatedPrincipalAmnt`` and
+``EstimatedNetAmount``, negative on a buy because the cash goes out, and
+``Mid``. ``Bid``, ``Ask``, ``LimitPrice``, ``ExecutionPrice``,
+``PrincipalAmmount`` and every quantity were positive throughout. A consumer
+inferring direction from the sign of an amount is wrong in a way that looks
+entirely plausible.
+
+.. danger::
+
+  **A quote's** ``Mid`` **decodes negative on a sell order.** Its magnitude is
+  exactly ``(Bid + Ask) / 2`` from the same quote, 563 times of 563, but its
+  sign followed the order's side. On the 182 quotes whose message also carried
+  ``BuySellCode``, every buy had an even ``signScale`` and every sell an odd
+  one --- 88 and 94 of them, with no exceptions. That is the opposite way round
+  from the amounts above, and Schwab documents neither.
+
+  ``Mid`` arrives in three containers: ``QuoteOnOrderAcceptance`` on
+  ``OrderCreated`` and ``ChangeCreated``, ``QuoteOnOrderEntry`` on
+  ``OrderAccepted`` and ``ChangeAccepted``, and ``Quote`` on
+  ``ExecutionRequested``. Only the first pair carries ``BuySellCode``. Most
+  quotes arrive on the others, where the side comes from joining on
+  ``SchwabOrderID``, so the side correlation is measured on creation messages
+  only.
+
+  If you want a mid price, take the magnitude, or compute ``(Bid + Ask) / 2``
+  from the same quote. Do not read the side from ``Mid`` either: a convention
+  that held on a sample and appears nowhere in Schwab's documentation is not
+  one to trade on.
 
 **Timestamp and container fields arrive as** ``{}``, not ``null`` and not
 absent, where the populated form is ``{"DateTimeString": "..."}``. Seen on
