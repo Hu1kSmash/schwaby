@@ -845,7 +845,7 @@ class StreamClient(EnumEnforcer):
             # venue rather than at this library.
             return UnexpectedResponse(
                 resp, 'malformed response frame: {}: {}'.format(
-                    type(exc).__name__, _safe_value(exc)))
+                    _type_name(exc), _safe_value(exc)))
 
         # Built outside the try above, which exists to turn *reads* of a
         # malformed frame into a clean error. Constructing the exception in
@@ -1141,7 +1141,7 @@ class StreamClient(EnumEnforcer):
                 self._absorbed,
                 '' if cause is None
                 else ' Cause: {}: {}'.format(
-                    type(cause).__name__, _safe_str(cause)))
+                    _type_name(cause), _safe_str(cause)))
 
         # Reported on the same schedule as the log, not on every occurrence.
         # These share _pending_reports with the late rejections, which is a
@@ -1158,7 +1158,7 @@ class StreamClient(EnumEnforcer):
                         what, n, self._absorbed,
                         '' if cause is None
                         else ': {}: {}'.format(
-                            type(cause).__name__, _safe_str(cause))),
+                            _type_name(cause), _safe_str(cause))),
                     cause=cause, count=n, total=self._absorbed),
                 # Usually None -- a message whose shape could not be read has
                 # no service name to be had -- but not always: a relabeling
@@ -1744,7 +1744,7 @@ class StreamClient(EnumEnforcer):
             self.logger.error(
                     'Asynchronous stream handler raised %s. The message it '
                     'was handling has been dropped, and the exception is '
-                    'being propagated.', type(exc).__name__, exc_info=exc)
+                    'being propagated.', _type_name(exc), exc_info=exc)
             raise
 
     async def _dispatch_to_handlers(self, service, msg, *, relabel):

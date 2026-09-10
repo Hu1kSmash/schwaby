@@ -7994,6 +7994,23 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             self.assertIsNotNone(message)
 
     @no_duplicates
+    def test_an_absorbed_cause_whose_type_cannot_be_named_is_reported(self):
+        # The line names the cause's type, and `type(x).__name__` consults the
+        # metaclass first. Raising there escaped `handle_message`, ending the
+        # receive loop with nothing logged and nothing reported.
+        class Meta(type):
+            @property
+            def __name__(cls):
+                raise RuntimeError('boom')
+
+        class Boom(Exception, metaclass=Meta):
+            pass
+
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            self.client._absorb('a thing', 'offender', cause=Boom('x'))
+        self.assertIn('Cause:', '\n'.join(got.output))
+
+    @no_duplicates
     def test_absorbed_warnings_do_not_flood(self):
         # Before this, a systematically malformed high-volume channel logged
         # one line per element per tick, forever -- a log-volume incident on
