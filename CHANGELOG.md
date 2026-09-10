@@ -22,7 +22,9 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
-## Unreleased
+## 4.3.0
+
+*2026-09-10*
 
 ### An unrecognised key in a decimal object is refused, and said out loud
 
@@ -107,43 +109,6 @@ and none of them is a field, so reporting anything merely missing from the
 table would log four lines per message — a flood, which hides the one line
 that matters.
 
-### A custom `StreamJsonDecoder` keeps working
-
-`set_json_decoder` promises only "the decoded JSON", and `_is_mapping` is
-deliberately structural — `get` and `__contains__`, nothing about iteration —
-so that a lightweight mapping-like object keeps working. The unread-channel
-check added in this release used `set(msg)`, which requires iteration, and so
-ended the receive loop with a non-`SchwabError` on shapes 4.2.0 handled
-fine — including a mapping that is not iterable, one whose `__iter__` raises,
-and one with unhashable keys.
-
-Not reachable from Schwab: `json.loads` produces only dicts. It is a
-regression against a documented extension point, found before release.
-
-### A non-finite `requestid` no longer ends the receive loop
-
-Not part of the schema-drift work — found while reviewing it, and present
-since long before this release.
-
-`json.loads` maps the bare JSON literals `1e999` and `Infinity` to
-`float('inf')`, and `int(inf)` raises `OverflowError`. Two guards around
-`int(frame['response'][0]['requestid'])` caught `AttributeError`, `IndexError`,
-`KeyError`, `TypeError` and `ValueError` — not that one. So an ordinary JSON
-number literal in a `requestid`:
-
-- ended the receive loop,
-- killed the in-flight request with an exception that is **not** a
-  `SchwabError`,
-- and reported nothing to `add_error_handler`.
-
-`NaN` takes the same route and raises `ValueError`, which is caught — so one
-of the two non-finite spellings was covered, which is why the guard read as
-complete. Locks were released cleanly, so nothing wedged.
-
-This is the exact failure `_read_and_route` exists to remove: with no request
-outstanding the identical frame was logged and harmless, and the framing
-dependence it was written to close was still there, one exception type wide.
-
 ### A service or a channel this version does not know is now reported
 
 A new *field* still reaches your handler. A new **service** cannot — there is
@@ -173,6 +138,36 @@ walks over the same ground disagree. A test holds it against the subscribe
 methods and the handler registrations, so a service added to those without
 being added here fails rather than being reported as unknown on the very
 traffic it was added to receive.
+
+The channel check reads the frame's own keys, and `set_json_decoder` promises
+only "the decoded JSON" — so a decoder returning a mapping that cannot be
+enumerated, or whose keys are unhashable, skips the check rather than failing
+the frame. `json.loads` produces only dicts, so this matters only if you have
+supplied your own decoder.
+
+### A non-finite `requestid` no longer ends the receive loop
+
+Not part of the schema-drift work — found while reviewing it, and present
+since long before this release.
+
+`json.loads` maps the bare JSON literals `1e999` and `Infinity` to
+`float('inf')`, and `int(inf)` raises `OverflowError`. Two guards around
+`int(frame['response'][0]['requestid'])` caught `AttributeError`, `IndexError`,
+`KeyError`, `TypeError` and `ValueError` — not that one. So an ordinary JSON
+number literal in a `requestid`:
+
+- ended the receive loop,
+- killed the in-flight request with an exception that is **not** a
+  `SchwabError`,
+- and reported nothing to `add_error_handler`.
+
+`NaN` takes the same route and raises `ValueError`, which is caught — so one
+of the two non-finite spellings was covered, which is why the guard read as
+complete. Locks were released cleanly, so nothing wedged.
+
+This is the exact failure `_read_and_route` exists to remove: with no request
+outstanding the identical frame was logged and harmless, and the framing
+dependence it was written to close was still there, one exception type wide.
 
 ## 4.2.0
 
