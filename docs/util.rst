@@ -176,6 +176,27 @@ correctly. Two of the order exceptions additionally inherit ``ValueError``
 because they always did; :class:`~schwaby.utils.OrderIdNotFoundError`
 deliberately does not.
 
+.. py:exception:: schwaby.utils.HTTPStatusError
+
+  What ``raise_for_status()`` raises on a response from any client call, under
+  a name this library owns. It is re-exported from ``httpx2`` rather than
+  defined here, so it does **not** inherit :class:`~schwaby.utils.SchwabError`.
+
+  .. code-block:: python
+
+    from schwaby.utils import HTTPStatusError
+
+    response = client.get_quote('AAPL')
+    try:
+        response.raise_for_status()
+    except HTTPStatusError as exc:
+        status = exc.response.status_code
+
+  Catch it by this name rather than by importing an HTTP package yourself. The
+  client's responses come from ``httpx2``, which shares no exception hierarchy
+  with ``httpx``, so a handler written against the other package never runs ---
+  and nothing reports that it did not.
+
 .. autoclass:: schwaby.utils.SchwabError
 
 .. autoclass:: schwaby.utils.UnsuccessfulOrderException

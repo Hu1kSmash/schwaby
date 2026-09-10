@@ -3,6 +3,19 @@ module.'''
 
 import re
 
+# The class a failed HTTP call raises, under a name this library owns.
+#
+# `raise_for_status()` on a response from any client call raises
+# `httpx2.HTTPStatusError`. That package shares no exception hierarchy with
+# `httpx`, so a handler written against the other one never runs -- no error,
+# the `except` simply does not match, and nothing reports that it didn't. A
+# consumer was left probing which HTTP package happened to be installed in
+# order to know what to catch. Measured: `httpx2` is the only HTTP dependency
+# declared, `httpx` is not installed alongside it, and a 429 driven through the
+# real session stack raises this class. Re-exported rather than subclassed, so
+# `isinstance` against the original still holds.
+from httpx2 import HTTPStatusError
+
 
 def class_fullname(o):
     return o.__module__ + '.' + o.__name__

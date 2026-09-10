@@ -18,6 +18,7 @@ class PicklableResponse:
 
 from schwaby.utils import (
     AccountHashMismatchException,
+    HTTPStatusError,
     MissingLocationHeaderError,
     OrderIdNotFoundError,
     SchwabError,
@@ -30,6 +31,56 @@ from .utils import no_duplicates, MockResponse
 
 import enum
 import unittest
+
+
+class HTTPStatusErrorTest(unittest.TestCase):
+    """The name a consumer catches must be the class a real call raises.
+
+    `httpx2` shares no exception hierarchy with `httpx`, so a handler written
+    against the wrong package does not match and says nothing. The alias only
+    helps if it is the class that actually escapes -- so this drives a real
+    client through its real session stack rather than asserting a name.
+    """
+
+    @staticmethod
+    def _client(status):
+        import httpx2
+        from schwaby.auth import client_from_access_functions
+
+        token = {'access_token': 'a', 'refresh_token': 'r',
+                 'token_type': 'Bearer', 'expires_in': 3600,
+                 'expires_at': 9999999999}
+        client = client_from_access_functions(
+                'api-key', 'app-secret',
+                lambda: {'creation_timestamp': 9999999999, 'token': token},
+                lambda *args, **kwargs: None)
+        client.session._transport = httpx2.MockTransport(
+                lambda request: httpx2.Response(status, request=request))
+        return client
+
+    @no_duplicates
+    def test_it_is_the_class_the_http_package_defines(self):
+        import httpx2
+        self.assertIs(httpx2.HTTPStatusError, HTTPStatusError)
+
+    @no_duplicates
+    def test_it_catches_what_a_real_client_call_raises(self):
+        response = self._client(429).get_quote('F')
+        with self.assertRaises(HTTPStatusError) as caught:
+            response.raise_for_status()
+        self.assertEqual(429, caught.exception.response.status_code)
+
+    @no_duplicates
+    def test_a_successful_call_does_not_raise(self):
+        # Positive control. Without it the test above would also pass if the
+        # stubbed transport raised on every call, whatever the status.
+        self._client(200).get_quote('F').raise_for_status()
+
+    @no_duplicates
+    def test_it_is_not_a_schwab_error(self):
+        # Stated in the docs, because `except SchwabError` is documented as
+        # one name for everything this library defines, and this is not one.
+        self.assertFalse(issubclass(HTTPStatusError, SchwabError))
 
 
 class EnumEnforcerTest(unittest.TestCase):
