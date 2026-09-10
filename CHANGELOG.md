@@ -22,6 +22,72 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 4.4.1
+
+*2026-09-10*
+
+### A decimal object's `lo` is no longer held to 32 bits
+
+`decode_decimal` refused every decimal object whose `lo` was wider than 32
+bits, and on Schwab's feed that is **most fill principals**. It raised
+`UnusableDecimalScale`, so nothing decoded to a wrong number — but the value
+was gone, and a refused value writes no log line of its own.
+
+The cause was reasoning where there should have been measurement. The
+encoding is a serialized .NET `System.Decimal`, whose 96-bit mantissa is laid
+out as three 32-bit members, `lo`, `mid` and `hi`, and this read `lo` as the
+first of them. Schwab does not send that layout. Measured over 5,843 decimal
+objects from a production `ACCT_ACTIVITY` archive:
+
+- every one carried `lo` alone, as a string of digits — no `mid` or `hi`,
+  ever;
+- 129 had a `lo` above 4294967295, and all 129 were refused. They were
+  `PrincipalAmmount` on `OrderFillCompleted` — Schwab's spelling — and
+  `EstimatedPrincipalAmount`, `EstimatedPrincipalAmnt` and `EstimatedNetAmount`
+  on `OrderCreated`;
+- read whole, all 33 refused fill principals equalled price times quantity
+  from the same message.
+
+At `signScale` 12 that is anything from 4294.967296 up: any fill principal
+above roughly $4,295.
+
+A lone `lo` is now the whole mantissa, bounded by the 96 bits the encoding
+allows. An object that carries `mid` or `hi` is still read as the three-member
+layout with each member held to 32 bits; that layout has never been captured,
+and the docs mark it Unconfirmed. Everything else that was refused still is.
+
+**If you catch `UnusableDecimalScale` per field, log the exception.** Only an
+unrecognised key writes a line of its own; a refused value does not, so a
+handler that swallows the exception keeps no record that a real value was
+dropped. The streaming page's example logs it.
+
+Two smaller fixes to the same function, both from review:
+
+- **A member that is an `int` subclass is reduced to a plain `int`.** The
+  new lone-`lo` path formatted the member straight into the result, so a
+  subclass's own `str` or `format` could make it decode as a different number
+  or raise past the one `except` callers write. `json.loads` never produces
+  one; a custom `StreamJsonDecoder` can.
+- **A corrupt `mid` or `hi` is named as itself.** Members are checked widest
+  first, so the refusal no longer blames a ten-digit `lo` that is ordinary on
+  its own.
+
+### A quote's `Mid` decodes negative on a sell order
+
+Documentation only; the decoder is right about what Schwab sends. `Mid`'s
+magnitude is exactly `(Bid + Ask) / 2` from the same quote, 563 of 563, but its
+sign followed the order's side: on the 182 quotes whose message carried
+`BuySellCode`, every buy was even and every sell odd. That is the opposite of
+the amounts, which are negative on a buy. Take the magnitude, or compute the
+mid from `Bid` and `Ask`.
+
+### Corrections to earlier entries
+
+The 4.2.0 entry, and an earlier one about the decoder recommended in 4.1.0,
+said that reading `lo` alone truncates anything above 4294.967295. That was
+reasoned from the .NET layout and is wrong about the wire. Both are corrected
+in place, and say so.
+
 ## 4.4.0
 
 *2026-09-10*
@@ -302,7 +368,9 @@ attempt is reliably wrong in at least one of five ways, each of which is a
 
 - the mantissa spans `lo`, `mid` and `hi`, so reading `lo` alone truncates
   anything over `4294.967295` at `signScale` 12 — `$5,000.00` decodes as
-  `$705.03`;
+  `$705.03`; *(corrected in 4.4.1: this was reasoned from the .NET layout and
+  is wrong about the wire. Schwab sends the whole mantissa in `lo`, and holding
+  it to 32 bits refused most fill principals.)*
 - an odd `signScale` means negative, and the sign is not the side;
 - an object with a `signScale` and no mantissa is **zero**, not unknown — it
   arrives that way as `LeavesQuantity` on the final fill of a completed order,
@@ -397,6 +465,11 @@ $705.03. A principal, a total or a share price reaches that easily. Reasoned
 from the .NET layout rather than observed: no captured payload has carried a
 non-zero `mid`, but a value that does not fit in 32 bits cannot be sent in `lo`
 alone.
+
+*Corrected in 4.4.1: the premise was wrong. Schwab sends the whole mantissa in
+`lo`, so a value that does not fit in 32 bits is sent in `lo` alone, and reading
+`lo` whole is correct. Measured over 5,843 decimal objects, none carried `mid`
+or `hi`.*
 
 Three more facts about the same encoding, from the consumer who took it to
 Schwab: the conversion was **confirmed in writing by Schwab Trader API
