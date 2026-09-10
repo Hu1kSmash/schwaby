@@ -1387,8 +1387,8 @@ class TokenFileAgeTest(unittest.TestCase):
     @no_duplicates
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_a_token_mapping_that_is_not_a_dict_is_accepted(self):
-        # A token_read_func may return any mapping; 4.4.2 built a client from
-        # these.
+        # A token_read_func may return any mapping, and these built a client
+        # before the shape check existed.
         import collections
         import types
         raw = {'token': {'access_token': 'a'},
