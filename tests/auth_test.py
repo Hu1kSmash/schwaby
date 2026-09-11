@@ -1343,6 +1343,22 @@ class TokenFileAgeTest(unittest.TestCase):
                          auth.token_file_age(self.token_path))
 
     @no_duplicates
+    def test_reading_the_age_does_not_log_at_info(self):
+        # A monitor polls the age. An INFO line per read floods its log and
+        # buries the line a client writes when it really loads the token.
+        self.write(json.dumps({
+            'creation_timestamp': TOKEN_CREATION_TIMESTAMP,
+            'token': {'access_token': 'a', 'refresh_token': 'r',
+                      'token_type': 'Bearer',
+                      'expires_at': int(time.time()) + 1800}}))
+
+        with self.assertNoLogs(auth.get_logger(), level='INFO'):
+            auth.token_file_age(self.token_path)
+        with self.assertLogs(auth.get_logger(), level='INFO') as cm:
+            auth.client_from_token_file(self.token_path, API_KEY, APP_SECRET)
+        self.assertIn('Loading token from file', '\n'.join(cm.output))
+
+    @no_duplicates
     def test_a_token_without_a_creation_timestamp_is_refused(self):
         self.write(json.dumps({'token': {'access_token': 'a'}}))
 

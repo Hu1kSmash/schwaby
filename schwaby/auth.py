@@ -311,9 +311,9 @@ def _is_finite(number):
         return False
 
 
-def __token_loader(token_path):
+def __token_loader(token_path, level=logging.INFO):
     def load_token():
-        get_logger().info('Loading token from file %s', token_path)
+        get_logger().log(level, 'Loading token from file %s', token_path)
 
         with open(token_path, 'rb') as f:
             try:
@@ -459,8 +459,10 @@ def token_file_age(token_path):
                         float can hold.
     :raises OSError: The file cannot be read.
     '''
+    # A monitor reads the age often, so this read logs at DEBUG. At INFO it
+    # would bury the line a client writes when it actually loads the token.
     return TokenMetadata.from_loaded_token(
-            __token_loader(token_path)(), None).token_age()
+            __token_loader(token_path, logging.DEBUG)(), None).token_age()
 
 
 ################################################################################
