@@ -8316,6 +8316,96 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             self.assertIsInstance(exc, schwaby.streaming.UnusableMessage)
             self.assertFalse(service is None and message is None)
 
+    def name_service(self, name_type):
+        # A custom decoder handing back the service name as a str subclass.
+        class Decoder(schwaby.streaming.StreamJsonDecoder):
+            def decode_json_string(self, raw):
+                frame = json.loads(raw)
+                for item in frame.get('data', []):
+                    item['service'] = name_type(item['service'])
+                return frame
+        self.client.json_decoder = Decoder()
+
+    async def relabel_report_for(self, ws_connect, name_type):
+        # The absorbed report is delivered when the next frame is read, hence
+        # the second frame.
+        socket = await self.login_and_get_socket(ws_connect)
+        errors = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: errors.append(exc))
+        self.client.add_level_one_equity_handler(lambda msg: None)
+        self.name_service(name_type)
+        socket.recv.side_effect = [
+                json.dumps({'data': [{'service': 'LEVELONE_EQUITIES',
+                                      'command': 'SUBS', 'content': None}]}),
+                json.dumps(self.streaming_entry('LEVELONE_EQUITIES', 'SUBS'))]
+
+        with self.assertLogs(schwaby.streaming.get_logger(),
+                             level='WARNING') as cm:
+            await self.client.handle_message()
+            await self.client.handle_message()
+        return errors, cm.records
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_service_name_cannot_forge_a_relabel_report(
+            self, ws_connect):
+        class LyingName(str):
+            def __str__(self):
+                return 'ok\nCRITICAL forged'
+
+        errors, records = await self.relabel_report_for(ws_connect, LyingName)
+
+        self.assertEqual(1, len(errors))
+        self.assertIn('could not be relabeled', str(errors[0]))
+        self.assertNotIn('\n', str(errors[0]))
+        self.assertFalse(any('\n' in r.getMessage() for r in records))
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_service_name_that_raises_does_not_end_the_loop(
+            self, ws_connect):
+        # The report is built inside an except block, so a __str__ that
+        # raised there escaped handle_message.
+        class RaisingName(str):
+            def __str__(self):
+                raise RuntimeError('no')
+
+        errors, _ = await self.relabel_report_for(ws_connect, RaisingName)
+
+        self.assertEqual(1, len(errors))
+        self.assertIn('could not be relabeled', str(errors[0]))
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_service_name_cannot_forge_the_handler_failure_line(
+            self, ws_connect):
+        class LyingName(str):
+            def __str__(self):
+                return 'ok\nCRITICAL forged'
+
+        socket = await self.login_and_get_socket(ws_connect)
+        errors = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: errors.append(exc))
+
+        def handler(msg):
+            raise ValueError('handler failed')
+        self.client.add_level_one_equity_handler(handler)
+        self.name_service(LyingName)
+        socket.recv.side_effect = [json.dumps(
+                self.streaming_entry('LEVELONE_EQUITIES', 'SUBS'))]
+
+        with self.assertLogs(schwaby.streaming.get_logger(),
+                             level='ERROR') as cm:
+            await self.client.handle_message()
+
+        lines = [r.getMessage() for r in cm.records
+                 if 'Stream handler for service' in r.getMessage()]
+        self.assertEqual(1, len(lines))
+        self.assertNotIn('\n', lines[0])
+        self.assertEqual(1, len(errors))
+
     @no_duplicates
     @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_relabel_failure_names_its_service_and_its_cause(
@@ -10017,6 +10107,27 @@ class UnknownStreamFieldTest(IsolatedAsyncioTestCase):
         # is not passing because relabeling did nothing at all.
         self.assertEqual(13.71, new['BID_PRICE'])
         self.assertEqual(13.72, new['ASK_PRICE'])
+
+    @no_duplicates
+    def test_a_key_is_read_as_plain_text_before_it_is_judged_a_field(self):
+        # A decoder's str subclass could answer isdigit for itself and put a
+        # forged line into the unknown-field warning.
+        class LyingKey(str):
+            def __str__(self):
+                return self
+
+            def isdigit(self):
+                return True
+
+        fields = streaming.StreamClient.LevelOneEquityFields
+        raw = {'key': 'F', LyingKey('x\nCRITICAL forged'): 1, '999': 2}
+        with self.assertLogs(streaming.get_logger(),
+                             level='WARNING') as caught:
+            fields.relabel_message(raw, dict(raw))
+        # Positive control: a genuine unknown id is still reported.
+        self.assertTrue(any('999' in line for line in caught.output))
+        self.assertFalse(
+                any('\n' in r.getMessage() for r in caught.records))
 
     @no_duplicates
     def test_an_unknown_field_is_reported_once_per_table_and_id(self):

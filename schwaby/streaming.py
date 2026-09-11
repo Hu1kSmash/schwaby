@@ -65,7 +65,9 @@ class _BaseFieldEnum(Enum):
             # to prevent, and reporting field 1 as one schwaby "has no name
             # for" would have been a wrong warning besides.
             try:
-                text_key = str(old_key)
+                # A plain str: a decoder's subclass could answer isdigit for
+                # itself, and put a forged line in the warning below.
+                text_key = str.__str__(str(old_key))
             except Exception:
                 # A key is whatever the decoder produced, and `str()` of a
                 # wide integer raises past sys.get_int_max_str_digits(). It
@@ -1832,7 +1834,7 @@ class StreamClient(EnumEnforcer):
                     relabel_failed = True
                     self._absorb(
                             'a %s message which could not be relabeled'
-                            % service, msg, frame=msg, service=service,
+                            % _printable(_safe_name(service), 64), msg, frame=msg, service=service,
                             cause=exc)
                 continue
 
@@ -1842,7 +1844,7 @@ class StreamClient(EnumEnforcer):
                 self.logger.exception(
                         'Stream handler for service %s raised an exception. '
                         'The message it was handling has been dropped.',
-                        service)
+                        _printable(_safe_name(service), 64))
                 # payload, not msg: the handler was given the relabeled
                 # message, so that is the one it failed on, and the one an
                 # error handler reading fields by name can make sense of.
