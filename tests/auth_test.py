@@ -1734,15 +1734,31 @@ class TokenFileWriterTest(unittest.TestCase):
             with self.subTest(token_path=token_path):
                 with self.assertRaises(TypeError):
                     auth.token_file_writer(token_path)
+        a_file = os.path.join(self.tmp_dir.name, 'a_file')
+        with open(a_file, 'w') as f:
+            f.write('x')
+        in_missing = os.path.join(self.tmp_dir.name, 'missing', 't.json')
+        dangling = os.path.join(self.tmp_dir.name, 'dangling.json')
+        os.symlink(in_missing, dangling)
         for token_path in ('', self.tmp_dir.name,
-                           pathlib.Path(self.tmp_dir.name)):
+                           pathlib.Path(self.tmp_dir.name),
+                           in_missing,
+                           os.path.join(a_file, 't.json'),
+                           dangling,
+                           os.path.join(self.tmp_dir.name, 'nul\0.json')):
             with self.subTest(token_path=token_path):
                 with self.assertRaises(ValueError):
                     auth.token_file_writer(token_path)
-        # Positive control: a PathLike is a path.
+        # Positive controls: a PathLike is a path, and a symlink into an
+        # existing directory is written through.
         auth.token_file_writer(pathlib.Path(self.token_path))({'t': 1})
         with open(self.token_path) as f:
             self.assertEqual({'t': 1}, json.load(f))
+        link = os.path.join(self.tmp_dir.name, 'link.json')
+        os.symlink(self.token_path, link)
+        auth.token_file_writer(link)({'t': 2})
+        with open(self.token_path) as f:
+            self.assertEqual({'t': 2}, json.load(f))
 
 
 class TokenFileAgeTest(unittest.TestCase):

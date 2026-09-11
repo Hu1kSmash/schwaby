@@ -369,13 +369,17 @@ def token_file_writer(token_path):
     supports it, and follows a symlink: see :ref:`token_file`.
 
     :param token_path: Path to write the token file to, a ``str`` or an
-                       ``os.PathLike`` that gives one. Its directory must
-                       exist. The first write comes after the login's code has
-                       been exchanged, and a code is good for one exchange, so
-                       a path that cannot be written means logging in again.
+                       ``os.PathLike`` that gives one, in a directory that
+                       exists. A ``~`` in it is not expanded. The first write
+                       comes after the login's code has been exchanged, and a
+                       code is good for one exchange, so a path that still
+                       cannot be written -- a directory without permission to
+                       write, say -- means logging in again.
     :raises TypeError: ``token_path`` is not a ``str`` path. A ``bytes`` path
                        is refused too: the write cannot use one.
-    :raises ValueError: ``token_path`` is empty or names a directory.
+    :raises ValueError: ``token_path`` is empty, names a directory, contains a
+                        NUL, or is not in an existing directory once a symlink
+                        is followed.
 
     The checks are made here rather than at the first write, which comes after
     the code is spent.
@@ -389,6 +393,12 @@ def token_file_writer(token_path):
     if not path or os.path.isdir(path):
         raise ValueError('token_path must name a file, and {!r} does '
                          'not'.format(path))
+    # The write follows a symlink and writes beside its target, so that is the
+    # directory that has to exist. realpath refuses a NUL itself.
+    directory = os.path.dirname(os.path.realpath(path))
+    if not os.path.isdir(directory):
+        raise ValueError('token_path must be in an existing directory, and '
+                         '{!r} is not one'.format(directory))
     return __make_update_token_func(token_path)
 
 
