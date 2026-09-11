@@ -990,6 +990,49 @@ class DocErrorHandlerRecipeTest(unittest.TestCase):
         self.assertFalse(any('\n' in a for a in alerts))
 
 
+class DocRefreshRecipeTest(unittest.TestCase):
+    """The refresh-failure recipe on the auth page, run as written.
+
+    A retryable refusal keeps retrying at any age, because Schwab has not held
+    exactly to its seven days. Past them the recipe alerts as well, and a
+    terminal refusal alerts without retrying.
+    """
+
+    @staticmethod
+    def run_recipe(error):
+        path = os.path.join(REPO_ROOT, 'docs', 'auth.rst')
+        recipes = [code for _, _, code in DocExampleTest.code_blocks_in([path])
+                   if 'except TokenRefreshError as e:' in code
+                   and 'retry_later()' in code]
+        assert len(recipes) == 1, len(recipes)
+
+        alerts, retries = [], []
+        client = MagicMock()
+        client.get_quote.side_effect = error
+        namespace = {'c': client, 'alert': alerts.append,
+                     'retry_later': lambda: retries.append(True)}
+        exec(compile(recipes[0], 'auth.rst', 'exec'), namespace)
+        return alerts, retries
+
+    @no_duplicates
+    def test_the_recipe_alerts_past_seven_days_and_keeps_retrying(self):
+        from schwaby.utils import TokenRefreshError
+
+        alerts, retries = self.run_recipe(TokenRefreshError(
+                'x', token_age=8 * 86400, refresh_token_invalid=False))
+        self.assertEqual(1, len(alerts))
+        self.assertEqual(1, len(retries))
+
+        alerts, retries = self.run_recipe(TokenRefreshError(
+                'x', token_age=86400, refresh_token_invalid=False))
+        self.assertEqual(0, len(alerts))
+        self.assertEqual(1, len(retries))
+
+        alerts, retries = self.run_recipe(TokenRefreshError(
+                'x', token_age=86400, refresh_token_invalid=True))
+        self.assertEqual(1, len(alerts))
+        self.assertEqual(0, len(retries))
+
 class DocExampleTest(unittest.TestCase):
     """Keyword arguments in documentation examples, against real signatures.
 

@@ -215,6 +215,14 @@ class BaseClient(EnumEnforcer):
             else:
                 advice = ('Schwab did not say the refresh token itself is '
                           'invalid, so this may be transient.')
+            if not invalid and age is not None and age > 7 * 24 * 60 * 60:
+                # Still retryable: Schwab has not held exactly to its seven
+                # days, and stopping an application that could have recovered
+                # is the worse mistake. But someone should know.
+                advice += (' The token is past the seven days Schwab '
+                           'documents for a refresh token, so alert someone: '
+                           'if this keeps failing, the login flow has to be '
+                           'completed again.')
 
             raise TokenRefreshError(
                     'Failed to refresh the Schwab token: {}. {} {}'.format(

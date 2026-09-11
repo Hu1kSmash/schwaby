@@ -2675,6 +2675,40 @@ class _TestClient:
 
 
     @no_duplicates
+    def test_a_retryable_refusal_past_seven_days_says_to_alert(self):
+        # Schwab has not held exactly to its seven days, so the verdict stays
+        # retryable, and the message is what says someone should know.
+        self.mock_session.get.side_effect = OAuthError(
+                error='invalid_client', description='Client not recognized')
+        for age, alerts in ((8 * 86400, True),
+                            (decimal.Decimal(8 * 86400), True),
+                            (7 * 86400, False), (86400, False), (None, False)):
+            with self.subTest(age=age):
+                if age is None:
+                    self.client.token_metadata = None
+                else:
+                    metadata = Mock()
+                    metadata.token_age.return_value = age
+                    self.client.token_metadata = metadata
+
+                with self.assertRaises(TokenRefreshError) as cm:
+                    self.client.get_quote(SYMBOL)
+
+                self.assertFalse(cm.exception.refresh_token_invalid)
+                self.assertEqual(alerts, 'alert someone' in str(cm.exception))
+
+        # A terminal refusal already says to log in again.
+        metadata = Mock()
+        metadata.token_age.return_value = 8 * 86400
+        self.client.token_metadata = metadata
+        self.mock_session.get.side_effect = OAuthError(
+                error='invalid_grant', description='expired')
+        with self.assertRaises(TokenRefreshError) as cm:
+            self.client.get_quote(SYMBOL)
+        self.assertTrue(cm.exception.refresh_token_invalid)
+        self.assertNotIn('alert someone', str(cm.exception))
+
+    @no_duplicates
     def test_token_refresh_error_without_metadata(self):
         # Clients built directly, as the tests do, have no token metadata.
         self.assertIsNone(self.client.token_metadata)

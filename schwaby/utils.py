@@ -441,9 +441,11 @@ class TokenRefreshError(SchwabError):
     ``token_age`` is the number of seconds since the token was originally
     authorized, or ``None`` if this client was built without token metadata.
     Schwab documents a refresh token as valid for seven days after creation,
-    and refreshing does not extend that, so a ``token_age`` past 604800 means
-    the window has closed and no amount of retrying will help -- someone has to
-    complete the login flow again.
+    and refreshing does not extend that, so a ``token_age`` past 604800 is past
+    its documented term. Schwab has not held exactly to that term, so the age
+    alone does not make a failure terminal -- ``refresh_token_invalid`` says
+    that -- but past seven days a retryable failure's message says to alert
+    someone.
 
     ``refresh_token_invalid`` is ``True`` when no amount of retrying will
     produce a working token, and only the full authorization_code flow -- which

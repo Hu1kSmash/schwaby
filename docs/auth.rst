@@ -298,6 +298,10 @@ token-shaped:
           # Only a new login flow fixes this. Retrying cannot.
           alert('refresh token is dead, log in again')
       else:
+          if e.token_age is not None and e.token_age > 7 * 24 * 60 * 60:
+              # Past Schwab's documented seven days. It may still recover,
+              # so keep retrying, but someone should know.
+              alert('token is past seven days and refreshes are failing')
           retry_later()
 
 Not every failure to refresh arrives as ``TokenRefreshError``. A server error
@@ -548,9 +552,11 @@ sets ``refresh_token_invalid``.
 ``False``. RFC 6749 defines ``invalid_client`` as the client -- the app key and
 secret -- failing to authenticate, but Schwab's codes do not always mean what
 the RFC says, and what Schwab means by this one has not been observed here, so
-the library does not guess. If it arrives on a token near or past seven days
-old -- ``token_age`` on the exception says how old -- complete the login flow
-again; otherwise check the app key and secret.
+the library does not guess. It is retryable, and the recipe above keeps
+retrying. If it keeps arriving, complete the login flow again, whatever
+``token_age`` says, since Schwab does not hold exactly to seven days; if a
+fresh login is refused the same way, check the app key and secret. Past seven
+days the exception's message says so, and the recipe alerts.
 
 
 +++++++++++++++++++++++++++++++++++++++
