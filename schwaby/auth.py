@@ -352,6 +352,34 @@ def __make_update_token_func(token_path):
     return update_token
 
 
+def token_file_writer(token_path):
+    '''Returns a ``token_write_func`` that writes to ``token_path`` the way
+    this library writes its own token files.
+
+    For :func:`client_from_received_url` and
+    :func:`client_from_access_functions`, which take a function rather than a
+    path. A login finished there with this writer leaves a file that
+    :func:`client_from_token_file`, :func:`easy_client` and
+    :func:`token_file_age` read, and every refresh after it writes there too.
+    Those functions wrap whatever writer they are given, so the file carries
+    the ``creation_timestamp`` they add; called directly, it writes what it is
+    given.
+
+    The write is atomic, readable only by the current user where the platform
+    supports it, and follows a symlink: see :ref:`token_file`.
+
+    :param token_path: Path to write the token file to. Its directory must
+                       exist. The first write comes after the login's code has
+                       been exchanged, and a code is good for one exchange, so
+                       a path that cannot be written means logging in again.
+    :raises TypeError: ``token_path`` is not a path: a ``str``, ``bytes`` or
+                       ``os.PathLike``. Checked here rather than at the first
+                       write, which comes after the code is spent.
+    '''
+    os.fspath(token_path)
+    return __make_update_token_func(token_path)
+
+
 
 def __normalize_credential(value, name):
     '''

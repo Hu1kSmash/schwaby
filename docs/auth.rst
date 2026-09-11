@@ -170,6 +170,11 @@ For that case, start the login with
           received_url=full_url_of_this_request,
           token_write_func=lambda token, *a, **kw: store_token(user, token))
 
+To keep the token in a file, the way the functions above do, pass
+:func:`~schwaby.auth.token_file_writer` as the ``token_write_func``. The file
+it leaves is one :func:`~schwaby.auth.client_from_token_file` and
+:func:`~schwaby.auth.easy_client` read.
+
 Two things are easy to get wrong here.
 
 **Pass the whole callback URL, query string included.** That query string
@@ -192,6 +197,8 @@ crosses a network rather than a loopback interface.
 .. autoclass:: schwaby.auth.AuthContext
 
 .. autofunction:: schwaby.auth.client_from_received_url
+
+.. autofunction:: schwaby.auth.token_file_writer
 
 
 .. _token_expiration:
@@ -228,6 +235,8 @@ window closes --- can read it from the token file without building a client:
 
 .. autofunction:: schwaby.auth.token_file_age
 
+
+.. _token_file:
 
 --------------
 The Token File

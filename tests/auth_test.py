@@ -1689,6 +1689,51 @@ class LoginExchangeErrorTest(unittest.TestCase):
                         lambda *args, **kwargs: None)
 
 
+class TokenFileWriterTest(unittest.TestCase):
+    '''The public writer leaves the token file the library reads.'''
+
+    CONTEXT = auth.AuthContext('https://127.0.0.1:8182',
+                               'https://example.invalid/authorize', 'state')
+    RECEIVED = 'https://127.0.0.1:8182/?code=c&state=state'
+
+    def setUp(self):
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp_dir.cleanup)
+        self.token_path = os.path.join(self.tmp_dir.name, 'token.json')
+
+    @no_duplicates
+    def test_a_login_finished_with_it_leaves_a_file_the_library_reads(self):
+        from authlib.integrations.httpx_client import OAuth2Client
+        token = {'access_token': 'a', 'refresh_token': 'r',
+                 'token_type': 'Bearer', 'expires_in': 1800,
+                 'expires_at': int(time.time()) + 1800}
+        with patch.object(OAuth2Client, 'fetch_token', return_value=token):
+            auth.client_from_received_url(
+                    API_KEY, APP_SECRET, self.CONTEXT, self.RECEIVED,
+                    auth.token_file_writer(self.token_path))
+
+        with open(self.token_path) as f:
+            written = json.load(f)
+        self.assertEqual(token, written['token'])
+        self.assertLess(abs(auth.token_file_age(self.token_path)), 5)
+        auth.client_from_token_file(self.token_path, API_KEY, APP_SECRET)
+        if os.name == 'posix':
+            self.assertEqual(
+                    0o600, stat.S_IMODE(os.stat(self.token_path).st_mode))
+
+    @no_duplicates
+    def test_a_path_that_is_not_a_path_is_refused_before_any_login(self):
+        for token_path in (None, 7, ['token.json']):
+            with self.subTest(token_path=token_path):
+                with self.assertRaises(TypeError):
+                    auth.token_file_writer(token_path)
+        # Positive control: a PathLike is a path.
+        import pathlib
+        auth.token_file_writer(pathlib.Path(self.token_path))({'t': 1})
+        with open(self.token_path) as f:
+            self.assertEqual({'t': 1}, json.load(f))
+
+
 class TokenFileAgeTest(unittest.TestCase):
 
     def setUp(self):
