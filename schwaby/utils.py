@@ -458,6 +458,17 @@ class UnusableOrderActivityError(SchwabError, ValueError):
     '''
 
 
+#: The decimal context ``execution_totals`` adds up in, whatever the caller's
+#: is: wide enough that the sums and products of a real order's quantities and
+#: prices are exact, with no traps beyond a default context's, so a caller's
+#: lower precision or ``Inexact`` trap neither changes the totals nor raises.
+_EXECUTION_CONTEXT = decimal.Context(
+        prec=60, rounding=decimal.ROUND_HALF_EVEN, Emin=-999999, Emax=999999,
+        capitals=1, clamp=0, flags=[],
+        traps=[decimal.InvalidOperation, decimal.DivisionByZero,
+               decimal.Overflow])
+
+
 def _order_number(leg, key, where):
     '''A number from an execution leg, as a ``Decimal``. A float is read from
     its shortest round-trip text, which for a number Schwab sends is its JSON
@@ -469,9 +480,9 @@ def _order_number(leg, key, where):
                 '{} has no {} number'.format(where, key))
     if issubclass(type(value), float):
         value = decimal.Decimal(float.__repr__(value))
-    elif issubclass(type(value), int):
-        value = decimal.Decimal(int.__int__(value))
     else:
+        # Decimal reads an int or a Decimal by its value, not through a
+        # subclass's overrides.
         value = decimal.Decimal(value)
     if not value.is_finite():
         raise UnusableOrderActivityError(
@@ -479,57 +490,9 @@ def _order_number(leg, key, where):
     return value
 
 
-def execution_totals(order):
-    '''
-    Returns what an order's fills add up to, per leg, as
-    ``{legId: ExecutionTotal(quantity, average_price)}``.
-
-    ``order`` is one parsed order: ``client.get_order(...).json()``, or one
-    element of ``client.get_orders_for_account(...).json()``. This makes no
-    request.
-
-    Only an activity whose ``activityType`` is ``EXECUTION`` *and* whose
-    ``executionType`` is ``FILL`` counts. A canceled or replaced order carries
-    an ``EXECUTION`` activity too, with ``executionType`` ``CANCELED`` and
-    execution legs whose quantities were never filled, so adding up by
-    ``activityType`` alone reports canceled quantity as filled.
-
-    ``quantity`` is the sum of a leg's execution quantities, and
-    ``average_price`` is their price weighted by quantity. The sums, the
-    products and the division all use the current decimal context: at its
-    default precision of 28 digits they are exact for any real order, while a
-    lower precision rounds them, quantity included, and a trap set on the
-    context can raise. A price is as Schwab
-    quotes it, with no contract multiplier applied; for the ETF fills that were
-    compared with their recorded fill prices, that was per share. A float is
-    read into ``Decimal`` from its shortest text, which is its JSON text for
-    any price of up to 15 significant digits, so a price of ``58.1853`` is
-    exactly that. An order with no fills gives an empty dict.
-
-    Leg totals are not checked against ``filledQuantity``: a ratio spread's
-    legs would legitimately differ.
-
-    :param order: The parsed order.
-    :raises UnusableOrderActivityError: The order, one of its activities or an
-                                        execution leg is not the shape this
-                                        reads; a quantity or price is not a
-                                        finite number, or a quantity is
-                                        negative; or a ``mismarkedQuantity``
-                                        is not zero.
-    '''
-    # Types through type(), which a class cannot fake the way it can fake
-    # __class__ for isinstance, and read through the built-in methods.
-    if not issubclass(type(order), dict):
-        raise UnusableOrderActivityError(
-                'expected one parsed order, not a {}'.format(
-                    _type_name(order)))
-    activities = dict.get(order, 'orderActivityCollection')
-    if activities is None:
-        return {}
-    if not issubclass(type(activities), list):
-        raise UnusableOrderActivityError(
-                'orderActivityCollection is not a list')
-
+def _add_up_fills(activities):
+    """The per-leg totals of an ``orderActivityCollection`` already known to
+    be a list, in whatever decimal context is current."""
     quantities, amounts = {}, {}
     for a, activity in enumerate(
             list.__getitem__(activities, slice(None)), 1):
@@ -582,6 +545,65 @@ def execution_totals(order):
     return {leg_id: ExecutionTotal(
                 quantity, amounts[leg_id] / quantity if quantity else None)
             for leg_id, quantity in quantities.items()}
+
+
+def execution_totals(order):
+    '''
+    Returns what an order's fills add up to, per leg, as
+    ``{legId: ExecutionTotal(quantity, average_price)}``.
+
+    ``order`` is one parsed order: ``client.get_order(...).json()``, or one
+    element of ``client.get_orders_for_account(...).json()``. This makes no
+    request.
+
+    Only an activity whose ``activityType`` is ``EXECUTION`` *and* whose
+    ``executionType`` is ``FILL`` counts. A canceled or replaced order carries
+    an ``EXECUTION`` activity too, with ``executionType`` ``CANCELED`` and
+    execution legs whose quantities were never filled, so adding up by
+    ``activityType`` alone reports canceled quantity as filled.
+
+    ``quantity`` is the sum of a leg's execution quantities, and
+    ``average_price`` is their price weighted by quantity. The arithmetic
+    runs in its own decimal context, so the caller's precision and traps do
+    not change it: the sums and products are exact for any real order, and the
+    average is divided to 60 significant digits. A price is as Schwab
+    quotes it, with no contract multiplier applied; for the ETF fills that were
+    compared with their recorded fill prices, that was per share. A float is
+    read into ``Decimal`` from its shortest text, which is its JSON text for
+    any price of up to 15 significant digits, so a price of ``58.1853`` is
+    exactly that. An order with no fills gives an empty dict.
+
+    Leg totals are not checked against ``filledQuantity``: a ratio spread's
+    legs would legitimately differ.
+
+    :param order: The parsed order.
+    :raises UnusableOrderActivityError: The order, one of its activities or an
+                                        execution leg is not the shape this
+                                        reads; a quantity or price is not a
+                                        finite number, or a quantity is
+                                        negative; a number is too large to add
+                                        up; or a ``mismarkedQuantity`` is not
+                                        zero.
+    '''
+    # Types through type(), which a class cannot fake the way it can fake
+    # __class__ for isinstance, and read through the built-in methods.
+    if not issubclass(type(order), dict):
+        raise UnusableOrderActivityError(
+                'expected one parsed order, not a {}'.format(
+                    _type_name(order)))
+    activities = dict.get(order, 'orderActivityCollection')
+    if activities is None:
+        return {}
+    if not issubclass(type(activities), list):
+        raise UnusableOrderActivityError(
+                'orderActivityCollection is not a list')
+
+    try:
+        with decimal.localcontext(_EXECUTION_CONTEXT):
+            return _add_up_fills(activities)
+    except decimal.Overflow:
+        raise UnusableOrderActivityError(
+                'a quantity or price is too large to add up') from None
 
 
 def _expiry_authlib_acts_on(expires_at):

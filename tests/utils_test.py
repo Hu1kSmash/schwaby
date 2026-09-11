@@ -1229,6 +1229,109 @@ class ExecutionTotalsTest(unittest.TestCase):
                 self.order(self.activity('FILL', leg)))))
 
     @no_duplicates
+    def test_a_null_mismarked_quantity_counts_as_zero_and_a_negative_is_not(
+            self):
+        leg = self.leg(1, 1.0, 1.0, mismarkedQuantity=None)
+        self.assertEqual([1], list(execution_totals(
+                self.order(self.activity('FILL', leg)))))
+        with self.assertRaisesRegex(
+                UnusableOrderActivityError, 'mismarkedQuantity'):
+            execution_totals(self.order(self.activity(
+                    'FILL', self.leg(1, 1.0, 1.0, mismarkedQuantity=-1.0))))
+
+    @no_duplicates
+    def test_decimal_numbers_give_the_same_totals(self):
+        # A caller parsing with parse_float=Decimal sends Decimal, not float.
+        import json
+        text = json.dumps(self.order(
+                self.activity('FILL', self.leg(1, 3.0, 58.10)),
+                self.activity('FILL', self.leg(1, 2.0, 58.20))))
+        as_float = execution_totals(json.loads(text))
+        as_decimal = execution_totals(
+                json.loads(text, parse_float=decimal.Decimal))
+        self.assertEqual(as_float, as_decimal)
+        self.assertEqual(decimal.Decimal('58.14'), as_decimal[1].average_price)
+
+    @no_duplicates
+    def test_an_empty_string_is_not_an_absent_collection(self):
+        with self.assertRaisesRegex(UnusableOrderActivityError, 'not a list'):
+            execution_totals({'orderActivityCollection': ''})
+
+    @no_duplicates
+    def test_the_callers_decimal_context_does_not_change_the_totals(self):
+        order = self.order(
+                self.activity('FILL', self.leg(1, 12345.0, 58.1853)),
+                self.activity('FILL', self.leg(1, 1.0, 58.19)))
+        expected = execution_totals(order)
+        self.assertEqual(decimal.Decimal('12346'), expected[1].quantity)
+        with decimal.localcontext(decimal.Context(
+                prec=4, traps=[decimal.Inexact, decimal.Rounded])):
+            self.assertEqual(expected, execution_totals(order))
+
+    @no_duplicates
+    def test_a_number_too_large_to_add_up_is_refused(self):
+        huge = decimal.Decimal('1e999990')
+        with self.assertRaisesRegex(UnusableOrderActivityError, 'too large'):
+            execution_totals(self.order(self.activity(
+                    'FILL', self.leg(1, huge, huge), quantity=1.0)))
+
+    @no_duplicates
+    def test_subclasses_are_read_through_the_built_in_types(self):
+        # A custom JSON decoder can hand back subclasses, and what is checked
+        # must be what is counted.
+        class Hiding(list):
+            def __iter__(self):
+                return iter(())
+
+        class Lying(str):
+            def __ne__(self, other):
+                return False
+
+            def __eq__(self, other):
+                return True
+
+            __hash__ = str.__hash__
+
+        class Noisy(float):
+            def __repr__(self):
+                return '999.0'
+
+        class Forgetful(dict):
+            def get(self, key, default=None):
+                return None
+
+        fill = self.activity('FILL', self.leg(1, 1.0, 10.0))
+        for name, order in (
+                ('activities', {'orderActivityCollection': Hiding([fill])}),
+                ('legs', self.order(dict(
+                    fill, executionLegs=Hiding(fill['executionLegs'])))),
+                ('order', Forgetful(self.order(fill)))):
+            with self.subTest(read_through=name):
+                self.assertEqual(decimal.Decimal('1'),
+                                 execution_totals(order)[1].quantity)
+
+        # A str subclass cannot pass another activity off as a fill.
+        for field, value in (('activityType', Lying('ORDER_ACTION')),
+                             ('executionType', Lying('CANCELED'))):
+            with self.subTest(field=field):
+                other = self.activity('FILL', self.leg(1, 5.0, 10.0))
+                other[field] = value
+                totals = execution_totals(self.order(fill, other))
+                self.assertEqual(decimal.Decimal('1'), totals[1].quantity)
+
+        # A float subclass is read through float's own repr.
+        totals = execution_totals(self.order(
+                self.activity('FILL', self.leg(1, 1.0, Noisy(58.1)))))
+        self.assertEqual(decimal.Decimal('58.1'), totals[1].average_price)
+
+        # The leg id comes back a plain int.
+        class LegId(int):
+            pass
+        totals = execution_totals(self.order(
+                self.activity('FILL', self.leg(LegId(1), 1.0, 1.0))))
+        self.assertIs(int, type(next(iter(totals))))
+
+    @no_duplicates
     def test_a_shape_it_cannot_read_is_refused(self):
         leg, activity, order = self.leg, self.activity, self.order
         for bad, message in (
