@@ -650,8 +650,14 @@ class LoginExchangeError(SchwabError, OAuthError):
 
     It is also authlib's ``OAuthError``, so ``except OAuthError`` written
     before this class existed still catches it, and ``error`` and
-    ``description`` carry what the endpoint said. The original error is
-    preserved as ``__cause__``.
+    ``description`` carry the refusal's code and text. For
+    ``unusable_token_response`` that text is this library's description of
+    what came back, not the endpoint's. The original error is preserved as
+    ``__cause__``.
+
+    A redirect whose ``state`` does not match the login's is refused by authlib
+    before any exchange, and raises authlib's own exception for that rather
+    than this.
 
     Unlike :class:`TokenRefreshError` it has no ``token_age`` or
     ``refresh_token_invalid``. No token exists yet, and an authorization code

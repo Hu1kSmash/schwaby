@@ -568,8 +568,9 @@ or a response that is not JSON raises as it does during a call.
 
 .. autoclass:: schwaby.utils.LoginExchangeError
 
-``OAuthError: invalid_client`` is reported with ``refresh_token_invalid``
-``False``. RFC 6749 defines ``invalid_client`` as the client -- the app key and
+During a refresh, ``OAuthError: invalid_client`` is reported with
+``refresh_token_invalid`` ``False``. RFC 6749 defines ``invalid_client`` as the
+client -- the app key and
 secret -- failing to authenticate, but Schwab's codes do not always mean what
 the RFC says, and what Schwab means by this one has not been observed here, so
 the library does not guess. It is retryable, and the recipe above keeps
@@ -584,8 +585,8 @@ days the exception's message says so, and the recipe alerts.
 +++++++++++++++++++++++++++++++++++++++
 
 A login raises this, as :class:`~schwaby.utils.LoginExchangeError`, when the
-token endpoint answers with something that is not a usable token. Nothing is written, so a token file already on disk is left as
-it was.
+token endpoint answers with something that is not a usable token. Nothing is
+written, so a token file already on disk is left as it was.
 
 During a call it arrives as :class:`~schwaby.utils.TokenRefreshError`, with
 ``refresh_token_invalid`` ``False`` and this error as its ``__cause__``.
