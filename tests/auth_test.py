@@ -1729,10 +1729,15 @@ class TokenFileWriterTest(unittest.TestCase):
             def __fspath__(self):
                 return b'/tmp/token.json'
 
-        for token_path in (None, 7, ['token.json'],
-                           self.token_path.encode(), BytesPath()):
+        for token_path in (None, 7, ['token.json']):
             with self.subTest(token_path=token_path):
                 with self.assertRaises(TypeError):
+                    auth.token_file_writer(token_path)
+        # Refused by name: other checks can trip over bytes too, with a
+        # message that does not say what is wrong.
+        for token_path in (self.token_path.encode(), BytesPath()):
+            with self.subTest(token_path=token_path):
+                with self.assertRaisesRegex(TypeError, 'not bytes'):
                     auth.token_file_writer(token_path)
         a_file = os.path.join(self.tmp_dir.name, 'a_file')
         with open(a_file, 'w') as f:
@@ -1745,6 +1750,7 @@ class TokenFileWriterTest(unittest.TestCase):
                            in_missing,
                            os.path.join(a_file, 't.json'),
                            dangling,
+                           os.path.join(self.tmp_dir.name, 'nope', '..'),
                            os.path.join(self.tmp_dir.name, 'nul\0.json')):
             with self.subTest(token_path=token_path):
                 with self.assertRaises(ValueError):
@@ -1759,6 +1765,24 @@ class TokenFileWriterTest(unittest.TestCase):
         auth.token_file_writer(link)({'t': 2})
         with open(self.token_path) as f:
             self.assertEqual({'t': 2}, json.load(f))
+        # A link whose target does not exist yet, in a directory that does,
+        # is written through and creates the target.
+        target = os.path.join(self.tmp_dir.name, 'target.json')
+        pending = os.path.join(self.tmp_dir.name, 'pending.json')
+        os.symlink(target, pending)
+        auth.token_file_writer(pending)({'t': 3})
+        with open(target) as f:
+            self.assertEqual({'t': 3}, json.load(f))
+
+    @no_duplicates
+    def test_a_nul_is_refused_where_realpath_would_let_it_through(self):
+        # On Windows realpath returns a path with a NUL unchanged rather than
+        # raising, as it does on POSIX. Stand that in here, since the suite
+        # runs on both.
+        with patch('os.path.realpath', side_effect=lambda path: path):
+            with self.assertRaises(ValueError):
+                auth.token_file_writer(
+                        os.path.join(self.tmp_dir.name, 'nul\0.json'))
 
 
 class TokenFileAgeTest(unittest.TestCase):

@@ -374,12 +374,14 @@ def token_file_writer(token_path):
                        comes after the login's code has been exchanged, and a
                        code is good for one exchange, so a path that still
                        cannot be written -- a directory without permission to
-                       write, say -- means logging in again.
+                       write, say -- means logging in again. A relative path
+                       is resolved against the working directory at each
+                       write, as it is for the other entry points.
     :raises TypeError: ``token_path`` is not a ``str`` path. A ``bytes`` path
                        is refused too: the write cannot use one.
-    :raises ValueError: ``token_path`` is empty, names a directory, contains a
-                        NUL, or is not in an existing directory once a symlink
-                        is followed.
+    :raises ValueError: ``token_path`` contains a NUL, or, once a symlink is
+                        followed, is empty, names a directory or is not in an
+                        existing directory.
 
     The checks are made here rather than at the first write, which comes after
     the code is spent.
@@ -390,12 +392,18 @@ def token_file_writer(token_path):
     if not issubclass(type(path), str):
         raise TypeError('token_path must be a str or an os.PathLike that '
                         'gives one, not bytes')
-    if not path or os.path.isdir(path):
+    # Refused here rather than left to realpath, which raises on a NUL on
+    # POSIX but on Windows returns the path unchanged.
+    if '\0' in path:
+        raise ValueError('token_path must not contain a NUL')
+    # The write follows a symlink and writes to its target, so that is the
+    # file that must not be a directory, and its directory must exist. An empty
+    # path resolves to the working directory.
+    resolved = os.path.realpath(path)
+    if os.path.isdir(resolved):
         raise ValueError('token_path must name a file, and {!r} does '
                          'not'.format(path))
-    # The write follows a symlink and writes beside its target, so that is the
-    # directory that has to exist. realpath refuses a NUL itself.
-    directory = os.path.dirname(os.path.realpath(path))
+    directory = os.path.dirname(resolved)
     if not os.path.isdir(directory):
         raise ValueError('token_path must be in an existing directory, and '
                          '{!r} is not one'.format(directory))
