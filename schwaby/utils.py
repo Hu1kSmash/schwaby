@@ -346,7 +346,7 @@ def find_account_hash(account_numbers, account_number):
                            rather than converted, because converting a number
                            drops any leading zero and then matches nothing.
     :raises TypeError: ``account_number`` is not a ``str``.
-    :raises ValueError: ``account_number`` has whitespace around it.
+    :raises ValueError: ``account_number`` is not ASCII digits.
     :raises AccountNumberNotFoundError: No account has that number.
     :raises UnusableAccountNumbersError: The list is not that shape, or has
                                          that number more than once.
@@ -358,11 +358,14 @@ def find_account_hash(account_numbers, account_number):
                 'account_number must be a str, as Schwab types it, not a '
                 '{}'.format(_type_name(account_number)))
     account_number = str.__str__(account_number)
-    # One read from a file or an environment variable can keep its newline,
-    # and would otherwise read as an account the token does not cover.
-    if account_number != account_number.strip():
+    # Schwab's account numbers are ASCII digits. Anything else -- a newline or
+    # a byte order mark kept from a file, an unset environment variable, a
+    # hyphen -- would read as an account the token does not cover, and that
+    # sends a caller with a typo off to log in again.
+    if not (account_number.isascii() and account_number.isdigit()):
         raise ValueError(
-                'account_number has whitespace around it; strip it first')
+                'account_number must be ASCII digits, and this one is empty '
+                'or has other characters in it')
 
     if not issubclass(type(account_numbers), list):
         raise UnusableAccountNumbersError(

@@ -35,7 +35,7 @@ TOKEN_PATH = './token.json'
 
 # The account to trade, as a string. A token can cover several accounts, and
 # the order of the account list does not tell you which one you mean.
-ACCOUNT_NUMBER = 'XXXXXXXX'
+ACCOUNT_NUMBER = '123456789'
 
 # Deliberately far from the market so this does not fill while you read it.
 SYMBOL = 'AAPL'

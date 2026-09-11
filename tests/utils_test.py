@@ -910,14 +910,20 @@ class FindAccountHashTest(unittest.TestCase):
                 self.assertNotIn('2222222', str(cm.exception))
 
     @no_duplicates
-    def test_whitespace_around_the_account_number_is_refused(self):
-        # A number read from a file keeps its newline, and would otherwise be
-        # reported as an account the token does not cover.
-        for number in ('11111111\n', ' 11111111', '11111111 '):
+    def test_an_account_number_that_is_not_ascii_digits_is_refused(self):
+        # Each of these would otherwise be reported as an account the token
+        # does not cover: a number read from a file with its line ending or
+        # byte order mark, an unset environment variable, a typo.
+        for number in ('11111111\n', ' 11111111', '11111111 ', '11111111\r',
+                       '\t11111111', '11111111\xa0', '\ufeff11111111',
+                       '11111111\u200b', '11111111\x00', '', '1111-1111',
+                       'ABC11111',
+                       # Digits, but not ASCII ones.
+                       '\u0661\u0661\u0661\u0661\u0661\u0661\u0661\u0661'):
             with self.subTest(number=number):
-                with self.assertRaisesRegex(ValueError, 'whitespace') as cm:
+                with self.assertRaisesRegex(ValueError, 'ASCII digits') as cm:
                     find_account_hash(self.ACCOUNTS, number)
-                self.assertNotIn('1111111', str(cm.exception))
+                self.assertNotIn('1111', str(cm.exception))
 
     @no_duplicates
     def test_a_str_subclass_is_read_as_its_text(self):
