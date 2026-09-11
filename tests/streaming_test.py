@@ -145,8 +145,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         # No custom parser
         msg = ('Failed to parse message. This often happens with ' +
-               'unknown symbols or other error conditions. Full ' +
-               'message text:')
+               'unknown symbols or other error conditions')
         with self.assertRaisesRegex(schwaby.streaming.UnparsableMessage, msg):
             await self.client.level_one_equity_subs(['GOOG', 'MSFT'])
 

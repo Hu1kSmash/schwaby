@@ -733,8 +733,9 @@ class StreamClient(EnumEnforcer):
             # The text is quoted and cut: the frame is whatever arrived, line
             # breaks and megabytes included, and raw_msg keeps all of it.
             msg = ('Failed to parse message. This often happens with ' +
-                   'unknown symbols or other error conditions. Full ' +
-                   'message text: ' + _safe_value(raw))
+                   'unknown symbols or other error conditions, or a custom ' +
+                   'decoder raising ValueError. Message text, quoted and ' +
+                   'cut: ' + _safe_value(raw))
             raise UnparsableMessage(raw, e, msg)
 
         self.logger.debug(
