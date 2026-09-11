@@ -29,6 +29,7 @@ from schwaby.utils import (
 from schwaby.utils import EnumEnforcer, _describe_error
 from .utils import no_duplicates, MockResponse
 
+import decimal
 import enum
 import unittest
 
@@ -761,6 +762,7 @@ class UtilsTest(unittest.TestCase):
             'AccountHashMismatchException': (r(), 123, 'BBBB', 'm'),
             'AccountNumberNotFoundError': ('m',),
             'UnusableAccountNumbersError': ('m',),
+            'UnusableOrderActivityError': ('m',),
             'TokenRefreshError': ('m',),
             'LoginExchangeError': ('invalid_grant', 'code already used'),
             'RedirectTimeoutError': ('m',),
@@ -1105,3 +1107,166 @@ class FindAccountHashTest(unittest.TestCase):
                 {'accountNumber': '11111111', 'hashValue': 'HASH-B'}])
         with self.assertRaises(UnusableAccountNumbersError):
             find_account_hash(accounts, '11111111')
+
+
+from schwaby.utils import (
+        ExecutionTotal, UnusableOrderActivityError, execution_totals)
+
+
+class ExecutionTotalsTest(unittest.TestCase):
+    """Per-leg fill totals from an order's activity, in the shapes measured
+    read-only on real orders: ETF orders filled in one or two executions, a
+    two-leg vertical in one execution, and canceled or replaced orders whose
+    CANCELED execution legs carry quantities never filled."""
+
+    @staticmethod
+    def leg(leg_id, quantity, price, **extra):
+        leg = {'legId': leg_id, 'quantity': quantity,
+               'mismarkedQuantity': 0.0, 'price': price,
+               'time': '2026-09-01T14:30:00+0000', 'instrumentId': 7}
+        leg.update(extra)
+        return leg
+
+    @staticmethod
+    def activity(execution_type, *legs, quantity=None):
+        return {'activityType': 'EXECUTION', 'activityId': 1,
+                'executionType': execution_type,
+                'quantity': (quantity if quantity is not None else sum(
+                    l['quantity'] for l in legs if type(l) is dict)),
+                'orderRemainingQuantity': 0.0, 'executionLegs': list(legs)}
+
+    @staticmethod
+    def order(*activities, **fields):
+        order = {'status': 'FILLED', 'orderActivityCollection': list(activities)}
+        order.update(fields)
+        return order
+
+    @no_duplicates
+    def test_one_fill_is_its_quantity_and_price(self):
+        totals = execution_totals(self.order(
+                self.activity('FILL', self.leg(1, 5.0, 58.1853))))
+        self.assertEqual({1: ExecutionTotal(decimal.Decimal('5'),
+                                            decimal.Decimal('58.1853'))},
+                         totals)
+        self.assertIs(decimal.Decimal, type(totals[1].quantity))
+        self.assertIs(decimal.Decimal, type(totals[1].average_price))
+
+    @no_duplicates
+    def test_two_executions_average_by_quantity(self):
+        totals = execution_totals(self.order(
+                self.activity('FILL', self.leg(1, 3.0, 58.10)),
+                self.activity('FILL', self.leg(1, 2.0, 58.20))))
+        self.assertEqual(decimal.Decimal('5'), totals[1].quantity)
+        self.assertEqual(decimal.Decimal('58.14'), totals[1].average_price)
+
+    @no_duplicates
+    def test_a_canceled_execution_is_not_a_fill(self):
+        canceled = self.order(
+                self.activity('CANCELED', self.leg(1, 10.0, 58.0)),
+                status='CANCELED', filledQuantity=0.0)
+        self.assertEqual({}, execution_totals(canceled))
+
+        # Positive control: beside a fill, only the fill counts.
+        mixed = self.order(self.activity('FILL', self.leg(1, 2.0, 10.0)),
+                           self.activity('CANCELED', self.leg(1, 8.0, 10.0)))
+        self.assertEqual(decimal.Decimal('2'),
+                         execution_totals(mixed)[1].quantity)
+
+    @no_duplicates
+    def test_an_activity_that_is_not_an_execution_is_skipped(self):
+        other = {'activityType': 'ORDER_ACTION', 'executionLegs': None}
+        order = self.order(other, self.activity('FILL', self.leg(1, 1.0, 1.0)))
+        self.assertEqual([1], list(execution_totals(order)))
+
+    @no_duplicates
+    def test_a_two_leg_order_is_totalled_per_leg(self):
+        # One activity carrying one execution leg per leg, its quantity counting
+        # spreads rather than the sum across the legs.
+        order = self.order(self.activity(
+                'FILL', self.leg(1, 1.0, 2.50), self.leg(2, 1.0, 1.10),
+                quantity=1.0))
+        totals = execution_totals(order)
+        self.assertEqual({1, 2}, set(totals))
+        self.assertEqual(decimal.Decimal('2.50'), totals[1].average_price)
+        self.assertEqual(decimal.Decimal('1.10'), totals[2].average_price)
+
+    @no_duplicates
+    def test_an_order_with_no_fills_gives_an_empty_dict(self):
+        self.assertEqual({}, execution_totals({'status': 'WORKING'}))
+        self.assertEqual({}, execution_totals(self.order()))
+
+    @no_duplicates
+    def test_a_float_is_read_from_its_text(self):
+        # From the binary expansion, 0.1 and 0.2 would not average to 0.15.
+        totals = execution_totals(self.order(
+                self.activity('FILL', self.leg(1, 1.0, 0.1)),
+                self.activity('FILL', self.leg(1, 1.0, 0.2))))
+        self.assertEqual('0.15', str(totals[1].average_price))
+
+    @no_duplicates
+    def test_a_leg_whose_fills_add_up_to_nothing_has_no_average_price(self):
+        totals = execution_totals(self.order(
+                self.activity('FILL', self.leg(1, 0.0, 58.1853))))
+        self.assertEqual(ExecutionTotal(decimal.Decimal('0'), None), totals[1])
+
+    @no_duplicates
+    def test_a_missing_mismarked_quantity_counts_as_zero(self):
+        leg = self.leg(1, 1.0, 1.0)
+        del leg['mismarkedQuantity']
+        self.assertEqual([1], list(execution_totals(
+                self.order(self.activity('FILL', leg)))))
+
+    @no_duplicates
+    def test_a_shape_it_cannot_read_is_refused(self):
+        leg, activity, order = self.leg, self.activity, self.order
+        for bad, message in (
+                (None, 'expected one parsed order'),
+                ([], 'expected one parsed order'),
+                ({'orderActivityCollection': 'x'}, 'not a list'),
+                (order(5), 'activity 1 is not an object'),
+                (order({'executionLegs': []}), 'activityType'),
+                (order({'activityType': 'EXECUTION'}), 'executionType'),
+                (order({'activityType': 'EXECUTION',
+                        'executionType': 'FILL'}), 'executionLegs'),
+                (order(activity('FILL', 5)), 'execution leg 1 is not'),
+                (order(activity('FILL', leg(None, 1.0, 1.0))), 'legId'),
+                (order(activity('FILL', leg(True, 1.0, 1.0))), 'legId'),
+                (order(activity('FILL', leg('1', 1.0, 1.0))), 'legId'),
+                (order(activity('FILL', leg(1, None, 1.0), quantity=1.0)),
+                 'quantity'),
+                (order(activity('FILL', leg(1, '5', 1.0), quantity=1.0)),
+                 'quantity'),
+                (order(activity('FILL', leg(1, True, 1.0), quantity=1.0)),
+                 'quantity'),
+                (order(activity('FILL', leg(1, float('nan'), 1.0),
+                                quantity=1.0)), 'quantity'),
+                (order(activity('FILL', leg(1, float('inf'), 1.0),
+                                quantity=1.0)), 'quantity'),
+                (order(activity('FILL', leg(1, -1.0, 1.0))),
+                 'negative quantity'),
+                (order(activity('FILL', leg(1, 1.0, None))), 'price'),
+                (order(activity('FILL', leg(1, 1.0, float('nan')))), 'price'),
+                (order(activity('FILL', leg(1, 1.0, 58.1853,
+                                            mismarkedQuantity=1.0))),
+                 'mismarkedQuantity')):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(
+                        UnusableOrderActivityError, message) as cm:
+                    execution_totals(bad)
+                self.assertIsInstance(cm.exception, ValueError)
+                self.assertNotIn('58.1853', str(cm.exception))
+
+    @no_duplicates
+    def test_a_faked_class_is_not_taken_for_the_real_type(self):
+        class FakeDict:
+            __class__ = dict
+
+        class FakeList:
+            __class__ = list
+
+        for bad in (FakeDict(), {'orderActivityCollection': FakeList()},
+                    self.order(FakeDict()),
+                    self.order(self.activity('FILL', FakeDict()))):
+            with self.subTest(bad=bad):
+                with self.assertRaises(UnusableOrderActivityError):
+                    execution_totals(bad)

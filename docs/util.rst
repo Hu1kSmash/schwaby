@@ -42,6 +42,56 @@ token can use, and this finds the one you mean.
 .. autofunction:: schwaby.utils.find_account_hash
 
 
+.. _execution_totals:
+
+---------------------------------------
+Add up what an order filled, leg by leg
+---------------------------------------
+
+An order's ``orderActivityCollection`` records each execution with a quantity
+and price per leg. :func:`~schwaby.utils.execution_totals` adds them up in
+``Decimal``: the quantity each leg filled, and its price weighted by quantity.
+
+.. code-block:: python
+
+  from schwaby.utils import execution_totals
+
+  r = client.get_order(order_id, account_hash)
+  r.raise_for_status()
+  for leg_id, total in execution_totals(r.json()).items():
+      print(leg_id, total.quantity, total.average_price)
+
+.. warning::
+
+  **A canceled or replaced order carries an execution too.** Its activity has
+  ``activityType`` ``EXECUTION`` and ``executionType`` ``CANCELED``, and its
+  execution legs carry quantities that were never filled. That was the shape of
+  all 25 canceled or replaced orders in the sample below, each with
+  ``filledQuantity`` zero. Adding up by ``activityType`` alone reports those
+  quantities as filled; count only ``executionType`` ``FILL``, as this function
+  does.
+
+What it rests on was measured read-only over 423 orders:
+
+- 8 ETF orders filled in two executions, and 387 in one. Each leg's fills added
+  up to ``filledQuantity``, each activity's quantity to its execution legs, and
+  the weighted price was within 0.2% of the placing program's own recorded fill
+  price for every order it had a record of.
+- 3 option orders. One was a vertical spread with equal leg quantities, filled
+  in a single execution: its one activity carried an execution leg per leg, and
+  both ``filledQuantity`` and the activity's ``quantity`` counted spreads.
+- ``mismarkedQuantity`` was zero on every execution leg, which is why one that
+  is not zero is refused rather than guessed at.
+
+Not observed, so not claimed: a partial fill before a replace, an option order
+filled in more than one execution, a ratio spread, and an order whose
+instrument is plain ``EQUITY`` rather than an ETF.
+
+.. autofunction:: schwaby.utils.execution_totals
+
+.. autoclass:: schwaby.utils.ExecutionTotal
+
+
 .. _extract_order_id:
 
 ---------------------------------------
@@ -274,6 +324,8 @@ deliberately does not.
 .. autoclass:: schwaby.utils.AccountNumberNotFoundError
 
 .. autoclass:: schwaby.utils.UnusableAccountNumbersError
+
+.. autoclass:: schwaby.utils.UnusableOrderActivityError
 
 .. autoclass:: schwaby.orders.common.InvalidOrderException
 

@@ -1,6 +1,8 @@
 '''Implements additional functionality beyond what's implemented in the client
 module.'''
 
+import collections
+import decimal
 import re
 import time
 
@@ -425,6 +427,143 @@ def find_account_hash(account_numbers, account_number):
 #: then, and every call in between fails with a 401 and no exception. Refused,
 #: it fails loudly on the first refresh instead.
 _LONGEST_EXPIRY = 7 * 24 * 60 * 60
+
+
+#: What an order's fills add up to for one leg: the quantity filled, and the
+#: price weighted by quantity. Both are ``Decimal``, and ``average_price`` is
+#: ``None`` for a leg whose fills add up to no quantity.
+ExecutionTotal = collections.namedtuple(
+        'ExecutionTotal', ['quantity', 'average_price'])
+
+
+class UnusableOrderActivityError(SchwabError, ValueError):
+    '''
+    Raised by :func:`execution_totals` when an order's activity is not the
+    shape it reads, or an execution leg carries a ``mismarkedQuantity`` other
+    than zero, whose meaning has not been observed. Its message names the
+    field and where it sits, and repeats no value from the order.
+    '''
+
+
+def _order_number(leg, key, where):
+    '''A number from an execution leg, as a ``Decimal``. A float is read from
+    its shortest round-trip text, which for a number Schwab sends is its JSON
+    text, rather than from its binary expansion.'''
+    value = dict.get(leg, key)
+    if (issubclass(type(value), bool) or not issubclass(
+            type(value), (int, float, decimal.Decimal))):
+        raise UnusableOrderActivityError(
+                '{} has no {} number'.format(where, key))
+    if issubclass(type(value), float):
+        value = decimal.Decimal(float.__repr__(value))
+    elif issubclass(type(value), int):
+        value = decimal.Decimal(int.__int__(value))
+    else:
+        value = decimal.Decimal(value)
+    if not value.is_finite():
+        raise UnusableOrderActivityError(
+                '{} has a {} that is not finite'.format(where, key))
+    return value
+
+
+def execution_totals(order):
+    '''
+    Returns what an order's fills add up to, per leg, as
+    ``{legId: ExecutionTotal(quantity, average_price)}``.
+
+    ``order`` is one parsed order: ``client.get_order(...).json()``, or one
+    element of ``client.get_orders_for_account(...).json()``. This makes no
+    request.
+
+    Only an activity whose ``activityType`` is ``EXECUTION`` *and* whose
+    ``executionType`` is ``FILL`` counts. A canceled or replaced order carries
+    an ``EXECUTION`` activity too, with ``executionType`` ``CANCELED`` and
+    execution legs whose quantities were never filled, so adding up by
+    ``activityType`` alone reports canceled quantity as filled.
+
+    ``quantity`` is the sum of a leg's execution quantities, and
+    ``average_price`` is their price weighted by quantity, divided in the
+    current decimal context and not otherwise rounded. A price is per share,
+    or per unit of an option's price, with no contract multiplier applied.
+    Numbers are read into ``Decimal`` from their JSON text, so a price of
+    ``58.1853`` is exactly that. An order with no fills gives an empty dict.
+
+    Leg totals are not checked against ``filledQuantity``: a ratio spread's
+    legs would legitimately differ.
+
+    :param order: The parsed order.
+    :raises UnusableOrderActivityError: The order, one of its activities or an
+                                        execution leg is not the shape this
+                                        reads; a quantity or price is not a
+                                        finite number, or a quantity is
+                                        negative; or a ``mismarkedQuantity``
+                                        is not zero.
+    '''
+    # Types through type(), which a class cannot fake the way it can fake
+    # __class__ for isinstance, and read through the built-in methods.
+    if not issubclass(type(order), dict):
+        raise UnusableOrderActivityError(
+                'expected one parsed order, not a {}'.format(
+                    _type_name(order)))
+    activities = dict.get(order, 'orderActivityCollection')
+    if activities is None:
+        return {}
+    if not issubclass(type(activities), list):
+        raise UnusableOrderActivityError(
+                'orderActivityCollection is not a list')
+
+    quantities, amounts = {}, {}
+    for a, activity in enumerate(
+            list.__getitem__(activities, slice(None)), 1):
+        where = 'activity {}'.format(a)
+        if not issubclass(type(activity), dict):
+            raise UnusableOrderActivityError(where + ' is not an object')
+        activity_type = dict.get(activity, 'activityType')
+        if not issubclass(type(activity_type), str):
+            raise UnusableOrderActivityError(
+                    where + ' has no activityType string')
+        if str.__str__(activity_type) != 'EXECUTION':
+            continue
+        execution_type = dict.get(activity, 'executionType')
+        if not issubclass(type(execution_type), str):
+            raise UnusableOrderActivityError(
+                    where + ' has no executionType string')
+        if str.__str__(execution_type) != 'FILL':
+            continue
+
+        legs = dict.get(activity, 'executionLegs')
+        if not issubclass(type(legs), list):
+            raise UnusableOrderActivityError(
+                    where + ' has no executionLegs list')
+        for e, leg in enumerate(list.__getitem__(legs, slice(None)), 1):
+            at = '{}, execution leg {}'.format(where, e)
+            if not issubclass(type(leg), dict):
+                raise UnusableOrderActivityError(at + ' is not an object')
+            leg_id = dict.get(leg, 'legId')
+            if (issubclass(type(leg_id), bool)
+                    or not issubclass(type(leg_id), int)):
+                raise UnusableOrderActivityError(
+                        at + ' has no integer legId')
+            leg_id = int.__int__(leg_id)
+            quantity = _order_number(leg, 'quantity', at)
+            price = _order_number(leg, 'price', at)
+            if quantity < 0:
+                raise UnusableOrderActivityError(
+                        at + ' has a negative quantity')
+            if (dict.get(leg, 'mismarkedQuantity') is not None
+                    and _order_number(leg, 'mismarkedQuantity', at) != 0):
+                raise UnusableOrderActivityError(
+                        at + ' has a mismarkedQuantity other than zero, which '
+                        'has not been observed, so what it means for the '
+                        'quantity filled is unknown')
+            quantities[leg_id] = quantities.get(
+                    leg_id, decimal.Decimal(0)) + quantity
+            amounts[leg_id] = amounts.get(
+                    leg_id, decimal.Decimal(0)) + quantity * price
+
+    return {leg_id: ExecutionTotal(
+                quantity, amounts[leg_id] / quantity if quantity else None)
+            for leg_id, quantity in quantities.items()}
 
 
 def _expiry_authlib_acts_on(expires_at):
