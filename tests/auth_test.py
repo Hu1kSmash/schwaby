@@ -1395,6 +1395,29 @@ class StoredTokenShapeTest(unittest.TestCase):
         self.assertEqual(200, client.get_quote('AAPL').status_code)
 
     @no_duplicates
+    def test_a_stored_expiry_past_seven_days_refreshes_on_the_first_call(self):
+        # One stored in milliseconds, say. authlib would not refresh it until
+        # then, and every call in between would fail with a 401.
+        import time
+        now = int(time.time())
+        base = {'access_token': 'a', 'token_type': 'Bearer',
+                'refresh_token': 'r'}
+        for token, refreshes in (
+                (dict(base, expires_at=(now + 1800) * 1000), 1),
+                (dict(base, expires_at=now + 8 * 86400), 1),
+                (dict(base, expires_at=now + 6 * 86400), 0),
+                # Without a refresh token there is nothing to refresh with.
+                ({'access_token': 'a', 'token_type': 'Bearer',
+                  'expires_at': (now + 1800) * 1000}, 0)):
+            with self.subTest(token=token):
+                client = self.build(token)
+                requests = []
+                self.on_transport(client, requests)
+                client.get_quote('AAPL')
+                self.assertEqual(refreshes, sum(
+                        p.endswith('/oauth/token') for p in requests))
+
+    @no_duplicates
     def test_the_first_call_refresh_applies_only_where_authlib_counts(self):
         # Without an expires_in there is no expiry to count from the build,
         # and an expires_at that int() cannot take at all is authlib's to

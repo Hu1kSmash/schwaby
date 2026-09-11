@@ -288,8 +288,13 @@ def _stored_token_for_session(token):
     # restarting more often than that never refreshes and goes on sending a
     # token that has lapsed. When the token was issued is unknown, so with a
     # refresh token to refresh it, its expiry is taken as now and the first
-    # call refreshes it.
-    if token.get('refresh_token') and _expiry_counted_from_build(token):
+    # call refreshes it. So is an expires_at authlib reads but that is further
+    # off than the seven days a refresh token lasts -- one stored in
+    # milliseconds, say -- which authlib would not refresh until then, while
+    # every call in between failed with a 401.
+    if token.get('refresh_token') and (
+            _expiry_counted_from_build(token)
+            or _expiry_too_far_off(token)):
         token['expires_at'] = int(time.time())
     return token
 
@@ -311,6 +316,19 @@ def _expiry_counted_from_build(token):
         # authlib raises on this itself, and it is left to do so.
         return False
     return False
+
+
+def _expiry_too_far_off(token):
+    '''Whether ``expires_at`` is one authlib reads, but further off than the
+    bound on an expiry it will refresh while it is of use.'''
+    expires_at = token.get('expires_at')
+    if expires_at is None:
+        return False
+    try:
+        expires_at = int(expires_at)
+    except Exception:
+        return False
+    return not _expiry_authlib_acts_on(expires_at)
 
 
 def _new_session(session_class, api_key, app_secret, token, update_token):

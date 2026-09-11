@@ -45,11 +45,14 @@ class HTTPStatusErrorTest(unittest.TestCase):
     @staticmethod
     def _client(status):
         import httpx2
+        import time
         from schwaby.auth import client_from_access_functions
 
+        # An access token with an hour left, so no call refreshes it. An
+        # expires_at centuries off is refreshed on the first call instead.
         token = {'access_token': 'a', 'refresh_token': 'r',
                  'token_type': 'Bearer', 'expires_in': 3600,
-                 'expires_at': 9999999999}
+                 'expires_at': int(time.time()) + 3600}
         client = client_from_access_functions(
                 'api-key', 'app-secret',
                 lambda: {'creation_timestamp': 9999999999, 'token': token},
