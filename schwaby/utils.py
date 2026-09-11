@@ -3,6 +3,7 @@ module.'''
 
 import collections
 import decimal
+import logging
 import re
 import time
 
@@ -385,12 +386,41 @@ class UnusableAccountNumbersError(SchwabError, ValueError):
     '''
     Raised by :func:`find_account_hash` when the account list is not the shape
     of the JSON body :meth:`Client.get_account_numbers
-    <schwaby.client.Client.get_account_numbers>` responds with, or lists the
+    <schwaby.client.Client.get_account_numbers>` responds with, has an entry
+    that could be the account asked for but cannot be read, or lists the
     account number more than once.
 
     Either way the answer cannot be trusted to name one account, so no hash is
     returned. Its message names neither account number.
     '''
+
+
+def get_logger():
+    return logging.getLogger(__name__)
+
+
+#: The kinds of skipped account entry already reported, so a list that carries
+#: one on every call warns once rather than on every lookup.
+_reported_account_entry_problems = set()
+
+
+def _report_skipped_account_entry(entry):
+    '''Warn, once per kind, that :func:`find_account_hash` skipped an entry for
+    another account whose hash cannot be used. Names the problem, never the
+    account number.'''
+    if not dict.__contains__(entry, 'hashValue'):
+        problem = 'has no hashValue'
+    elif issubclass(type(dict.get(entry, 'hashValue')), str):
+        problem = 'has an empty hashValue'
+    else:
+        problem = 'has a hashValue that is not a string'
+    if problem in _reported_account_entry_problems:
+        return
+    _reported_account_entry_problems.add(problem)
+    get_logger().warning(
+            'find_account_hash skipped an account list entry for another '
+            'account that %s. It is not the account asked for, so the answer '
+            'is unaffected. Reported once per kind of entry.', problem)
 
 
 def find_account_hash(account_numbers, account_number):
@@ -419,8 +449,17 @@ def find_account_hash(account_numbers, account_number):
     :raises TypeError: ``account_number`` is not a ``str``.
     :raises ValueError: ``account_number`` is not ASCII digits.
     :raises AccountNumberNotFoundError: No account has that number.
-    :raises UnusableAccountNumbersError: The list is not that shape, or has
-                                         that number more than once.
+    :raises UnusableAccountNumbersError: The list is not a list of objects,
+                                         an entry that could be this account
+                                         cannot be read, or the list has that
+                                         number more than once.
+
+    An entry whose ``hashValue`` is missing, not a string or empty is skipped
+    when its ``accountNumber`` is a string of ASCII digits other than this one:
+    it names another account, so it cannot change the answer. It is reported
+    once per kind of entry, as a warning on this module's logger that names no
+    account number. Any other unreadable entry could be this account, and
+    refuses the list rather than being ignored.
     '''
     # Types are checked through type() rather than isinstance, which a class
     # can satisfy by faking __class__.
@@ -454,16 +493,26 @@ def find_account_hash(account_numbers, account_number):
         if not issubclass(type(entry), dict):
             raise UnusableAccountNumbersError(malformed)
         number = dict.get(entry, 'accountNumber')
-        hash_value = dict.get(entry, 'hashValue')
-        if not (issubclass(type(number), str)
-                and issubclass(type(hash_value), str)):
+        if not issubclass(type(number), str):
             raise UnusableAccountNumbersError(malformed)
         number = str.__str__(number)
-        hash_value = str.__str__(hash_value)
-        if not hash_value:
-            raise UnusableAccountNumbersError(malformed)
-        if number == account_number:
-            hashes.append(hash_value)
+        hash_value = dict.get(entry, 'hashValue')
+        if issubclass(type(hash_value), str) and str.__str__(hash_value):
+            if number == account_number:
+                hashes.append(str.__str__(hash_value))
+            continue
+        # A hash that cannot be used. An entry that provably names another
+        # account -- ASCII digits that are not this number -- cannot change the
+        # answer, so it is skipped rather than stopping a lookup that has
+        # nothing to do with it. One that could be this account still refuses:
+        # ignoring it would turn an odd list into a wrong "not found" or a
+        # wrong hash.
+        if (number != account_number
+                and number.isascii()
+                and number.isdigit()):
+            _report_skipped_account_entry(entry)
+            continue
+        raise UnusableAccountNumbersError(malformed)
 
     if not hashes:
         raise AccountNumberNotFoundError(

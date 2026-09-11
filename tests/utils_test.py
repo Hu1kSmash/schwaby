@@ -989,19 +989,69 @@ class FindAccountHashTest(unittest.TestCase):
     @no_duplicates
     def test_a_response_that_is_not_the_account_list_is_refused(self):
         # Every entry is checked, including those after the one that matches.
+        # Each unreadable entry here could be the account asked for.
         good = {'accountNumber': '11111111', 'hashValue': 'HASH-ONE'}
         for accounts in (good, None, 'HASH-ONE',
                          [good, None],
                          [good, ['33333333', 'HASH-THREE']],
                          [good, {'accountNumber': 33333333, 'hashValue': 'H'}],
-                         [good, {'accountNumber': '33333333', 'hashValue': 7}],
-                         [good, {'accountNumber': '33333333', 'hashValue': ''}],
-                         [good, {'accountNumber': '33333333'}]):
+                         [good, {'accountNumber': None, 'hashValue': 'H'}],
+                         [good, {'hashValue': 'H'}],
+                         # The account asked for, with a hash that cannot be
+                         # used, before or after a readable duplicate.
+                         [good, {'accountNumber': '11111111',
+                                 'hashValue': None}],
+                         [{'accountNumber': '11111111', 'hashValue': ''},
+                          good],
+                         # And with no readable duplicate to trip the
+                         # duplicate check instead.
+                         [{'accountNumber': '11111111', 'hashValue': ''},
+                          {'accountNumber': '33333333', 'hashValue': 'H'}],
+                         # Not ASCII digits, so it could be this number as a
+                         # file or a person wrote it.
+                         [good, {'accountNumber': ' 11111111',
+                                 'hashValue': None}],
+                         [good, {'accountNumber': 'ABC33333'}]):
             with self.subTest(accounts=accounts):
                 with self.assertRaises(UnusableAccountNumbersError) as cm:
                     find_account_hash(accounts, '11111111')
                 self.assertNotIn('11111111', str(cm.exception))
                 self.assertNotIn('33333333', str(cm.exception))
+
+    @no_duplicates
+    def test_an_unusable_entry_for_another_account_is_skipped_once_reported(
+            self):
+        # An odd linked or closed account must not stop a lookup for a clean
+        # one, and it is worth seeing once rather than on every call.
+        import schwaby.utils as utils_module
+        utils_module._reported_account_entry_problems.clear()
+        self.addCleanup(utils_module._reported_account_entry_problems.clear)
+        good = {'accountNumber': '11111111', 'hashValue': 'HASH-ONE'}
+        for other, problem in (
+                ({'accountNumber': '33333333'}, 'has no hashValue'),
+                ({'accountNumber': '33333333', 'hashValue': None},
+                 'not a string'),
+                ({'accountNumber': '33333333', 'hashValue': 7},
+                 'not a string'),
+                ({'accountNumber': '033333333', 'hashValue': ''},
+                 'has an empty hashValue')):
+            with self.subTest(other=other):
+                utils_module._reported_account_entry_problems.clear()
+                with self.assertLogs(utils_module.get_logger(),
+                                     level='WARNING') as cm:
+                    self.assertEqual('HASH-ONE',
+                                     find_account_hash([other, good],
+                                                       '11111111'))
+                logged = '\n'.join(cm.output)
+                self.assertIn(problem, logged)
+                self.assertNotIn('11111111', logged)
+                self.assertNotIn('3333333', logged)
+                # Once per kind: the same list again logs nothing.
+                with self.assertNoLogs(utils_module.get_logger(),
+                                       level='WARNING'):
+                    self.assertEqual('HASH-ONE',
+                                     find_account_hash([good, other],
+                                                       '11111111'))
 
     @no_duplicates
     def test_an_entry_str_subclass_is_read_as_its_text(self):
