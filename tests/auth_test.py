@@ -1418,22 +1418,35 @@ class StoredTokenShapeTest(unittest.TestCase):
                         p.endswith('/oauth/token') for p in requests))
 
     @no_duplicates
-    def test_the_first_call_refresh_applies_only_where_authlib_counts(self):
-        # Without an expires_in there is no expiry to count from the build,
-        # and an expires_at that int() cannot take at all is authlib's to
-        # refuse, as it did before.
+    def test_an_expiry_authlib_would_not_act_on_refreshes_first(self):
+        # authlib refreshes only once an expiry it reads as an int is near.
+        # With none it can read that way, and nothing to count from, it never
+        # refreshes, and every call fails with a 401 once the token lapses.
+        import time
         base = {'access_token': 'a', 'token_type': 'Bearer',
                 'refresh_token': 'r'}
-        for token in (dict(base, expires_at=None),
-                      dict(base, expires_at=None, expires_in=0)):
+        for token in (dict(base), dict(base, expires_at=None),
+                      dict(base, expires_at=None, expires_in=0),
+                      dict(base, expires_at=0),
+                      dict(base, expires_at='2026-09-11T12:00:00Z'),
+                      dict(base, expires_at='1789122544.3392556'),
+                      dict(base, expires_at=float('nan'))):
             with self.subTest(token=token):
                 client = self.build(token)
                 requests = []
                 self.on_transport(client, requests)
                 client.get_quote('AAPL')
                 self.assertEqual(
-                        0, sum(p.endswith('/oauth/token') for p in requests))
+                        1, sum(p.endswith('/oauth/token') for p in requests))
 
+        # Positive control: an int expiry inside the bound is left alone.
+        client = self.build(dict(base, expires_at=int(time.time()) + 1800))
+        requests = []
+        self.on_transport(client, requests)
+        client.get_quote('AAPL')
+        self.assertEqual(0, sum(p.endswith('/oauth/token') for p in requests))
+
+        # One int() cannot take at all is authlib's to refuse, as before.
         with self.assertRaises(TypeError):
             self.build(dict(base, expires_at=[1], expires_in=1800))
 

@@ -226,29 +226,41 @@ class HTTPStatusErrorTest(unittest.TestCase):
         # authlib raises UnsupportedTokenTypeError locally, before any
         # request, when the stored token has no access token of a type it can
         # send -- a token file damaged before refreshes were checked, say.
-        # Retrying never helps, so it says to log in. Schwab's own
+        # Without a refresh token retrying never helps, so it says to log in.
+        # With one, the token has no expiry authlib acts on, so it is
+        # refreshed first, and a refresh that works replaces it. Schwab's own
         # unsupported_token_type rejection is a different class and stays
         # retryable; one has been seen to recover.
         import httpx2
         from schwaby.auth import client_from_access_functions
         from schwaby.utils import TokenRefreshError
+
+        def build(token, requests):
+            def handler(request):
+                requests.append(request.url.path)
+                if request.url.path.endswith('/oauth/token'):
+                    return self._json_response(200, self.GOOD_TOKEN, request)
+                return httpx2.Response(200, json={}, request=request)
+            client = client_from_access_functions(
+                    'api-key', 'app-secret',
+                    lambda: {'creation_timestamp': 9999999999, 'token': token},
+                    lambda *args, **kwargs: None)
+            client.session._transport = httpx2.MockTransport(handler)
+            client.session._mounts = {}
+            return client
+
         requests = []
-
-        def handler(request):
-            requests.append(request.url.path)
-            return httpx2.Response(200, json={}, request=request)
-
-        damaged = {'message': 'Unauthorized', 'refresh_token': 'r'}
-        client = client_from_access_functions(
-                'api-key', 'app-secret',
-                lambda: {'creation_timestamp': 9999999999, 'token': damaged},
-                lambda *args, **kwargs: None)
-        client.session._transport = httpx2.MockTransport(handler)
-        client.session._mounts = {}
+        client = build({'message': 'Unauthorized'}, requests)
         with self.assertRaises(TokenRefreshError) as caught:
             client.get_quote('F')
         self.assertTrue(caught.exception.refresh_token_invalid)
         self.assertEqual([], requests)
+
+        requests = []
+        client = build({'message': 'Unauthorized', 'refresh_token': 'r'},
+                       requests)
+        self.assertEqual(200, client.get_quote('F').status_code)
+        self.assertEqual(1, sum(p.endswith('/oauth/token') for p in requests))
 
         client, _ = self._refreshing_client(
                 lambda request: self._json_response(

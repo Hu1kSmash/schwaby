@@ -285,50 +285,36 @@ def _stored_token_for_session(token):
                     'The token\'s {} is not a string, so the token cannot be '
                     'sent or refreshed. {}'.format(key, advice))
 
-    # authlib counts the expiry from the moment a client is built when the
-    # token has expires_in and no expires_at it can read, so a process
-    # restarting more often than that never refreshes and goes on sending a
-    # token that has lapsed. When the token was issued is unknown, so with a
+    # authlib refreshes a token only once an expiry it reads as an int is near.
+    # One with no such expiry -- none at all, an ISO date or a float in a
+    # string -- is never refreshed. One counted from expires_in is counted
+    # afresh at every build, so a process restarting more often than that
+    # never refreshes either. And one further off than the seven days a
+    # refresh token lasts, stored in milliseconds say, is not reached while it
+    # is of use. Each goes on sending a lapsed token, and every call fails with
+    # a 401 and no exception. When the token was issued is unknown, so with a
     # refresh token to refresh it, its expiry is taken as now and the first
-    # call refreshes it. So is an expires_at authlib reads but that is further
-    # off than the seven days a refresh token lasts -- one stored in
-    # milliseconds, say -- which authlib would not refresh until then, while
-    # every call in between failed with a 401.
-    if token.get('refresh_token') and (
-            _expiry_counted_from_build(token)
-            or _expiry_too_far_off(token)):
+    # call refreshes it.
+    if token.get('refresh_token') and _expiry_needs_refreshing_first(token):
         token['expires_at'] = int(time.time())
     return token
 
 
-def _expiry_counted_from_build(token):
-    '''Whether authlib would count this token's expiry from ``expires_in``, as
-    of the moment it is loaded. ``OAuth2Token`` does that when ``expires_at``
-    is missing, null, or does not parse as an int.'''
-    if not token.get('expires_in'):
-        return False
+def _expiry_needs_refreshing_first(token):
+    '''Whether authlib would not refresh this token while its expiry is of use:
+    ``expires_at`` is missing, null or not readable as an int, so authlib
+    counts ``expires_in`` from the build or has no expiry at all; or it is
+    further off than the bound on an expiry. A zero expiry authlib already
+    treats as lapsed, and refreshes itself.'''
     expires_at = token.get('expires_at')
     if expires_at is None:
         return True
     try:
-        int(expires_at)
+        expires_at = int(expires_at)
     except ValueError:
         return True
     except Exception:
         # authlib raises on this itself, and it is left to do so.
-        return False
-    return False
-
-
-def _expiry_too_far_off(token):
-    '''Whether ``expires_at`` is one authlib reads, but further off than the
-    bound on an expiry it will refresh while it is of use.'''
-    expires_at = token.get('expires_at')
-    if expires_at is None:
-        return False
-    try:
-        expires_at = int(expires_at)
-    except Exception:
         return False
     return not _expiry_authlib_acts_on(expires_at)
 
