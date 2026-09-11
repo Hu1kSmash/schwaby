@@ -22,6 +22,32 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 4.7.1
+
+*2026-09-11*
+
+Two fixes. `schwaby.utils` gains a `get_logger()`, as every other module already
+has; nothing else public is added, and nothing is removed or renamed.
+
+- `token_file_age` raises `ValueError` for a token file `client_from_token_file`
+  refuses: one whose `token` entry is not a JSON object, or whose `token_type`
+  or refresh token is neither a string nor null. It returned the age, so a
+  monitor reported a healthy token that no client could be built from. These
+  are the shapes the client checks before building a session; a token that
+  passes can still fail at build, on an expiry authlib cannot read for
+  instance, as it could in 4.7.0.
+- `find_account_hash` skips an entry whose `hashValue` is missing, not a
+  string or empty when its `accountNumber` is a string of ASCII digits other
+  than the one asked for. Such an entry names another account, and it refused
+  the whole list, so an odd linked or closed account would have stopped every
+  lookup on the token, including those for accounts that were well-formed. No
+  such entry has been seen from Schwab. A skipped
+  entry logs a warning on `schwaby.utils` once per kind of entry, naming no
+  account number. An unreadable entry that could be the account asked for
+  still raises `UnusableAccountNumbersError`: one that is not an object, whose
+  `accountNumber` is missing, not a string or not ASCII digits, or that is the
+  account asked for with a hash that cannot be used.
+
 ## 4.7.0
 
 *2026-09-11*
