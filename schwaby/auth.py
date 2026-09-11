@@ -362,21 +362,33 @@ def token_file_writer(token_path):
     :func:`client_from_token_file`, :func:`easy_client` and
     :func:`token_file_age` read, and every refresh after it writes there too.
     Those functions wrap whatever writer they are given, so the file carries
-    the ``creation_timestamp`` they add; called directly, it writes what it is
-    given.
+    the ``creation_timestamp`` they keep for the token; called directly, it
+    writes what it is given.
 
     The write is atomic, readable only by the current user where the platform
     supports it, and follows a symlink: see :ref:`token_file`.
 
-    :param token_path: Path to write the token file to. Its directory must
+    :param token_path: Path to write the token file to, a ``str`` or an
+                       ``os.PathLike`` that gives one. Its directory must
                        exist. The first write comes after the login's code has
                        been exchanged, and a code is good for one exchange, so
                        a path that cannot be written means logging in again.
-    :raises TypeError: ``token_path`` is not a path: a ``str``, ``bytes`` or
-                       ``os.PathLike``. Checked here rather than at the first
-                       write, which comes after the code is spent.
+    :raises TypeError: ``token_path`` is not a ``str`` path. A ``bytes`` path
+                       is refused too: the write cannot use one.
+    :raises ValueError: ``token_path`` is empty or names a directory.
+
+    The checks are made here rather than at the first write, which comes after
+    the code is spent.
     '''
-    os.fspath(token_path)
+    path = os.fspath(token_path)
+    # tempfile will not put a str prefix on a bytes directory, so a bytes path
+    # raised at the first write, after the exchange.
+    if not issubclass(type(path), str):
+        raise TypeError('token_path must be a str or an os.PathLike that '
+                        'gives one, not bytes')
+    if not path or os.path.isdir(path):
+        raise ValueError('token_path must name a file, and {!r} does '
+                         'not'.format(path))
     return __make_update_token_func(token_path)
 
 

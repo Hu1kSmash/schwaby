@@ -1723,12 +1723,23 @@ class TokenFileWriterTest(unittest.TestCase):
 
     @no_duplicates
     def test_a_path_that_is_not_a_path_is_refused_before_any_login(self):
-        for token_path in (None, 7, ['token.json']):
+        import pathlib
+
+        class BytesPath:
+            def __fspath__(self):
+                return b'/tmp/token.json'
+
+        for token_path in (None, 7, ['token.json'],
+                           self.token_path.encode(), BytesPath()):
             with self.subTest(token_path=token_path):
                 with self.assertRaises(TypeError):
                     auth.token_file_writer(token_path)
+        for token_path in ('', self.tmp_dir.name,
+                           pathlib.Path(self.tmp_dir.name)):
+            with self.subTest(token_path=token_path):
+                with self.assertRaises(ValueError):
+                    auth.token_file_writer(token_path)
         # Positive control: a PathLike is a path.
-        import pathlib
         auth.token_file_writer(pathlib.Path(self.token_path))({'t': 1})
         with open(self.token_path) as f:
             self.assertEqual({'t': 1}, json.load(f))
