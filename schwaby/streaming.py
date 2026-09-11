@@ -2194,7 +2194,13 @@ class StreamClient(EnumEnforcer):
             if token is not None:
                 known = StreamClient._ACCOUNT_ACTIVITY_MESSAGE_TYPES_FOLDED
                 name = _safe_name(token)
-                if name.casefold() not in known:
+                # An empty type is not a type nobody has captured: it carries
+                # Schwab's own notices, "Feature not supported" among them,
+                # most nights around 00:30 Eastern. Reporting it asked every
+                # consumer to open an issue for a documented shape once per
+                # process start, which teaches an operator to acknowledge the
+                # one warning that has to be read when a real new type comes.
+                if name and name.casefold() not in known:
                     _report_unknown_message_type(name)
 
     #: ``MESSAGE_TYPE`` values observed on a live ``ACCT_ACTIVITY`` feed, as
@@ -2212,7 +2218,9 @@ class StreamClient(EnumEnforcer):
     #: seen.
     #:
     #: A type outside it is still delivered to your handler, and is logged once
-    #: on ``schwaby.streaming``. A buy rejected for buying power and a price
+    #: on ``schwaby.streaming``. The empty type is not logged: it is not a type
+    #: but the carrier of Schwab's notices, which the streaming documentation
+    #: describes. A buy rejected for buying power and a price
     #: change to a working order have both been captured using only types
     #: listed here; expiry and partial fill have not, so the first of each a
     #: process receives may log once. That is expected, and a report of the

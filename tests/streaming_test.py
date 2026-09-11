@@ -9866,6 +9866,27 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
             self.relabel('OrderExpired')
 
     @no_duplicates
+    def test_the_empty_type_carrying_a_notice_is_not_reported(self):
+        # Schwab's "Feature not supported" notice arrives most nights as a data
+        # item whose MESSAGE_TYPE is the empty string, which the docs describe.
+        # It is not a type nobody has captured, so it asks nobody to open an
+        # issue.
+        raw = {'key': 'account', '1': 'account', '2': '',
+               '3': 'Feature not supported'}
+        new = copy.deepcopy(raw)
+        with self.assertNoLogs(streaming.get_logger(), level='WARNING'):
+            self.fields.relabel_message(raw, new)
+        self.assertEqual('', new['MESSAGE_TYPE'])
+        self.assertEqual('Feature not supported', new['MESSAGE_DATA'])
+        # The public set stays a list of real types: consumers build a set of
+        # known lifecycle types from it.
+        self.assertNotIn(
+                '', streaming.StreamClient.ACCOUNT_ACTIVITY_MESSAGE_TYPES)
+        # Positive control: the same call still reports a type outside it.
+        with self.assertLogs(streaming.get_logger(), level='WARNING'):
+            self.relabel('OrderExpired')
+
+    @no_duplicates
     def test_a_newline_in_a_type_cannot_forge_a_log_line(self):
         forged = 'X\nWARNING:schwaby.streaming:the feed is healthy'
         with self.assertLogs(streaming.get_logger(), level='WARNING') as got:

@@ -1566,7 +1566,8 @@ malformed message and should not be reported as one.
 
   That notice arrives as an ordinary ``data``-channel content item whose
   ``MESSAGE_TYPE`` is the empty string, so a handler that dispatches on the
-  type has nothing to dispatch on. It recurs: it was seen on at least 69 days
+  type has nothing to dispatch on. The empty type is not logged as a message
+  type nobody has captured. It recurs: it was seen on at least 69 days
   across about three months of one production feed, most often around 00:30
   Eastern, and also around 18:00 and 21:00.
 
