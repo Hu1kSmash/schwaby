@@ -445,7 +445,7 @@ class TokenRefreshError(SchwabError):
     reached, or there is no refresh token to refresh it with.
 
     A stored token it cannot send that *will* be refreshed is ``False``,
-    although nothing was sent: it is replaced once its expiry passes.
+    although nothing was sent: it is replaced as its expiry nears.
 
     It is ``False`` for everything else, *including* failures this library did
     not recognize -- the conservative direction, since treating a recoverable

@@ -561,6 +561,10 @@ A login raises this when the token endpoint answers with something that is not
 a usable token. Nothing is written, so a token file already on disk is left as
 it was.
 
+During a call it arrives as :class:`~schwaby.utils.TokenRefreshError`, with
+``refresh_token_invalid`` ``False`` and this error as its ``__cause__``.
+Nothing is stored, and the next call refreshes again.
+
 
 ++++++++++++++++++++++
 Token Parsing Failures

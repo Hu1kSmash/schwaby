@@ -2824,6 +2824,8 @@ class _TestClient:
         # Nothing reached Schwab, so the message must not say what it said.
         self.assertIn('nothing was sent to Schwab', str(cm.exception))
         self.assertNotIn('Schwab did not say', str(cm.exception))
+        # authlib refreshes 300 seconds early, not when the expiry passes.
+        self.assertIn('as that expiry nears', str(cm.exception))
 
     @no_duplicates
     def test_a_local_unsupported_token_type_without_expiry_is_terminal(self):

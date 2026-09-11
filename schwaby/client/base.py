@@ -210,8 +210,8 @@ class BaseClient(EnumEnforcer):
             elif isinstance(e, UnsupportedTokenTypeError):
                 advice = ('The stored token cannot be sent as it stands, so '
                           'nothing was sent to Schwab. It has an expiry and a '
-                          'refresh token, so it is refreshed once that expiry '
-                          'passes, and this may clear on its own.')
+                          'refresh token, so it is refreshed as that expiry '
+                          'nears, and this may clear on its own.')
             else:
                 advice = ('Schwab did not say the refresh token itself is '
                           'invalid, so this may be transient.')
