@@ -618,11 +618,14 @@ def execution_totals(order):
     ``quantity`` is the sum of a leg's execution quantities, and
     ``average_price`` is their price weighted by quantity. The arithmetic
     runs in its own decimal context, so the caller's precision and traps do
-    not change it. The sums and products are exact to 60 significant digits,
-    which a real order does not approach, and a number too large, too small or
-    too long for that is refused rather than rounded; the average is divided
-    to 60 significant digits. A price is as Schwab
-    quotes it, with no contract multiplier applied; for the ETF fills that were
+    not change it. The totals come back as plain ``Decimal`` values, though,
+    so arithmetic done on them afterwards is in the caller's context again:
+    with ``Inexact`` trapped there, dividing a combined total back into an
+    average can raise. The sums and products are exact to 60 significant
+    digits, which a real order does not approach, and a number too large, too
+    small or too long for that is refused rather than rounded; the average is
+    divided to 60 significant digits. A price is as Schwab quotes it, with no
+    contract multiplier applied; for the ETF fills that were
     compared with their recorded fill prices, that was per share. A float is
     read into ``Decimal`` from its shortest text, which is its JSON text for
     any price of up to 15 significant digits, so a price of ``58.1853`` is
