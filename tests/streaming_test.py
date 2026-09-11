@@ -8206,6 +8206,34 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertIn('1', rendered)
 
     @no_duplicates
+    def test_a_debug_line_survives_a_type_whose_name_raises(self):
+        class Meta(type):
+            @property
+            def __name__(cls):
+                raise RuntimeError('metaclass raised')
+
+        class Hostile(dict, metaclass=Meta):
+            def __repr__(self):
+                raise RuntimeError('repr raised')
+
+        # json.dumps refuses the tuple key and repr raises, so the fallback's
+        # own fallback names the type, which the metaclass must not break.
+        self.assertEqual('<Hostile that cannot be formatted>',
+                         self.client._pretty(Hostile({(1, 2): 3})))
+
+    @no_duplicates
+    def test_a_debug_line_survives_a_value_json_cannot_name(self):
+        # json.dumps names a value it cannot serialise through __class__,
+        # which can raise something other than TypeError.
+        class Hostile:
+            @property
+            def __class__(self):
+                raise RuntimeError('class raised')
+
+        rendered = self.client._pretty({'field': Hostile()})
+        self.assertIn('field', rendered)
+
+    @no_duplicates
     def test_a_mapping_channel_is_absorbed_once_not_once_per_key(self):
         # A mapping is iterable and yields its keys, so without excluding it
         # from _is_sequence a {'data': {...}} frame absorbs one report per key

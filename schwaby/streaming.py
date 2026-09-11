@@ -686,7 +686,9 @@ class StreamClient(EnumEnforcer):
         """
         try:
             return json.dumps(obj, indent=4)
-        except (TypeError, ValueError):
+        except Exception:
+            # json.dumps names a value it cannot serialise through __class__,
+            # which can raise anything, and recurses on deep nesting.
             try:
                 return repr(obj)
             except Exception:
@@ -699,7 +701,7 @@ class StreamClient(EnumEnforcer):
                 # block for every debug line; under pytest's capture handler
                 # it re-raises, which is how this surfaced.
                 return '<{} that cannot be formatted>'.format(
-                        type(obj).__name__)
+                        _type_name(obj))
 
     def req_num(self):
         self.request_number += 1
