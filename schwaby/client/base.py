@@ -180,10 +180,13 @@ class BaseClient(EnumEnforcer):
             if self.token_metadata is not None:
                 age = self.token_metadata.token_age()
 
+            # float(): a token store such as DynamoDB returns the creation
+            # timestamp as a Decimal, and a Decimal cannot be divided by a
+            # float.
             detail = ('The token is {:.1f} days old; Schwab documents a '
                       'refresh token as valid for 7 days after it is '
                       'authorized, and refreshing does not extend that.'
-                      ).format(age / 86400.0) if age is not None else (
+                      ).format(float(age) / 86400.0) if age is not None else (
                     'This client was built without token metadata, so the '
                     'token\'s age is unknown.')
 

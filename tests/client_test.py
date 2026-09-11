@@ -1,3 +1,4 @@
+import decimal
 import asyncio
 import datetime
 import httpx2
@@ -2636,6 +2637,27 @@ class _TestClient:
         # The age is the signal worth reasoning about: Schwab documents the
         # seven day term but not what it returns when the term expires.
         eight_days = 8 * 60 * 60 * 24
+
+        metadata = Mock()
+        metadata.token_age.return_value = eight_days
+        self.client.token_metadata = metadata
+
+        self.mock_session.get.side_effect = OAuthError(
+                error='unsupported_token_type',
+                description='Bad refresh_token')
+
+        with self.assertRaises(TokenRefreshError) as cm:
+            self.client.get_quote(SYMBOL)
+
+        self.assertEqual(eight_days, cm.exception.token_age)
+        self.assertIn('8.0 days old', str(cm.exception))
+
+
+    @no_duplicates
+    def test_token_refresh_error_reports_a_decimal_token_age(self):
+        # A token store such as DynamoDB returns the creation timestamp as a
+        # Decimal, so the age is one too, and the advice must not fail on it.
+        eight_days = decimal.Decimal(8 * 60 * 60 * 24)
 
         metadata = Mock()
         metadata.token_age.return_value = eight_days
