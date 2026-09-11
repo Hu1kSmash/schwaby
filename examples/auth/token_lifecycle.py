@@ -51,8 +51,10 @@ def main():
             TOKEN_PATH, api_key=API_KEY, app_secret=APP_SECRET)
 
     while True:
+        # float(): read from a token store rather than a file, the age can be
+        # a Decimal, which cannot be subtracted from a float.
         age = client.token_age()
-        remaining = REFRESH_TOKEN_LIFETIME - age
+        remaining = REFRESH_TOKEN_LIFETIME - float(age)
 
         if remaining <= 0:
             alert('token is past its seven-day term; re-authenticate now')
