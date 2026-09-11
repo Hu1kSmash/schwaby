@@ -1478,6 +1478,22 @@ class TokenFileAgeTest(unittest.TestCase):
             auth.client_from_token_file(self.token_path, API_KEY, APP_SECRET)
 
     @no_duplicates
+    def test_a_token_nested_too_deeply_to_redact_raises_valueerror(self):
+        # json reads far deeper than this, but the redaction walk recurses
+        # once per level and runs out first.
+        nested = {}
+        for _ in range(100000):
+            nested = {'k': nested}
+        token = {'creation_timestamp': TOKEN_CREATION_TIMESTAMP,
+                 'token': {'access_token': 'a', 'refresh_token': 'r',
+                           'token_type': 'Bearer',
+                           'expires_at': MOCK_NOW + 1800, 'extra': nested}}
+        with self.assertRaisesRegex(ValueError, 'nested too deeply'):
+            auth.client_from_access_functions(
+                    API_KEY, APP_SECRET, lambda: token,
+                    lambda *args, **kwargs: None)
+
+    @no_duplicates
     def test_a_missing_file_raises_oserror(self):
         with self.assertRaises(OSError):
             auth.token_file_age(os.path.join(self.tmp_dir.name, 'absent.json'))

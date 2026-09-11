@@ -980,8 +980,16 @@ def client_from_access_functions(api_key, app_secret, token_read_func,
     metadata = TokenMetadata.from_loaded_token(token, token_write_func)
     token = metadata.token
 
-    # Don't emit token details in debug logs
-    register_redactions(token)
+    # Don't emit token details in debug logs. The walk recurses once per level,
+    # so a token nested past the interpreter's depth -- which json can still
+    # read -- is refused like any other token this library did not write.
+    try:
+        register_redactions(token)
+    except RecursionError:
+        raise ValueError(
+                'The token is nested too deeply to be a token this library '
+                'wrote. If it came from a token file, delete the file and '
+                'create a new one.') from None
 
     wrapped_token_write_func = metadata.wrapped_token_write_func()
     if asyncio:
