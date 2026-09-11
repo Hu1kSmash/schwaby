@@ -329,7 +329,7 @@ class BaseClient(EnumEnforcer):
         Rather than pick one and silently reinterpret what the caller wrote,
         say so and let them attach the timezone they meant.
         '''
-        if isinstance(dt, self._DATETIME) and dt.tzinfo is None:
+        if _is_instance(dt, self._DATETIME) and dt.tzinfo is None:
             warnings.warn(
                     ('{} was given a datetime with no timezone. Schwab\'s date '
                      'parameters identify an instant, so the request depends on '
@@ -345,7 +345,7 @@ class BaseClient(EnumEnforcer):
         self._assert_type(var_name, dt, [self._DATE, self._DATETIME])
         self._warn_if_naive(var_name, dt)
 
-        if not isinstance(dt, self._DATETIME):
+        if not _is_instance(dt, self._DATETIME):
             dt = datetime.datetime(year=dt.year, month=dt.month, day=dt.day)
 
         # The trailing Z asserts UTC, so a datetime carrying some other

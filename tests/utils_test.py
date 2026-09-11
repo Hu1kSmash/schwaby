@@ -1543,6 +1543,47 @@ class HostileClassTest(unittest.TestCase):
                 self.assertIsNot(RuntimeError, ordinary)
                 self.assertEqual(ordinary, self.outcome(call, self.Hostile()))
 
+        # A subclass of an accepted type passes the first check on its real
+        # type, so the checks after it see the value too: the date
+        # formatters, and set_json_decoder's abstract base, whose
+        # isinstance reads __class__ even for a real subclass.
+        from schwaby.contrib.util import StreamJsonDecoder
+
+        class PlainDate(datetime.date):
+            pass
+
+        class HostileDate(PlainDate):
+            @property
+            def __class__(self):
+                raise RuntimeError('hostile __class__')
+
+        class PlainDecoder(StreamJsonDecoder):
+            def decode_json_string(self, raw):
+                return {}
+
+        class HostileDecoder(PlainDecoder):
+            @property
+            def __class__(self):
+                raise RuntimeError('hostile __class__')
+
+        subclass_calls = (
+            ('get_transactions dates', PlainDate, HostileDate,
+             lambda v: client.get_transactions(
+                 'hash', start_date=v, end_date=datetime.date(2027, 1, 2))),
+            ('get_orders_for_account date', PlainDate, HostileDate,
+             lambda v: client.get_orders_for_account(
+                 'hash', from_entered_datetime=v)),
+            ('set_json_decoder subclass', PlainDecoder, HostileDecoder,
+             lambda v: StreamClient(MagicMock()).set_json_decoder(v)),
+        )
+        for name, plain, hostile, call in subclass_calls:
+            with self.subTest(name):
+                value = (lambda cls: cls(2027, 1, 1)) if plain is PlainDate \
+                        else (lambda cls: cls())
+                ordinary = self.outcome(call, value(plain))
+                self.assertIsNone(ordinary)
+                self.assertEqual(ordinary, self.outcome(call, value(hostile)))
+
     @no_duplicates
     def test_a_mock_with_a_spec_still_passes(self):
         # The real type answers only when isinstance raises: a spec'd mock
