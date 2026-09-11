@@ -22,6 +22,44 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 4.7.0
+
+*2026-09-11*
+
+A public token-file writer, two fixes and a documentation note. One public name
+is added, `schwaby.auth.token_file_writer`. Nothing is removed or renamed.
+
+- `token_file_writer(token_path)` returns a `token_write_func` that writes the
+  token file the way this library writes its own: atomically, readable only by
+  the current user where the platform supports it, and through a symlink. Pass
+  it to `client_from_received_url` or `client_from_access_functions`, which take
+  a function rather than a path, and the file they leave is one
+  `client_from_token_file`, `easy_client` and `token_file_age` read. A
+  `token_path` that is not a `str` path, `bytes` included, raises `TypeError`,
+  and one that is empty, names a directory, contains a NUL or is not in an
+  existing directory raises `ValueError`, when the writer is made, before a
+  login spends its code. A `~` is not expanded.
+- A value whose class makes `__class__` raise is refused as an ordinary
+  instance of that class is: by the enum checks, the app key and secret
+  handling, the client's argument type checks and date formatting, the order
+  builder's setters, `OptionSymbol` and `StreamClient.set_json_decoder`.
+  `isinstance` asks `__class__` when the type does not match, and an abstract
+  base asks it even for a real subclass, so that exception reached the caller
+  in place of the refusal. A mock with a `spec` still passes where it did.
+  `place_order`, `replace_order` and `preview_order` are not covered: an order
+  whose `__class__` raises fails in JSON encoding too.
+- A failed token refresh raises `TokenRefreshError` with the endpoint's code
+  and description escaped and cut to 200 characters, in its message and in the
+  chained `OAuthError`'s `str()`, which is what a traceback prints. A line break
+  or terminal escape from the endpoint could forge a log line. That error is
+  still the `__cause__`, the same object, with `error`, `description` and
+  `repr` as authlib made them, so a caller classifying by walking the chain
+  sees no difference.
+- `execution_totals` now says that arithmetic done on the totals it returns is
+  in the caller's own decimal context: with `Inexact` trapped there,
+  multiplying a quantity by its average, or dividing a combined total back into
+  one, can raise.
+
 ## 4.6.0
 
 *2026-09-11*
