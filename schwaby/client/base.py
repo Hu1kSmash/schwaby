@@ -18,7 +18,8 @@ import warnings
 
 from schwaby.orders.generic import OrderBuilder
 
-from ..utils import EnumEnforcer, TokenRefreshError, _expiry_authlib_acts_on
+from ..utils import (EnumEnforcer, TokenRefreshError, _expiry_authlib_acts_on,
+                     _qualified_type_name)
 
 
 def get_logger():
@@ -249,9 +250,9 @@ class BaseClient(EnumEnforcer):
             return True
 
     def _assert_type(self, name, value, exp_types):
-        value_type = type(value)
-        value_type_name = '{}.{}'.format(
-            value_type.__module__, value_type.__name__)
+        # Named without trusting the value's metaclass: a class whose
+        # __name__ raises must still get the ValueError below.
+        value_type_name = _qualified_type_name(value)
         exp_type_names = ['{}.{}'.format(
             t.__module__, t.__name__) for t in exp_types]
         if not any(isinstance(value, t) for t in exp_types):

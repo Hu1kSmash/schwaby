@@ -48,7 +48,7 @@ class EnumEnforcer:
             ('expected type "{}", got type "{}". {}(initialize with ' +
              'enforce_enums=False to disable this checking)').format(
                 required_enum_type.__name__,
-                type(value).__name__,
+                _type_name(value),
                 possible_members_message))
 
     def convert_enum(self, value, required_enum_type):
@@ -299,6 +299,18 @@ def _type_name(value):
         return str.__str__(type.__dict__['__name__'].__get__(type(value)))
     except Exception:
         return 'object'
+
+
+def _qualified_type_name(value):
+    '''``module.name`` for a value's type, both read through type's own
+    descriptors, so that a caller's class whose ``__name__`` raises still gets
+    the message it was refused with.'''
+    try:
+        module = str.__str__(
+                type.__dict__['__module__'].__get__(type(value)))
+    except Exception:
+        module = '<unknown module>'
+    return '{}.{}'.format(module, _type_name(value))
 
 
 class AccountNumberNotFoundError(SchwabError):

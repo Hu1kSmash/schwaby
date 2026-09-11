@@ -413,6 +413,22 @@ class ConvertEnumIterableTest(unittest.TestCase):
             t.convert([123])
 
     @no_duplicates
+    def test_a_type_whose_name_raises_is_still_refused_by_name(self):
+        # type(value).__name__ consults the metaclass, which can raise inside
+        # the message that was meant to say what was wrong.
+        class Meta(type):
+            @property
+            def __name__(cls):
+                raise RuntimeError('metaclass raised')
+
+        class Odd(metaclass=Meta):
+            pass
+
+        t = self.TestClass(enforce_enums=True)
+        with self.assertRaisesRegex(ValueError, 'got type "Odd"'):
+            t.convert([Odd()])
+
+    @no_duplicates
     def test_a_string_matching_no_member_gets_no_did_you_mean(self):
         # `type_error` only offers a suggestion when the string appears in
         # some member's full name. Every existing test passed a string that
@@ -1053,8 +1069,10 @@ class FindAccountHashTest(unittest.TestCase):
         class Odd(metaclass=Meta):
             pass
 
-        with self.assertRaisesRegex(TypeError, 'must be a str'):
+        with self.assertRaisesRegex(TypeError, 'must be a str') as cm:
             find_account_hash(self.ACCOUNTS, Odd())
+        # The real name, read past the metaclass, not the fallback's 'object'.
+        self.assertIn('not a Odd', str(cm.exception))
 
     @no_duplicates
     def test_the_hash_returned_is_a_plain_str(self):
