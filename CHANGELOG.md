@@ -22,6 +22,128 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 4.5.1
+
+*2026-09-10*
+
+Fixes to token handling and to streaming reports, one helper made stricter, and
+one piece of advice for an old token. Nothing is removed or renamed, but three
+changes refuse input 4.5.0 accepted, each described below: a token expiry more
+than seven days off, an account number that is not ASCII digits, and a stored
+token whose `token_type` or refresh token is neither a string nor null.
+
+Some failures also arrive as a different exception:
+- a stream frame `json` cannot read at all, or a custom decoder's own
+  `ValueError`, raises `UnparsableMessage` rather than `UnicodeDecodeError`,
+  `TypeError`, `RecursionError` or `ValueError`;
+- `find_account_hash` raises `ValueError` for a number that is not ASCII
+  digits, where 4.5.0 raised `AccountNumberNotFoundError`, or
+  `UnusableAccountNumbersError` when the list was malformed too;
+- a token or creation timestamp that fakes its type raises `ValueError` rather
+  than `TypeError`, and a stored token whose `token` entry is not a JSON object
+  raises `ValueError` rather than `AttributeError`.
+
+And a parse failure reported to `add_error_handler` can now carry bytes as its
+`message`: a binary frame reaches the handler as it arrived.
+
+### A token expiry more than seven days off is refused
+
+An expiry counted as one authlib acts on if it was up to 10**9 seconds away,
+which caught only an `expires_at` in milliseconds. An `expires_in` sent in
+milliseconds, 1,800,000, is 20.8 days read as seconds: the token was stored,
+authlib would not refresh it until then, and every call in between failed with a
+401 and no exception.
+
+Schwab documents a 30-minute access token and a seven-day refresh token, so the
+bound is now seven days. A refresh response past it is refused before it is
+stored, as `TokenRefreshError` with `unusable_token_response`, and a stored
+token that cannot be sent and expires that far off is reported with
+`refresh_token_invalid`. A login's token response past it is refused too, as
+authlib's `OAuthError` with `unusable_token_response`, and nothing is written.
+An expiry already past is still accepted.
+
+### An old token's refusal stays retryable, and its message says to alert
+
+For a refusal the library does not treat as terminal, such as `invalid_client`,
+the message, the recipe in the docs and the troubleshooting entry gave three
+different next steps. `refresh_token_invalid` is unchanged: Schwab has not held
+exactly to its seven days, and stopping an application that could have
+recovered is the worse mistake. Past seven days, a retryable refusal's message
+now says to alert someone, the recipe alerts and keeps retrying, and the entry
+and the `TokenRefreshError` docstring agree.
+
+### `find_account_hash` refuses an account number that is not ASCII digits
+
+4.5.0 refused whitespace around the number. A byte order mark or zero-width
+space kept from a file, a NUL, an empty string from an unset environment
+variable, a hyphen or a letter still raised `AccountNumberNotFoundError`, which
+reads as an account the token does not cover. Schwab's account numbers are ASCII
+digits, so anything else now raises `ValueError`, without naming the number.
+
+### Loading a token
+
+- **A stored token's shape is checked before a session is built on it.**
+  - A mapping that is not a `dict` is used as one. Every call on it used to
+    raise `AttributeError`.
+  - A `token_type` or refresh token that is neither a string nor null raises
+    `ValueError` when the client is built. authlib used to raise
+    `AttributeError` or `TypeError` past `TokenRefreshError`, or send a list
+    refresh token as bytes.
+  - A null one counts as absent, which is what a null refresh token already
+    amounted to. A null `token_type` no longer makes every call on a live
+    token raise `AttributeError`.
+  - The token passed in is copied rather than changed.
+- **A caller-built token with `expires_in` and no `expires_at` authlib can
+  read** (missing, null, or failing `int()`), when it has a refresh token, has
+  its expiry taken as the moment the client is built, so the first call
+  refreshes it. The expiry used to be counted from each build, so a process
+  restarting more often than that never refreshed a lapsed token.
+- **`token_file_age` no longer logs at INFO.** A monitor polling it wrote an
+  INFO line per read. Building a client still logs the load at INFO.
+- **`easy_client(asyncio=True)` in a notebook returns an async client.** The
+  notebook route dropped the flag.
+- **A faked `__class__` on a token or its creation timestamp** is refused with
+  `ValueError` rather than escaping as `TypeError`. Refusing a timestamp too
+  large for a float now says "a finite number a float can hold".
+
+### Streaming
+
+- **A frame `json` cannot read at all raises `UnparsableMessage`**, and is
+  reported to `add_error_handler`. A binary frame that is not UTF-8, a bytes
+  frame that is not JSON and a frame nested past the interpreter's depth each
+  ended the receive loop with an unrelated exception and no report. A custom
+  decoder's own `ValueError` is reported the same way, and the message names it
+  as a possible cause. `json_parse_exception` is whatever the decoder raised,
+  not always a `JSONDecodeError`.
+- **`HeuristicJsonDecoder` lets the decode error stand on a bytes frame.** Its
+  repair step raised `TypeError` on bytes, which ended the loop unreported.
+- **`UnparsableMessage`'s text quotes and cuts the frame.** A line break in the
+  frame forged a line in anything printing the exception. `raw_msg` still holds
+  the frame as it arrived.
+- **A custom decoder's string subclass** can no longer forge a line in the
+  unknown-field warning, the relabel-failure report or the handler-failure log
+  line, and one whose `__str__` raises no longer ends the receive loop.
+- **A debug line no longer raises** on a value `json.dumps` fails on in an
+  unexpected way, or on one whose type's name raises.
+- **The error-handler recipe bounds `service` with `reprlib.repr`.** With
+  `%r`, a deeply nested `service` raised inside the handler, and the alert was
+  lost. The exception is still shown whole.
+
+### Documentation
+
+- A refreshable token is replaced as its expiry nears, 300 seconds early, not
+  once it passes.
+- The `unusable_token_response` entry covers a refusal during a call as well as
+  at login.
+- A refusal while a login exchanges its code raises authlib's `OAuthError`
+  itself, with no `token_age` or `refresh_token_invalid`.
+- A creation time ahead of this machine's clock gives a low or negative age;
+  the page says why that is not refused.
+- The token lifecycle example reads the age as a float, so it also works with
+  a `Decimal` age from a token store.
+- Three literals inside bold text rendered as raw backticks. A packaging test
+  now checks every page and docstring, and `docutils` joins the `dev` extra.
+
 ## 4.5.0
 
 *2026-09-10*
