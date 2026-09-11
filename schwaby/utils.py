@@ -294,6 +294,19 @@ class AccountHashMismatchException(SchwabError, ValueError):
         self.expected_account_hash = expected_account_hash
 
 
+def _printable(text, bound):
+    """``text`` with control characters escaped, and bounded again afterwards.
+
+    A value's own ``__repr__``, a class name, and text a venue sends can carry
+    a newline or a terminal escape, and each reaches log lines or exception
+    messages. Escaping takes one character to as many as ten, hence the second
+    bound.
+    """
+    if not text.isprintable():
+        text = ''.join(c if c.isprintable() else repr(c)[1:-1] for c in text)
+    return text if len(text) <= bound else text[:bound - 3] + '...'
+
+
 def _type_name(value):
     '''A value's type name for a message, read through type's own descriptor
     so that a metaclass cannot raise inside the message.'''

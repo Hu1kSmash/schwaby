@@ -11,7 +11,7 @@ import logging
 
 import websockets.asyncio.client as ws_client
 
-from .utils import EnumEnforcer, LazyLog, SchwabError
+from .utils import EnumEnforcer, LazyLog, SchwabError, _printable
 
 
 class StreamJsonDecoder(ABC):
@@ -173,18 +173,6 @@ def _safe_str(value):
     text = str.__str__(text)   # a plain str; `_safe_value` says why
     # An exception's own message can quote venue text, line breaks and all.
     return _printable(text if len(text) <= 200 else text[:197] + '...', 200)
-
-
-def _printable(text, bound):
-    """`text` with control characters escaped, and bounded again afterwards.
-
-    A value's own `__repr__`, and a class name, can carry a newline that a
-    plain repr would have escaped, and both reach log lines here. Escaping
-    takes one character to as many as ten, hence the second bound.
-    """
-    if not text.isprintable():
-        text = ''.join(c if c.isprintable() else repr(c)[1:-1] for c in text)
-    return text if len(text) <= bound else text[:bound - 3] + '...'
 
 
 def _type_name(value):
