@@ -1,3 +1,4 @@
+from authlib.common.errors import AuthlibBaseError
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client, OAuth2Client
 from authlib.oauth2.rfc6749 import OAuth2Token
@@ -18,6 +19,7 @@ import sys
 import tempfile
 import time
 import urllib
+import urllib.parse
 import warnings
 import webbrowser
 
@@ -1201,15 +1203,26 @@ def client_from_received_url(
     oauth.register_compliance_hook(
             'access_token_response', _refuse_unusable_token_response)
 
+    # A redirect carrying the authorization server's refusal -- access_denied
+    # when the user declines -- has no code, and authlib would go on to ask
+    # for a different grant and report that refusal instead. The URL itself
+    # is not repeated: it can carry a code.
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(received_url).query)
+    if query.get('error'):
+        raise LoginExchangeError(
+                query['error'][0],
+                (query.get('error_description') or [None])[0])
+
     try:
         token = oauth.fetch_token(
             TOKEN_ENDPOINT,
             authorization_response=received_url,
             client_id=api_key, auth=(api_key, app_secret),
             state=auth_context.state)
-    except OAuthError as e:
-        # This library's own class, and still an OAuthError, so code written
-        # against authlib's keeps catching it.
+    except AuthlibBaseError as e:
+        # The endpoint's refusal, and what authlib refuses before asking: a
+        # state that does not match, no code. This library's class, and an
+        # OAuthError, so code written against authlib's keeps catching it.
         raise LoginExchangeError(e.error, e.description, e.uri) from e
 
     # Don't emit token details in debug logs

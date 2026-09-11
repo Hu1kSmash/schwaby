@@ -1484,7 +1484,8 @@ class LoginExchangeErrorTest(unittest.TestCase):
         from schwaby.utils import LoginExchangeError, SchwabError
 
         original = OAuthError(error='invalid_grant',
-                              description='code already used')
+                              description='code already used',
+                              uri='https://example.invalid/errors')
         writes = []
         with patch.object(OAuth2Client, 'fetch_token', side_effect=original):
             with self.assertRaises(OAuthError) as cm:
@@ -1496,9 +1497,40 @@ class LoginExchangeErrorTest(unittest.TestCase):
         self.assertIsInstance(cm.exception, SchwabError)
         self.assertEqual('invalid_grant', cm.exception.error)
         self.assertEqual('code already used', cm.exception.description)
+        self.assertEqual('https://example.invalid/errors', cm.exception.uri)
         self.assertEqual('invalid_grant: code already used', str(cm.exception))
         self.assertIs(original, cm.exception.__cause__)
         self.assertEqual([], writes)
+
+    @no_duplicates
+    def test_a_redirect_that_is_refused_before_any_exchange_is_one_too(self):
+        # authlib refuses a state that does not match, an empty code and a
+        # fragment before any request. A redirect carrying the authorization
+        # server's own refusal has no code, and authlib would go on to ask for
+        # another grant; it is reported as the refusal it carries.
+        import httpx2
+        from authlib.oauth2.rfc6749.errors import (
+                MismatchingStateException, MissingCodeException,
+                MissingTokenException)
+        from schwaby.utils import LoginExchangeError
+
+        base = 'https://127.0.0.1:8182/'
+        cases = (
+            (base + '?code=c&state=OTHER', MismatchingStateException.error),
+            (base + '?code=&state=state', MissingCodeException.error),
+            (base + '?state=state#x', MissingTokenException.error),
+            (base + '?error=access_denied&error_description=The+user+declined'
+                    '&state=state', 'access_denied'))
+        with patch.object(httpx2.Client, 'send',
+                          side_effect=AssertionError('a request was sent')):
+            for url, error in cases:
+                with self.subTest(url=url):
+                    with self.assertRaises(LoginExchangeError) as cm:
+                        auth.client_from_received_url(
+                                API_KEY, APP_SECRET, self.CONTEXT, url,
+                                lambda *args, **kwargs: None)
+                    self.assertEqual(error, cm.exception.error)
+        self.assertEqual('The user declined', cm.exception.description)
 
     @no_duplicates
     def test_a_failure_that_is_not_an_oauth_error_is_not_wrapped(self):

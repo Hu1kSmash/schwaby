@@ -644,20 +644,18 @@ class TokenRefreshError(SchwabError):
 
 class LoginExchangeError(SchwabError, OAuthError):
     '''
-    Raised when a login cannot exchange its authorization code for a token:
-    the token endpoint refuses the code, or answers with something that is not
-    a usable token (``unusable_token_response``).
+    Raised when a login cannot exchange its authorization code for a token.
+    The redirect carries the authorization server's refusal (``access_denied``
+    when the user declines), carries no code, or has a ``state`` that does not
+    match the login's; or the token endpoint refuses the code, or answers with
+    something that is not a usable token (``unusable_token_response``).
 
     It is also authlib's ``OAuthError``, so ``except OAuthError`` written
     before this class existed still catches it, and ``error`` and
     ``description`` carry the refusal's code and text. For
     ``unusable_token_response`` that text is this library's description of
-    what came back, not the endpoint's. The original error is preserved as
-    ``__cause__``.
-
-    A redirect whose ``state`` does not match the login's is refused by authlib
-    before any exchange, and raises authlib's own exception for that rather
-    than this.
+    what came back, not the endpoint's. An error authlib raised is preserved
+    as ``__cause__``.
 
     Unlike :class:`TokenRefreshError` it has no ``token_age`` or
     ``refresh_token_invalid``. No token exists yet, and an authorization code
@@ -667,14 +665,6 @@ class LoginExchangeError(SchwabError, OAuthError):
     A server error from the token endpoint, or a response that is not JSON,
     raises as it does during a call rather than as this.
     '''
-
-    def __init__(self, error=None, description=None, uri=None):
-        OAuthError.__init__(self, error, description, uri)
-
-    def __reduce__(self):
-        # Rebuilt from its parts: the default would pass the formatted message
-        # back as `error`.
-        return (type(self), (self.error, self.description, self.uri))
 
 
 class LazyLog:
