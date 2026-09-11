@@ -34,9 +34,13 @@ filled, and two fixes. Four public names are added to `schwaby.utils`:
 Some calls now raise differently:
 - a refused login raises `LoginExchangeError`, which is still an `OAuthError`.
   A redirect with a `state` that does not match, an empty `code` or a fragment
-  used to raise authlib's `MismatchingStateException`, `MissingCodeException`
-  or `MissingTokenException`, which are not; one carrying `access_denied` was
-  reported as `unsupported_grant_type`;
+  used to raise authlib's `MismatchingStateException`, `MissingCodeException`,
+  `MissingTokenException` or `MissingTokenTypeException`, which are not, and a
+  fragment with a malformed expiry raised `ValueError`; one carrying
+  `access_denied`, or no code at all, was sent to the token endpoint as a
+  client-credentials grant and reported as that grant's refusal; and one whose
+  fragment carried an access token, a token type and the login's `state` was
+  written as the token, with no request;
 - a stored token that has a refresh token, and an expiry authlib would not
   refresh while it is of use, is refreshed on the first call. A dead refresh
   token raises `TokenRefreshError` at once, where calls used to return 401 with
@@ -51,16 +55,26 @@ A login whose code exchange the token endpoint refuses, or answers with
 something that is not a usable token, raised authlib's `OAuthError` itself. It
 raises `schwaby.utils.LoginExchangeError` now. It is a `SchwabError` and still
 an `OAuthError`, so `except OAuthError` keeps working, and `error` and
-`description` carry the refusal's code and text, with the original as
-`__cause__`. For `unusable_token_response` that text is this library's
-description of what came back, not the endpoint's. It also covers a redirect
-authlib refuses before any exchange, one whose `state` does not match the
-login's or whose `code` is empty, and a redirect carrying the authorization
-server's own refusal, such as `access_denied`, which used to reach the caller
-as `unsupported_grant_type`. A redirect with no `code` parameter at all still
-goes to the token endpoint, as a different grant; its refusal arrives as
-`LoginExchangeError` with that refusal's code, and what Schwab answers there
-has not been observed.
+`description` carry the refusal's code and text. When this library refuses a
+token response as `unusable_token_response`, the description is its own text;
+an endpoint sending that code has its text treated like any other.
+It also covers a redirect authlib refuses before any exchange, one whose
+`state` does not match the login's or whose `code` is empty, and a redirect
+carrying the authorization server's own refusal, such as `access_denied`, which
+used to reach the caller as `unsupported_grant_type`.
+
+Two redirects are refused before any request that were not:
+- one with no code at all, as `missing_code`. authlib sent it to the token
+  endpoint as a client-credentials grant carrying the app key and secret;
+- one with a fragment, as `invalid_request`. authlib refused most, but took
+  `#access_token=...&token_type=Bearer&state=...` carrying the login's `state`
+  as the token and wrote it, with no request and none of the checks a token
+  response gets.
+
+Text from the redirect or the endpoint is escaped and cut to 200 characters,
+and a value that is not a string is given as its repr, since it reaches
+whatever logs the exception. authlib's own error is not chained as
+`__cause__`: its text is not escaped, and a logged traceback prints it.
 It has no `token_age` or `refresh_token_invalid`: no token exists yet, and a
 code is good for one exchange, so every refusal means starting the login again.
 A server error or a response that is not JSON raises as it did.
@@ -83,8 +97,12 @@ could, from a refresh answered with `expires_in` in milliseconds.
 `execution_totals(order)` adds up a parsed order's executions into
 `{legId: ExecutionTotal(quantity, average_price)}`, in `Decimal` read from each
 number's shortest text, with the price weighted by quantity and no contract
-multiplier. It counts only activities whose `executionType` is `FILL`. A
-canceled or replaced order carries an `EXECUTION` activity too, with
+multiplier. Its arithmetic runs in its own decimal context, so the caller's
+precision and traps do not change the result, and a sum is exact or refused: a
+number too large, too small or too long to add up exactly raises rather than
+being rounded. It counts only activities whose
+`executionType` is `FILL`. A canceled or replaced order carries an `EXECUTION`
+activity too, with
 `executionType` `CANCELED` and execution legs whose quantities were never
 filled, so adding up by `activityType` alone reports them as filled. A shape it
 cannot read, or a `mismarkedQuantity` other than zero, raises
