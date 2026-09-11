@@ -1939,6 +1939,39 @@ class TokenFileAgeTest(unittest.TestCase):
 
     @no_duplicates
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    def test_a_token_the_client_refuses_is_refused_here_too(self):
+        # A monitor reading the age reported a healthy token for these, while
+        # every client build on the same file failed.
+        good = {'access_token': 'a', 'refresh_token': 'r',
+                'token_type': 'Bearer', 'expires_at': MOCK_NOW + 1800}
+        for token, message in (
+                ('x', 'not a JSON object'),
+                ([1, 2], 'not a JSON object'),
+                (None, 'not a JSON object'),
+                (dict(good, token_type=5), 'token_type is not a string'),
+                (dict(good, refresh_token=5),
+                 'refresh_token is not a string')):
+            with self.subTest(token=token):
+                self.write(json.dumps({
+                        'creation_timestamp': TOKEN_CREATION_TIMESTAMP,
+                        'token': token}))
+                with self.assertRaisesRegex(ValueError, message):
+                    auth.client_from_token_file(
+                            self.token_path, API_KEY, APP_SECRET)
+                with self.assertRaisesRegex(ValueError, message):
+                    auth.token_file_age(self.token_path)
+
+        # Positive control: a null token_type and refresh token, which a token
+        # store can hold, are accepted by both.
+        self.write(json.dumps({
+                'creation_timestamp': TOKEN_CREATION_TIMESTAMP,
+                'token': dict(good, token_type=None, refresh_token=None)}))
+        auth.client_from_token_file(self.token_path, API_KEY, APP_SECRET)
+        self.assertEqual(MOCK_NOW - TOKEN_CREATION_TIMESTAMP,
+                         auth.token_file_age(self.token_path))
+
+    @no_duplicates
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_a_decimal_or_other_real_timestamp_is_accepted(self):
         # A token store such as DynamoDB hands numbers back as Decimal, and
         # token_age() has always worked with one.

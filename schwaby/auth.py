@@ -591,15 +591,24 @@ def token_file_age(token_path):
     :raises ValueError: The file is not a token in the format this library
                         writes: not JSON, nested too deeply to read, not a
                         JSON object, written before the creation timestamp
-                        was stored, without a ``token`` entry, or with a
+                        was stored, without a ``token`` entry, with a
                         creation timestamp that is not a finite number a
-                        float can hold.
+                        float can hold, or with a token that
+                        :func:`client_from_token_file` would refuse: a
+                        ``token`` entry that is not a JSON object, or a
+                        ``token_type`` or refresh token that is neither a
+                        string nor null.
     :raises OSError: The file cannot be read.
     '''
     # A monitor reads the age often, so this read logs at DEBUG. At INFO it
     # would bury the line a client writes when it actually loads the token.
-    return TokenMetadata.from_loaded_token(
-            __token_loader(token_path, logging.DEBUG)(), None).token_age()
+    metadata = TokenMetadata.from_loaded_token(
+            __token_loader(token_path, logging.DEBUG)(), None)
+    # The check a client applies to the token before building a session on
+    # it. Without it a monitor reported a healthy age for a file every client
+    # build refused. It works on a copy, so the file's token is untouched.
+    _stored_token_for_session(metadata.token)
+    return metadata.token_age()
 
 
 ################################################################################
