@@ -593,11 +593,13 @@ def token_file_age(token_path):
                         JSON object, written before the creation timestamp
                         was stored, without a ``token`` entry, with a
                         creation timestamp that is not a finite number a
-                        float can hold, or with a token that
-                        :func:`client_from_token_file` would refuse: a
+                        float can hold, or with a token that fails the shape
+                        check :func:`client_from_token_file` applies first: a
                         ``token`` entry that is not a JSON object, or a
                         ``token_type`` or refresh token that is neither a
-                        string nor null.
+                        string nor null. A token that passes can still fail
+                        when a client is built from it, on an expiry authlib
+                        cannot read, for instance.
     :raises OSError: The file cannot be read.
     '''
     # A monitor reads the age often, so this read logs at DEBUG. At INFO it

@@ -390,8 +390,8 @@ class UnusableAccountNumbersError(SchwabError, ValueError):
     that could be the account asked for but cannot be read, or lists the
     account number more than once.
 
-    Either way the answer cannot be trusted to name one account, so no hash is
-    returned. Its message names neither account number.
+    In each case the answer cannot be trusted to name one account, so no hash
+    is returned. Its message names neither account number.
     '''
 
 
