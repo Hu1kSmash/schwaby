@@ -22,6 +22,134 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 4.5.0
+
+*2026-09-10*
+
+Three helpers for work every Schwab consumer ends up writing, a fix to
+option-symbol parsing, and Schwab behaviour measured on a live account.
+Nothing is removed or renamed, but two changes refuse input 4.4.2 accepted:
+`OptionSymbol.parse_symbol` refuses a symbol that is not its fixed layout, and
+a token whose creation timestamp is not a finite number, such as a string,
+`null`, `true` or NaN, no longer loads.
+
+### `schwaby.utils.find_account_hash`
+
+Every account-specific call takes an account hash rather than the account
+number. The README and the docs fetched one with
+`get_account_numbers().json()[0]['hashValue']`. A token can cover several
+accounts and Schwab documents no order for the list, so that picks an account
+rather than finding one.
+
+`find_account_hash(account_numbers, account_number)` takes the parsed JSON body
+of the response and returns that account's hash. It makes no request, so the
+synchronous and asynchronous clients share it.
+
+- The account number must be a `str`, which is how Schwab's schema types it.
+  An `int` is refused rather than converted, because converting drops a
+  leading zero and then matches nothing.
+- An account number with whitespace around it, as one read from a file can
+  have, raises `ValueError` rather than reading as an account the token does
+  not cover.
+- An account the token does not cover raises `AccountNumberNotFoundError`.
+  That is an ordinary answer, and you can catch it on its own.
+- A list that is not the documented shape, or that has the number twice,
+  raises `UnusableAccountNumbersError`, which is also a `ValueError`.
+- No message names an account number.
+
+Every example now uses it. `get_account_numbers`' docstring said its response
+is a mapping; the response's JSON body is a list.
+
+### `schwaby.auth.token_file_age`
+
+`token_file_age(token_path)` returns the seconds since the token in a token
+file was created by a login, without building a client. It uses the same
+calculation as `Client.token_age()`, on the creation time stored in the file
+now rather than when a client was built. It reads that stored time, not the
+file's modification time: the file is rewritten every time the access token is
+refreshed.
+
+A token that is not a mapping, has no `token` entry, or has a creation timestamp
+that is not a finite number is now refused with a `ValueError` saying so, by the
+client as well, and so is a token nested too deeply to read. Any finite real
+number is still accepted as the timestamp, including the `Decimal` a token store
+such as DynamoDB hands back. With one, a refresh failure raised `TypeError` in
+place of `TokenRefreshError`; it no longer does. In 4.4.2:
+
+- A list or string that did not contain `creation_timestamp` was refused as a
+  changed token format. One that did, `null` or a number raised `TypeError`, a
+  missing `token` entry raised `KeyError`, and a deeply nested file raised
+  `RecursionError`.
+- A timestamp that was a string or `null` loaded, then raised `TypeError` once
+  the client was asked for the token's age.
+- A timestamp of `true`, `false`, NaN or infinity loaded without complaint.
+  `true`, `false` and negative infinity read as a token too old to use, so
+  `easy_client` discarded it and ran the login flow. With NaN or positive
+  infinity the age never reached `max_token_age`, so `easy_client` never
+  retired the token.
+
+`easy_client` no longer recovers from such a file by running the login flow, as
+4.4.2 did for a timestamp that read as too old. It raises the `ValueError`, and
+the file has to be deleted before logging in again.
+
+### `schwaby.contrib.util.parse_message_data`
+
+An `ACCT_ACTIVITY` item's `MESSAGE_DATA` is a JSON string, sent empty on the
+`SUBSCRIBED` ack and as plain prose for notices. `parse_message_data(value)`
+returns:
+
+- the `dict`, for a JSON object;
+- `None`, for empty or whitespace-only text;
+- the text itself, for anything else.
+
+A notice never raises. A `dict` is returned unchanged. Text that starts like a
+JSON object but is not one raises `UnparsableMessageData` rather than reading
+as a notice; that covers truncation, corruption and nesting past the
+interpreter's depth. Before looking for the `{`, it skips whitespace, and
+Unicode format and control characters and separators such as a byte order mark
+or a zero-width space. Other characters are not skipped, even ones that render
+as nothing. After the payload only whitespace is dropped, so a payload followed
+by a zero-width space raises.
+
+### `OptionSymbol.parse_symbol` refuses a symbol that is not its fixed layout
+
+An option symbol is read from fixed positions, and `parse_symbol` did not check
+that a symbol had them. A root padded with one space instead of two parsed with
+an expiration in 2061, and a seven-digit strike parsed as 12.5 instead of 125:
+a different contract, with no error. It now refuses anything but 21 characters:
+a root of one to six characters padded with spaces, six digits of expiration,
+`C` or `P`, and eight digits of strike. This predates 4.4.0.
+
+### Documentation
+
+Measured on a live account, and stated no wider than the evidence:
+
+- **Which fill quantity is the running total.** `CumulativeQuantity` is filled
+  so far, `ExecutionQuantity` is this execution alone, and the posting
+  `Quantity` is the order's quantity. The first two agree on single-execution
+  fills, which is why reading the wrong one survives testing.
+- **`PriceImprovement`'s unit is not established.** 94 of 188 ETF fills fitted
+  a total for the fill, and 9 fitted a price per share.
+- **Fill timestamps.** `ExecutionTimeStamp` reads as US Eastern time with no
+  offset, checked in summer only. `VenuExecutionTimeStamp` sits beside it and
+  differed on every fill in the archive.
+- **Charges.** Every fill in the archive carried its commission and fees, zero
+  charges included.
+- **The "Feature not supported" notice.** It arrives on the data channel with
+  an empty `MESSAGE_TYPE`, most often around 00:30 Eastern. The notify-channel
+  list named it too; over about three months it arrived only on data, so that
+  sentence is narrowed.
+- **Price history.**
+  - A longer thirty-minute range did not reach further back.
+  - Thirty-minute candles are labelled with their open time, measured over
+    four regular sessions of one liquid ETF. The newest one returned can still
+    be forming: seen on liquid ETFs over one day, and not on a thinly traded
+    one.
+- **Quotes.** `get_quotes` can return HTTP 429. No rate is given, because none
+  was measured.
+- **Account balances.** `cashAvailableForTrading` was present as `0.0`, not
+  omitted, on an account holding no cash.
+
 ## 4.4.2
 
 *2026-09-10*
