@@ -1232,6 +1232,21 @@ class DecodeDecimalTest(unittest.TestCase):
 from schwaby.contrib.util import UnparsableMessageData, parse_message_data
 
 
+class HeuristicJsonDecoderBytesTest(unittest.TestCase):
+
+    @no_duplicates
+    def test_a_bytes_frame_that_is_not_json_raises_the_decode_error(self):
+        # Its repair step replaced with str arguments, which raised TypeError
+        # on bytes -- an exception the client does not report as a frame that
+        # would not parse, so the receive loop ended with nothing said.
+        from schwaby.contrib.util import HeuristicJsonDecoder
+        with self.assertRaises(json.decoder.JSONDecodeError):
+            HeuristicJsonDecoder().decode_json_string(b'not json')
+        # Positive control: a str frame still decodes.
+        self.assertEqual({'a': '\\'}, HeuristicJsonDecoder().decode_json_string(
+                '{"a": "\\\\"}'))
+
+
 class ParseMessageDataTest(unittest.TestCase):
 
     @no_duplicates
