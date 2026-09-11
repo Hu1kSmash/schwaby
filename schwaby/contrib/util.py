@@ -758,7 +758,9 @@ def parse_message_data(value):
     Format and control characters and separators in front of the ``{`` --- a
     byte order mark, a zero-width space --- are skipped, so a payload behind
     one is still read as a payload. Other characters are not skipped, even
-    one that renders as nothing, such as a combining mark.
+    one that renders as nothing, such as a combining mark, and nothing is
+    skipped after the payload: one followed by a zero-width space raises
+    :class:`UnparsableMessageData`.
 
     :raises UnparsableMessageData: The text starts, after any whitespace,
                                    format or control characters and
@@ -766,9 +768,11 @@ def parse_message_data(value):
                                    object.
     :raises TypeError: ``value`` is neither a ``str`` nor a ``dict``.
     '''
-    if isinstance(value, dict):
+    # Types through type(), which a class cannot fake the way it can fake
+    # __class__ for isinstance.
+    if issubclass(type(value), dict):
         return value
-    if not isinstance(value, str):
+    if not issubclass(type(value), str):
         raise TypeError(
                 'MESSAGE_DATA must be a str or a dict, not a {}'.format(
                     _type_name(value)))

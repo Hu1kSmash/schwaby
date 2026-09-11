@@ -1307,7 +1307,14 @@ class ParseMessageDataTest(unittest.TestCase):
 
     @no_duplicates
     def test_anything_else_is_refused(self):
-        for value in (None, b'{"a": 1}', 7, ['{"a": 1}']):
+        class FakeDict:
+            __class__ = dict
+
+        class FakeStr:
+            __class__ = str
+
+        for value in (None, b'{"a": 1}', 7, ['{"a": 1}'], FakeDict(),
+                      FakeStr()):
             with self.subTest(value=value):
                 with self.assertRaisesRegex(TypeError,
                                             'must be a str or a dict'):
