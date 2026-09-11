@@ -459,14 +459,22 @@ class UnusableOrderActivityError(SchwabError, ValueError):
 
 
 #: The decimal context ``execution_totals`` adds up in, whatever the caller's
-#: is: wide enough that the sums and products of a real order's quantities and
-#: prices are exact, with no traps beyond a default context's, so a caller's
-#: lower precision or ``Inexact`` trap neither changes the totals nor raises.
+#: is. The sums and products of a real order's quantities and prices fit its
+#: 60 digits exactly; one that does not -- too large, too small or too long --
+#: would be rounded, so ``Inexact`` is trapped and a total is exact or refused.
 _EXECUTION_CONTEXT = decimal.Context(
         prec=60, rounding=decimal.ROUND_HALF_EVEN, Emin=-999999, Emax=999999,
         capitals=1, clamp=0, flags=[],
         traps=[decimal.InvalidOperation, decimal.DivisionByZero,
-               decimal.Overflow])
+               decimal.Overflow, decimal.Inexact])
+
+#: The average is a quotient, so it is rounded to the same 60 digits rather
+#: than refused; one too small to hold would round to zero, so that is refused.
+_AVERAGE_CONTEXT = decimal.Context(
+        prec=60, rounding=decimal.ROUND_HALF_EVEN, Emin=-999999, Emax=999999,
+        capitals=1, clamp=0, flags=[],
+        traps=[decimal.InvalidOperation, decimal.DivisionByZero,
+               decimal.Overflow, decimal.Underflow])
 
 
 def _order_number(leg, key, where):
@@ -492,7 +500,8 @@ def _order_number(leg, key, where):
 
 def _add_up_fills(activities):
     """The per-leg totals of an ``orderActivityCollection`` already known to
-    be a list, in whatever decimal context is current."""
+    be a list: summed in whatever decimal context is current, and averaged in
+    ``_AVERAGE_CONTEXT``."""
     quantities, amounts = {}, {}
     for a, activity in enumerate(
             list.__getitem__(activities, slice(None)), 1):
@@ -543,7 +552,9 @@ def _add_up_fills(activities):
                     leg_id, decimal.Decimal(0)) + quantity * price
 
     return {leg_id: ExecutionTotal(
-                quantity, amounts[leg_id] / quantity if quantity else None)
+                quantity,
+                _AVERAGE_CONTEXT.divide(amounts[leg_id], quantity)
+                if quantity else None)
             for leg_id, quantity in quantities.items()}
 
 
@@ -565,8 +576,10 @@ def execution_totals(order):
     ``quantity`` is the sum of a leg's execution quantities, and
     ``average_price`` is their price weighted by quantity. The arithmetic
     runs in its own decimal context, so the caller's precision and traps do
-    not change it: the sums and products are exact for any real order, and the
-    average is divided to 60 significant digits. A price is as Schwab
+    not change it. The sums and products are exact to 60 significant digits,
+    which a real order does not approach, and a number too large, too small or
+    too long for that is refused rather than rounded; the average is divided
+    to 60 significant digits. A price is as Schwab
     quotes it, with no contract multiplier applied; for the ETF fills that were
     compared with their recorded fill prices, that was per share. A float is
     read into ``Decimal`` from its shortest text, which is its JSON text for
@@ -581,8 +594,9 @@ def execution_totals(order):
                                         execution leg is not the shape this
                                         reads; a quantity or price is not a
                                         finite number, or a quantity is
-                                        negative; a number is too large to add
-                                        up; or a ``mismarkedQuantity`` is not
+                                        negative; a number is too large, too
+                                        small or too long to add up exactly;
+                                        or a ``mismarkedQuantity`` is not
                                         zero.
     '''
     # Types through type(), which a class cannot fake the way it can fake
@@ -601,9 +615,11 @@ def execution_totals(order):
     try:
         with decimal.localcontext(_EXECUTION_CONTEXT):
             return _add_up_fills(activities)
-    except decimal.Overflow:
+    except decimal.Inexact:
+        # Overflow and Underflow are kinds of Inexact.
         raise UnusableOrderActivityError(
-                'a quantity or price is too large to add up') from None
+                'a quantity or price is too large, too small or too long to '
+                'add up exactly') from None
 
 
 def _expiry_authlib_acts_on(expires_at):

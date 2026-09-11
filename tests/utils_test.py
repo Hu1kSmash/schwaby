@@ -1276,6 +1276,61 @@ class ExecutionTotalsTest(unittest.TestCase):
                     'FILL', self.leg(1, huge, huge), quantity=1.0)))
 
     @no_duplicates
+    def test_a_sum_is_exact_or_refused(self):
+        # A real order is nowhere near 60 digits. Past them, or below the
+        # smallest exponent, a total would be rounded, so it is refused.
+        exact = decimal.Decimal(10 ** 58 + 1)
+        totals = execution_totals(self.order(self.activity(
+                'FILL', self.leg(1, exact, 1.0), quantity=1.0)))
+        self.assertEqual(ExecutionTotal(exact, decimal.Decimal(1)), totals[1])
+        for name, quantity, price in (
+                ('too long', decimal.Decimal(10 ** 70 + 1), 1.0),
+                ('too small', decimal.Decimal('1e-999990'),
+                 decimal.Decimal('1e-999990'))):
+            with self.subTest(name):
+                with self.assertRaisesRegex(
+                        UnusableOrderActivityError, 'add up exactly'):
+                    execution_totals(self.order(self.activity(
+                            'FILL', self.leg(1, quantity, price),
+                            quantity=1.0)))
+
+    @no_duplicates
+    def test_the_average_is_divided_to_60_digits(self):
+        totals = execution_totals(self.order(
+                self.activity('FILL', self.leg(1, 1.0, 2.0)),
+                self.activity('FILL', self.leg(1, 2.0, 0.0))))
+        self.assertEqual(60, len(totals[1].average_price.as_tuple().digits))
+        # Two thirds ends in a 7 under any rounding to nearest, which catches
+        # truncation; only a tie tells half-even from half-up.
+        self.assertEqual('0.' + '6' * 59 + '7', str(totals[1].average_price))
+        half = decimal.Decimal('1' + '0' * 59 + '.5')
+        tie = execution_totals(self.order(self.activity(
+                'FILL', self.leg(1, 2.0, half), quantity=1.0)))
+        self.assertEqual(decimal.Decimal(10 ** 59), tie[1].average_price)
+
+    @no_duplicates
+    def test_an_average_too_large_or_small_to_hold_is_refused(self):
+        # Prices of opposite sign can cancel to an amount far smaller than
+        # either, and dividing it would round to zero; a tiny quantity at a
+        # huge price divides past the largest exponent.
+        huge = decimal.Decimal('1E+999998')
+        up = decimal.Decimal('1.' + '0' * 58 + '1E-1000098')
+        down = decimal.Decimal('-1E-1000098')
+        tiny = decimal.Decimal('1E-100')
+        vast = decimal.Decimal('1E+1000050')
+        for name, activities in (
+                ('too small', (
+                    self.activity('FILL', self.leg(1, huge, up), quantity=1.0),
+                    self.activity(
+                        'FILL', self.leg(1, huge, down), quantity=1.0))),
+                ('too large', (self.activity(
+                    'FILL', self.leg(1, tiny, vast), quantity=1.0),))):
+            with self.subTest(name):
+                with self.assertRaisesRegex(
+                        UnusableOrderActivityError, 'add up exactly'):
+                    execution_totals(self.order(*activities))
+
+    @no_duplicates
     def test_subclasses_are_read_through_the_built_in_types(self):
         # A custom JSON decoder can hand back subclasses, and what is checked
         # must be what is counted.
@@ -1305,7 +1360,10 @@ class ExecutionTotalsTest(unittest.TestCase):
                 ('activities', {'orderActivityCollection': Hiding([fill])}),
                 ('legs', self.order(dict(
                     fill, executionLegs=Hiding(fill['executionLegs'])))),
-                ('order', Forgetful(self.order(fill)))):
+                ('order', Forgetful(self.order(fill))),
+                ('activity', self.order(Forgetful(fill))),
+                ('leg', self.order(dict(fill, executionLegs=[
+                    Forgetful(fill['executionLegs'][0])])))):
             with self.subTest(read_through=name):
                 self.assertEqual(decimal.Decimal('1'),
                                  execution_totals(order)[1].quantity)
@@ -1323,6 +1381,28 @@ class ExecutionTotalsTest(unittest.TestCase):
         totals = execution_totals(self.order(
                 self.activity('FILL', self.leg(1, 1.0, Noisy(58.1)))))
         self.assertEqual(decimal.Decimal('58.1'), totals[1].average_price)
+
+        # A mismarked quantity the leg's get hides is still refused.
+        hiding = Forgetful(self.leg(1, 1.0, 1.0, mismarkedQuantity=3.0))
+        with self.assertRaisesRegex(
+                UnusableOrderActivityError, 'mismarkedQuantity'):
+            execution_totals(self.order(self.activity('FILL', hiding)))
+
+        # An int subclass is read by its value, not through its overrides.
+        class Twisted(int):
+            def __int__(self):
+                return 7
+
+            __index__ = __int__
+
+            def __str__(self):
+                return '7'
+
+        totals = execution_totals(self.order(self.activity(
+                'FILL', self.leg(1, Twisted(2), Twisted(3)), quantity=1.0)))
+        self.assertEqual(
+                ExecutionTotal(decimal.Decimal(2), decimal.Decimal(3)),
+                totals[1])
 
         # The leg id comes back a plain int.
         class LegId(int):

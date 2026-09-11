@@ -73,10 +73,10 @@ and price per leg. :func:`~schwaby.utils.execution_totals` adds them up in
 
 What it rests on was measured read-only over 423 orders:
 
-- 8 ETF orders filled in two executions, and 387 orders in one. Each leg's fills added
-  up to ``filledQuantity``, each activity's quantity to its execution legs, and
-  the weighted price was within 0.2% of the placing program's own recorded fill
-  price for every order it had a record of.
+- 8 ETF orders filled in two executions, and 387 orders in one. Each leg's
+  fills added up to ``filledQuantity``, each activity's quantity to its
+  execution legs, and the weighted price was within 0.2% of the placing
+  program's own recorded fill price for every order it had a record of.
 - 3 option orders. One was a vertical spread with equal leg quantities, filled
   in a single execution: its one activity carried an execution leg per leg, and
   both ``filledQuantity`` and the activity's ``quantity`` counted spreads.
