@@ -1272,8 +1272,9 @@ def easy_client(api_key, app_secret, callback_url, token_path, asyncio=False,
 
     # Detect whether we're running in a notebook
     if __running_in_notebook():
-        c = client_from_manual_flow(api_key, app_secret, callback_url, 
-                                    token_path, enforce_enums=enforce_enums)
+        c = client_from_manual_flow(api_key, app_secret, callback_url,
+                                    token_path, asyncio=asyncio,
+                                    enforce_enums=enforce_enums)
         logger.info(
             'Returning client fetched using manual flow, writing' +
             'token to \'%s\'', token_path)

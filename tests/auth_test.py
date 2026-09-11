@@ -1590,6 +1590,25 @@ class EasyClientTest(unittest.TestCase):
     @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
     @patch('schwaby.auth.client_from_manual_flow', new_callable=MockOAuthClient)
     @patch('os.getenv', new_callable=MockOAuthClient)
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    def test_a_notebook_login_keeps_asyncio(
+            self, getenv, client_from_manual_flow, client_from_login_flow,
+            client_from_token_file):
+        # The notebook route dropped the flag, so asking for an async client
+        # there returned a synchronous one.
+        getenv.side_effect = lambda flag: 'yes'
+        client_from_manual_flow.return_value = MagicMock()
+
+        auth.easy_client(API_KEY, APP_SECRET, CALLBACK_URL, self.token_path,
+                         asyncio=True)
+        self.assertIs(
+                True, client_from_manual_flow.call_args.kwargs['asyncio'])
+
+    @no_duplicates
+    @patch('schwaby.auth.client_from_token_file')
+    @patch('schwaby.auth.client_from_login_flow', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.client_from_manual_flow', new_callable=MockOAuthClient)
+    @patch('os.getenv', new_callable=MockOAuthClient)
     @patch('schwaby.auth._get_ipython')
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_running_on_ipython_in_something_other_than_notebook_mode(
