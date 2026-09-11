@@ -373,7 +373,9 @@ class TokenMetadata:
         # may hand back any mapping. Anything else -- a list, a string, null
         # -- would fail below with an error about indexing, which says nothing
         # about the token.
-        if not isinstance(token, collections.abc.Mapping):
+        # Types through type(): a class can fake __class__ for isinstance,
+        # and then fails below with an error that says nothing about tokens.
+        if not issubclass(type(token), collections.abc.Mapping):
             raise ValueError(
                     'The token is not a JSON object, so it is not a token '
                     'this library wrote. If it came from a token file, delete '
@@ -389,14 +391,15 @@ class TokenMetadata:
         # Any real number works there, including the Decimal a token store
         # such as DynamoDB hands back.
         creation_timestamp = token['creation_timestamp']
-        if (isinstance(creation_timestamp, bool)
-                or not isinstance(creation_timestamp,
+        if (issubclass(type(creation_timestamp), bool)
+                or not issubclass(type(creation_timestamp),
                                   (numbers.Real, decimal.Decimal))
                 or not _is_finite(creation_timestamp)):
             raise ValueError(
-                    'The token\'s creation_timestamp is not a finite number, '
-                    'so its age cannot be known. If it came from a token '
-                    'file, delete the file and create a new one.')
+                    'The token\'s creation_timestamp is not a finite number '
+                    'a float can hold, so its age cannot be known. If it came '
+                    'from a token file, delete the file and create a new '
+                    'one.')
         if 'token' not in token:
             raise ValueError(
                     'The token has no "token" entry, so it is not a token '
