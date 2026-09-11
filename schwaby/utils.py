@@ -616,20 +616,20 @@ def execution_totals(order):
     ``activityType`` alone reports canceled quantity as filled.
 
     ``quantity`` is the sum of a leg's execution quantities, and
-    ``average_price`` is their price weighted by quantity. The arithmetic
-    runs in its own decimal context, so the caller's precision and traps do
-    not change it. The totals come back as plain ``Decimal`` values, though,
-    so arithmetic done on them afterwards is in the caller's context again:
-    with ``Inexact`` trapped there, dividing a combined total back into an
-    average can raise. The sums and products are exact to 60 significant
-    digits, which a real order does not approach, and a number too large, too
-    small or too long for that is refused rather than rounded; the average is
-    divided to 60 significant digits. A price is as Schwab quotes it, with no
-    contract multiplier applied; for the ETF fills that were
-    compared with their recorded fill prices, that was per share. A float is
-    read into ``Decimal`` from its shortest text, which is its JSON text for
-    any price of up to 15 significant digits, so a price of ``58.1853`` is
-    exactly that. An order with no fills gives an empty dict.
+    ``average_price`` is their price weighted by quantity. The arithmetic runs
+    in its own decimal context, so the caller's precision and traps do not
+    change it. The totals come back as plain ``Decimal`` values, though, so
+    arithmetic done on them afterwards is in the caller's context again: with
+    ``Inexact`` trapped there, multiplying a quantity by its average, or
+    dividing a combined total back into one, can raise. The sums and products
+    are exact to 60 significant digits, which a real order does not approach,
+    and a number too large, too small or too long for that is refused rather
+    than rounded; the average is divided to 60 significant digits. A price is
+    as Schwab quotes it, with no contract multiplier applied; for the ETF fills
+    that were compared with their recorded fill prices, that was per share. A
+    float is read into ``Decimal`` from its shortest text, which is its JSON
+    text for any price of up to 15 significant digits, so a price of
+    ``58.1853`` is exactly that. An order with no fills gives an empty dict.
 
     Leg totals are not checked against ``filledQuantity``: a ratio spread's
     legs would legitimately differ.
@@ -694,9 +694,9 @@ class TokenRefreshError(SchwabError):
     exists so that an unattended application can catch a failure to refresh
     without importing ``authlib`` and catching an exception type this library
     never mentions. The original error is preserved as ``__cause__``, with
-    its ``error`` and ``description`` as authlib set them. Text the endpoint
-    sent is escaped and cut to 200 characters in this message and in what
-    that error prints, since a traceback reaches logs.
+    its ``error``, ``description`` and ``repr`` as authlib made them. Text the
+    endpoint sent is escaped and cut to 200 characters in this message and in
+    that error's ``str()``, which is what a traceback prints.
 
     ``token_age`` is the number of seconds since the token was originally
     authorized, or ``None`` if this client was built without token metadata.
