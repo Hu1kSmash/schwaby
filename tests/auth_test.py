@@ -1512,46 +1512,60 @@ class LoginExchangeErrorTest(unittest.TestCase):
         self.assertEqual('code already used', cm.exception.description)
         self.assertEqual('https://example.invalid/errors', cm.exception.uri)
         self.assertEqual('invalid_grant: code already used', str(cm.exception))
-        self.assertIs(original, cm.exception.__cause__)
+        self.assertIsNone(cm.exception.__cause__)
         self.assertEqual([], writes)
 
     @no_duplicates
     def test_a_redirect_that_is_refused_before_any_exchange_is_one_too(self):
-        # authlib refuses a state that does not match, an empty code and a
-        # fragment before any request. A redirect carrying the authorization
-        # server's own refusal has no code, and authlib would go on to ask for
-        # another grant; it is reported as the refusal it carries.
+        # authlib refuses a state that does not match before any request. A
+        # redirect without "code=" it sends as another grant, and a fragment it
+        # takes as an implicit grant's token, so both are refused first. A
+        # redirect carrying the authorization server's own refusal is reported
+        # as the refusal it carries.
         import httpx2
-        from authlib.oauth2.rfc6749.errors import (
-                MismatchingStateException, MissingCodeException,
-                MissingTokenException)
+        from authlib.oauth2.rfc6749.errors import MismatchingStateException
         from schwaby.utils import LoginExchangeError
 
         base = 'https://127.0.0.1:8182/'
+        ours = 'the redirect carries no authorization code'
         cases = (
-            (base + '?state=state', 'missing_code'),
-            (base + '?error=&state=state', 'missing_code'),
-            (base + '?code=c&state=OTHER', MismatchingStateException.error),
-            (base + '?code=&state=state', MissingCodeException.error),
-            (base + '?state=state#x', MissingTokenException.error),
+            (base + '?state=state', 'missing_code', ours),
+            (base + '?error=&state=state', 'missing_code', ours),
+            (base + '?code=&state=state', 'missing_code', ours),
+            # authlib looks for "code=" in the raw URL, not for a code key.
+            (base + '?%63ode=c&state=state', 'missing_code', ours),
+            (base + '?x=code=1&state=state', 'missing_code', ours),
+            (base + '?code=c&state=OTHER', MismatchingStateException.error,
+             None),
+            (base + '?state=state#x', 'invalid_request', None),
+            (base + '?code=c&state=state#access_token=a&token_type=Bearer'
+                    '&state=state', 'invalid_request', None),
+            # The venue's own refusal is reported ahead of the fragment.
+            (base + '?error=access_denied&state=state#x', 'access_denied',
+             None),
             (base + '?error=access_denied&error_description=The+user+declined'
-                    '&state=state', 'access_denied'))
+                    '&state=state', 'access_denied', 'The user declined'))
+        writes = []
         with patch.object(httpx2.Client, 'send',
                           side_effect=AssertionError('a request was sent')):
-            for url, error in cases:
+            for url, error, description in cases:
                 with self.subTest(url=url):
                     with self.assertRaises(LoginExchangeError) as cm:
                         auth.client_from_received_url(
                                 API_KEY, APP_SECRET, self.CONTEXT, url,
-                                lambda *args, **kwargs: None)
+                                lambda *args, **kwargs: writes.append(args))
                     self.assertEqual(error, cm.exception.error)
-        self.assertEqual('The user declined', cm.exception.description)
+                    if description is not None:
+                        self.assertEqual(
+                                description, cm.exception.description)
+        self.assertEqual([], writes)
 
     @no_duplicates
     def test_refusal_text_is_escaped_and_cut(self):
         # It comes from the redirect or the endpoint and reaches whatever logs
         # the exception: a line break there forged a log line.
         import httpx2
+        import traceback
         from authlib.integrations.base_client.errors import OAuthError
         from authlib.integrations.httpx_client import OAuth2Client
         from schwaby.utils import LoginExchangeError
@@ -1568,14 +1582,100 @@ class LoginExchangeErrorTest(unittest.TestCase):
         self.assertNotIn('\x1b', str(cm.exception))
         self.assertLessEqual(len(cm.exception.description), 200)
 
-        original = OAuthError(error='invalid_grant',
+        original = OAuthError(error='invalid_grant\nFORGED',
                               description='line one\nline two')
         with patch.object(OAuth2Client, 'fetch_token', side_effect=original):
             with self.assertRaises(LoginExchangeError) as cm:
                 auth.client_from_received_url(
                         API_KEY, APP_SECRET, self.CONTEXT, self.RECEIVED,
                         lambda *args, **kwargs: None)
+        self.assertEqual('invalid_grant\\nFORGED', cm.exception.error)
         self.assertEqual('line one\\nline two', cm.exception.description)
+        # authlib's error is not chained, so a logged traceback does not print
+        # its text either.
+        logged = ''.join(traceback.format_exception(cm.exception))
+        self.assertNotIn('line one\nline two', logged)
+
+    @no_duplicates
+    def test_refusal_text_that_is_not_a_plain_string_is_escaped_and_cut(self):
+        # A JSON error body can carry any type, and a str subclass can
+        # override what the escaping reads.
+        from authlib.integrations.base_client.errors import OAuthError
+        from authlib.integrations.httpx_client import OAuth2Client
+        from schwaby.utils import LoginExchangeError
+
+        class Sly(str):
+            def isprintable(self):
+                return True
+
+        class Faked:
+            __class__ = str
+
+            def __repr__(self):
+                return 'faked'
+
+        def refused(error, description):
+            original = OAuthError(error=error, description=description)
+            with patch.object(OAuth2Client, 'fetch_token',
+                              side_effect=original):
+                with self.assertRaises(LoginExchangeError) as cm:
+                    auth.client_from_received_url(
+                            API_KEY, APP_SECRET, self.CONTEXT, self.RECEIVED,
+                            lambda *args, **kwargs: None)
+            return cm.exception
+
+        e = refused(['invalid_grant\n'] * 2000, {'why': 'x' * 1000})
+        self.assertIs(str, type(e.error))
+        self.assertTrue(e.error.startswith("['invalid_grant\\n', "))
+        self.assertLessEqual(len(e.error), 200)
+        self.assertLessEqual(len(e.description), 200)
+
+        e = refused(Faked(), Sly('line one\nline two'))
+        self.assertEqual('faked', e.error)
+        self.assertEqual('line one\\nline two', e.description)
+        self.assertIs(str, type(e.description))
+
+        # A redirect's refusal without a description has none, not 'None'.
+        with self.assertRaises(LoginExchangeError) as cm:
+            auth.client_from_received_url(
+                    API_KEY, APP_SECRET, self.CONTEXT,
+                    'https://127.0.0.1:8182/?error=access_denied&state=state',
+                    lambda *args, **kwargs: None)
+        self.assertEqual('', cm.exception.description)
+
+    @no_duplicates
+    def test_an_unusable_token_response_keeps_this_librarys_description(self):
+        # Its description is this library's, so it is not cut; the same code
+        # from the endpoint is the endpoint's text, told apart by a mark this
+        # library sets.
+        import httpx2
+        from schwaby.utils import LoginExchangeError
+
+        def answering(body):
+            def send(request, **kwargs):
+                return httpx2.Response(200, json=body, request=request)
+            return send
+
+        writes = []
+        for body in ({'message': 'Unauthorized'},
+                     {'error': 'unusable_token_response',
+                      'error_description': 'line one\nline two'}):
+            with self.subTest(body=body):
+                with patch.object(httpx2.Client, 'send',
+                                  side_effect=answering(body)):
+                    with self.assertRaises(LoginExchangeError) as cm:
+                        auth.client_from_received_url(
+                                API_KEY, APP_SECRET, self.CONTEXT,
+                                self.RECEIVED,
+                                lambda *args, **kwargs: writes.append(args))
+                self.assertEqual('unusable_token_response', cm.exception.error)
+                if 'message' in body:
+                    self.assertTrue(cm.exception.description.endswith(
+                            'no refresh token that is empty or not a string'))
+                else:
+                    self.assertEqual('line one\\nline two',
+                                     cm.exception.description)
+        self.assertEqual([], writes)
 
     @no_duplicates
     def test_a_failure_that_is_not_an_oauth_error_is_not_wrapped(self):

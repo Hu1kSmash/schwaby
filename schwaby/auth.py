@@ -244,13 +244,19 @@ def _refuse_unusable_token_response(response):
         return response
     if isinstance(body, dict) and ('error' in body or _is_usable_token(body)):
         return response
-    raise OAuthError(
+    refusal = OAuthError(
             error='unusable_token_response',
             description='the token endpoint answered with something that is '
                         'not a usable token, so it was not stored: it needs a '
                         'non-empty string access token, the bearer type, an '
                         'expiry no more than seven days away, and no refresh '
                         'token that is empty or not a string')
+    # Marked, so a login can tell this library's description from text an
+    # endpoint sends with the same code. Not a subclass: a refresh reports it
+    # as TokenRefreshError's cause, and the docs are searched by the line its
+    # traceback prints.
+    refusal._described_by_this_library = True
+    raise refusal
 
 
 def _stored_token_for_session(token):
@@ -1151,10 +1157,14 @@ def get_auth_context(api_key, callback_url, state=None):
 def _venue_text(value):
     """Text a redirect or the token endpoint sent, escaped and cut to 200
     characters, since it reaches an exception message and whatever logs it.
-    Anything that is not a string is left as it is."""
-    if not issubclass(type(value), str):
-        return value
-    text = str.__str__(value)
+    A value that is not a string, which a JSON error body can carry, is taken
+    as its repr; ``None`` stays ``None``."""
+    if value is None:
+        return None
+    if issubclass(type(value), str):
+        text = str.__str__(value)
+    else:
+        text = repr(value)
     return _printable(text if len(text) <= 200 else text[:197] + '...', 200)
 
 
@@ -1201,17 +1211,25 @@ def client_from_received_url(
 
     # A redirect carrying the authorization server's refusal -- access_denied
     # when the user declines -- has no code, and neither does one that is no
-    # answer to the login at all. authlib sends either to the token endpoint
-    # as a client_credentials grant, with the app key and secret, and reports
-    # that grant's refusal instead. The URL itself is not repeated: it can
-    # carry a code.
+    # answer to the login at all. authlib decides on the raw URL: without
+    # "code=" it asks for a client_credentials grant, with the app key and
+    # secret, and reports that grant's refusal instead; with "#" it takes the
+    # fragment as an implicit grant's token and keeps it, with no request.
+    # This login is neither, so both are refused here on authlib's own tests,
+    # and so is a query that carries no code key. The URL itself is not
+    # repeated: it can carry a code.
     query = urllib.parse.parse_qs(urllib.parse.urlparse(received_url).query)
     error = (query.get('error') or [''])[0]
     if error:
         raise LoginExchangeError(
                 _venue_text(error),
                 _venue_text((query.get('error_description') or [None])[0]))
-    if '#' not in received_url and 'code' not in query:
+    if '#' in received_url:
+        raise LoginExchangeError(
+                'invalid_request',
+                'the redirect carries a fragment, which this login does not '
+                'read')
+    if 'code=' not in received_url or 'code' not in query:
         raise LoginExchangeError(
                 'missing_code', 'the redirect carries no authorization code')
 
@@ -1225,8 +1243,14 @@ def client_from_received_url(
         # The endpoint's refusal, and what authlib refuses before asking: a
         # state that does not match, an empty code. This library's class, and
         # an OAuthError, so code written against authlib's keeps catching it.
+        # authlib's error is not chained: its text is not escaped, and a
+        # logged traceback prints a cause in full.
+        if vars(e).get('_described_by_this_library') is True:
+            description = e.description
+        else:
+            description = _venue_text(e.description)
         raise LoginExchangeError(
-                _venue_text(e.error), _venue_text(e.description), e.uri) from e
+                _venue_text(e.error), description, e.uri) from None
 
     # Don't emit token details in debug logs
     register_redactions(token)

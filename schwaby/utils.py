@@ -686,19 +686,21 @@ class LoginExchangeError(SchwabError, OAuthError):
     '''
     Raised when a login cannot exchange its authorization code for a token.
     The redirect carries the authorization server's refusal (``access_denied``
-    when the user declines), has no code or an empty one, or has a ``state``
-    that does not match the login's; or the token endpoint refuses the code,
-    or answers with something that is not a usable token
+    when the user declines), has no code or an empty one, carries a fragment,
+    or has a ``state`` that does not match the login's; or the token endpoint
+    refuses the code, or answers with something that is not a usable token
     (``unusable_token_response``).
 
     It is also authlib's ``OAuthError``, so ``except OAuthError`` written
     before this class existed still catches it, and ``error`` and
-    ``description`` carry the refusal's code and text. Both come from the
-    redirect or the endpoint and reach whatever logs the exception, so each
-    has its control characters escaped and is cut to 200 characters. For
-    ``unusable_token_response`` that text is this library's description of
-    what came back, not the endpoint's. An error authlib raised is preserved
-    as ``__cause__``.
+    ``description`` carry the refusal's code and text. Text from the redirect
+    or the endpoint reaches whatever logs the exception, so it has its control
+    characters escaped and is cut to 200 characters, and a value that is not
+    a string is given as its repr. authlib's own error is not chained as
+    ``__cause__``, since its text is not escaped and a logged traceback prints
+    it. When this library refuses a token response as
+    ``unusable_token_response``, the description is its own text; an endpoint
+    sending that code has its text treated like any other.
 
     Unlike :class:`TokenRefreshError` it has no ``token_age`` or
     ``refresh_token_invalid``. No token exists yet, and an authorization code
