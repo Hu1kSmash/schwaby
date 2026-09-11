@@ -346,6 +346,7 @@ def find_account_hash(account_numbers, account_number):
                            drops any leading zero and then matches nothing.
     :raises TypeError: ``account_number`` is not a ``str``.
     :raises AccountNumberNotFoundError: No account has that number.
+    :raises ValueError: ``account_number`` has whitespace around it.
     :raises UnusableAccountNumbersError: The list is not that shape, or has
                                          that number more than once.
     '''
@@ -357,6 +358,11 @@ def find_account_hash(account_numbers, account_number):
                 '{}'.format(_type_name(account_number)))
     account_number = str.__str__(account_number)
 
+    # One read from a file or an environment variable can keep its newline,
+    # and would otherwise read as an account the token does not cover.
+    if account_number != account_number.strip():
+        raise ValueError(
+                'account_number has whitespace around it; strip it first')
     if not issubclass(type(account_numbers), list):
         raise UnusableAccountNumbersError(
                 'expected the list get_account_numbers() returns, not a '

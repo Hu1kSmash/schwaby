@@ -908,6 +908,16 @@ class FindAccountHashTest(unittest.TestCase):
                 self.assertNotIn('2222222', str(cm.exception))
 
     @no_duplicates
+    def test_whitespace_around_the_account_number_is_refused(self):
+        # A number read from a file keeps its newline, and would otherwise be
+        # reported as an account the token does not cover.
+        for number in ('11111111\n', ' 11111111', '11111111 '):
+            with self.subTest(number=number):
+                with self.assertRaisesRegex(ValueError, 'whitespace') as cm:
+                    find_account_hash(self.ACCOUNTS, number)
+                self.assertNotIn('1111111', str(cm.exception))
+
+    @no_duplicates
     def test_a_str_subclass_is_read_as_its_text(self):
         class Number(str):
             def __eq__(self, other):
