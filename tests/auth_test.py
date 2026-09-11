@@ -1361,9 +1361,10 @@ class StoredTokenShapeTest(unittest.TestCase):
 
     @no_duplicates
     def test_a_null_token_type_or_refresh_token_counts_as_absent(self):
-        # A nullable field in a token store. 4.5.0 used such a token until it
-        # lapsed and then reported it terminal, and a null token_type made
-        # every call on a live token raise AttributeError.
+        # A nullable field in a token store. Such a token used to work until
+        # it lapsed and then be reported terminal, until the shape check
+        # refused it; and a null token_type made every call on a live token
+        # raise AttributeError.
         import time
         live = dict(self.GOOD, token_type=None, refresh_token=None,
                     expires_at=int(time.time()) + 1800)
