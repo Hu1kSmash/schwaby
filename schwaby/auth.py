@@ -379,9 +379,9 @@ def token_file_writer(token_path):
                        write, as it is for the other entry points.
     :raises TypeError: ``token_path`` is not a ``str`` path. A ``bytes`` path
                        is refused too: the write cannot use one.
-    :raises ValueError: ``token_path`` contains a NUL, or, once a symlink is
-                        followed, is empty, names a directory or is not in an
-                        existing directory.
+    :raises ValueError: ``token_path`` is empty or contains a NUL, or names a
+                        directory or is not in an existing directory once a
+                        symlink is followed.
 
     The checks are made here rather than at the first write, which comes after
     the code is spent.
