@@ -1207,7 +1207,7 @@ def client_from_received_url(
             state=auth_context.state)
     except AuthlibBaseError as e:
         # The endpoint's refusal, and what authlib refuses before asking: a
-        # state that does not match, no code. This library's class, and an
+        # state that does not match, an empty code. This library's class, and an
         # OAuthError, so code written against authlib's keeps catching it.
         raise LoginExchangeError(e.error, e.description, e.uri) from e
 

@@ -562,8 +562,8 @@ sets ``refresh_token_invalid``.
 A refusal while a login exchanges its code for a token is different: it raises
 :class:`~schwaby.utils.LoginExchangeError`, which is also authlib's
 ``OAuthError``, with the code in ``error``. So does a redirect that carries a
-refusal, such as ``access_denied`` when the user declines, one with no code,
-and one whose ``state`` does not match the login's. It has no ``token_age`` or
+refusal, such as ``access_denied`` when the user declines, one whose ``code`` is
+empty, and one whose ``state`` does not match the login's. It has no ``token_age`` or
 ``refresh_token_invalid``: no token exists yet, and a code is good for one
 exchange, so every refusal there means starting the login again. A server error
 or a response that is not JSON raises as it does during a call.

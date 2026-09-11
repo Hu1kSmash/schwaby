@@ -482,11 +482,16 @@ def execution_totals(order):
     ``activityType`` alone reports canceled quantity as filled.
 
     ``quantity`` is the sum of a leg's execution quantities, and
-    ``average_price`` is their price weighted by quantity, divided in the
-    current decimal context and not otherwise rounded. A price is per share,
-    or per unit of an option's price, with no contract multiplier applied.
-    Numbers are read into ``Decimal`` from their JSON text, so a price of
-    ``58.1853`` is exactly that. An order with no fills gives an empty dict.
+    ``average_price`` is their price weighted by quantity. The sums, the
+    products and the division all use the current decimal context: at its
+    default precision of 28 digits they are exact for any real order, while a
+    lower precision rounds them, quantity included, and a trap set on the
+    context can raise. A price is as Schwab
+    quotes it, with no contract multiplier applied; for the ETF fills that were
+    compared with their recorded fill prices, that was per share. A float is
+    read into ``Decimal`` from its shortest text, which is its JSON text for
+    any price of up to 15 significant digits, so a price of ``58.1853`` is
+    exactly that. An order with no fills gives an empty dict.
 
     Leg totals are not checked against ``filledQuantity``: a ratio spread's
     legs would legitimately differ.
@@ -646,8 +651,8 @@ class LoginExchangeError(SchwabError, OAuthError):
     '''
     Raised when a login cannot exchange its authorization code for a token.
     The redirect carries the authorization server's refusal (``access_denied``
-    when the user declines), carries no code, or has a ``state`` that does not
-    match the login's; or the token endpoint refuses the code, or answers with
+    when the user declines), has an empty code, or has a ``state`` that does
+    not match the login's; or the token endpoint refuses the code, or answers with
     something that is not a usable token (``unusable_token_response``).
 
     It is also authlib's ``OAuthError``, so ``except OAuthError`` written
