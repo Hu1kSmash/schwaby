@@ -758,9 +758,9 @@ def parse_message_data(value):
     Format and control characters and separators in front of the ``{`` --- a
     byte order mark, a zero-width space --- are skipped, so a payload behind
     one is still read as a payload. Other characters are not skipped, even
-    one that renders as nothing, such as a combining mark, and nothing is
-    skipped after the payload: one followed by a zero-width space raises
-    :class:`UnparsableMessageData`.
+    one that renders as nothing, such as a combining mark. After the payload
+    only whitespace, as ``str.strip`` defines it, is dropped, so a payload
+    followed by a zero-width space raises :class:`UnparsableMessageData`.
 
     :raises UnparsableMessageData: The text starts, after any whitespace,
                                    format or control characters and
