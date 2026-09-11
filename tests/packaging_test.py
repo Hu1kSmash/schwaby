@@ -18,7 +18,7 @@ import os
 import re
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import docutils.core
 import docutils.nodes
@@ -952,6 +952,42 @@ class DocBoldLiteralTest(unittest.TestCase):
                             getattr(node, 'lineno', 1), hit))
         self.assertGreaterEqual(read, 300)
         self.assertEqual([], found)
+
+
+class DocErrorHandlerRecipeTest(unittest.TestCase):
+    """The error-handler recipe on the streaming page, run as written.
+
+    ``service`` is whatever Schwab sent, and a handler is the last place a
+    failure can be seen. With ``%r`` a value nested deeply enough raised
+    inside the handler, which the client logs and otherwise swallows, so the
+    alert the recipe exists to send was lost.
+    """
+
+    @staticmethod
+    def recipe():
+        path = os.path.join(REPO_ROOT, 'docs', 'streaming.rst')
+        return [code for _, _, code in DocExampleTest.code_blocks_in([path])
+                if 'def on_stream_error(service, exception, message)' in code
+                and 'async def' not in code]
+
+    @no_duplicates
+    def test_the_recipe_escapes_and_survives_deep_nesting(self):
+        recipes = self.recipe()
+        self.assertEqual(1, len(recipes))
+
+        alerts = []
+        namespace = {'alert': alerts.append, 'stream_client': MagicMock()}
+        exec(compile(recipes[0], 'streaming.rst', 'exec'), namespace)
+        on_stream_error = namespace['on_stream_error']
+
+        deep = []
+        for _ in range(100000):
+            deep = [deep]
+        on_stream_error('A\nFORGED', ValueError('x'), None)
+        on_stream_error(deep, ValueError('deep'), None)
+
+        self.assertEqual(2, len(alerts))
+        self.assertFalse(any('\n' in a for a in alerts))
 
 
 class DocExampleTest(unittest.TestCase):

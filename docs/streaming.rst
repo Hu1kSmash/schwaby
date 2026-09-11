@@ -275,9 +275,14 @@ an error handler:
 
 .. code-block:: python
 
+  import reprlib
+
   def on_stream_error(service, exception, message):
-      # %r, not %s: service is whatever Schwab sent, line breaks included.
-      alert('schwaby stream: %r raised %r' % (service, exception))
+      # service is whatever Schwab sent. reprlib.repr escapes its line breaks
+      # as %r would, and also stops at a bounded depth and length, where a
+      # plain repr of a deeply nested value raises inside this handler.
+      alert('schwaby stream: %s raised %s'
+            % (reprlib.repr(service), reprlib.repr(exception)))
 
   stream_client.add_error_handler(on_stream_error)
 
