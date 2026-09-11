@@ -8217,8 +8217,13 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         # json.dumps refuses the tuple key and repr raises, so the fallback's
         # own fallback names the type, which the metaclass must not break.
-        self.assertEqual('<Hostile that cannot be formatted>',
-                         self.client._pretty(Hostile({(1, 2): 3})))
+        # Caught here: pytest cannot report an error raised past a value
+        # whose type name raises, and stops with an internal error instead.
+        try:
+            rendered = self.client._pretty(Hostile({(1, 2): 3}))
+        except Exception as e:
+            rendered = 'raised ' + e.__class__.__qualname__
+        self.assertEqual('<Hostile that cannot be formatted>', rendered)
 
     @no_duplicates
     def test_a_debug_line_survives_a_value_json_cannot_name(self):
