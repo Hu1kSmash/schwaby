@@ -22,6 +22,22 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 4.7.2
+
+*2026-09-11*
+
+One fix. Nothing public is added, removed or renamed.
+
+- An `ACCT_ACTIVITY` content item whose `MESSAGE_TYPE` is the empty string and
+  whose `MESSAGE_DATA` is a notice written as text is no longer logged as a
+  message type nobody has captured. That is how the streaming documentation
+  records Schwab's "Feature not supported" notice arriving: on at least 69 days
+  across about three months of one production feed, most often around 00:30
+  Eastern. It logged a warning asking for an issue to be opened, once in each
+  process that received it. An empty type carrying a JSON object, broken JSON
+  that starts like one, or no text at all is still logged, as is any non-empty
+  type outside `ACCOUNT_ACTIVITY_MESSAGE_TYPES`, which is unchanged.
+
 ## 4.7.1
 
 *2026-09-11*
