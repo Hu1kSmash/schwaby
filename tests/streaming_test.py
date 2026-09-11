@@ -9867,10 +9867,10 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
 
     @no_duplicates
     def test_the_empty_type_carrying_a_notice_is_not_reported(self):
-        # Schwab's "Feature not supported" notice arrives most nights as a data
-        # item whose MESSAGE_TYPE is the empty string, which the docs describe.
-        # It is not a type nobody has captured, so it asks nobody to open an
-        # issue.
+        # Schwab's "Feature not supported" notice has been recorded arriving as
+        # a data item whose MESSAGE_TYPE is the empty string, which the docs
+        # describe. It is not a type nobody has captured, so it asks nobody to
+        # open an issue.
         raw = {'key': 'account', '1': 'account', '2': '',
                '3': 'Feature not supported'}
         new = copy.deepcopy(raw)
@@ -9878,6 +9878,8 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
             self.fields.relabel_message(raw, new)
         self.assertEqual('', new['MESSAGE_TYPE'])
         self.assertEqual('Feature not supported', new['MESSAGE_DATA'])
+        # Nor does it spend the bounded budget of reported types.
+        self.assertEqual(set(), streaming._reported_message_types)
         # The public set stays a list of real types: consumers build a set of
         # known lifecycle types from it.
         self.assertNotIn(
@@ -9885,6 +9887,21 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
         # Positive control: the same call still reports a type outside it.
         with self.assertLogs(streaming.get_logger(), level='WARNING'):
             self.relabel('OrderExpired')
+
+    @no_duplicates
+    def test_an_empty_type_carrying_a_payload_is_still_reported(self):
+        # Only the notice's shape is exempt. An empty type carrying a JSON
+        # payload, or text that starts like one and is broken, has never been
+        # captured, and passing it silently is what the report is for.
+        for data in ('{"OrderExpired": {}}', '{broken'):
+            with self.subTest(data=data):
+                streaming._reported_message_types.clear()
+                raw = {'key': 'account', '1': 'account', '2': '', '3': data}
+                with self.assertLogs(streaming.get_logger(),
+                                     level='WARNING') as got:
+                    self.fields.relabel_message(raw, copy.deepcopy(raw))
+                self.assertEqual(1, len(got.output))
+                self.assertIn("type ''", got.output[0])
 
     @no_duplicates
     def test_a_newline_in_a_type_cannot_forge_a_log_line(self):

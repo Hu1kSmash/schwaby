@@ -1079,10 +1079,12 @@ Fourteen have been captured, and they are exported as
 
 A message of any other type is still delivered to your handler, and is logged
 once on ``schwaby.streaming``, so that a type nobody has captured becomes known
-rather than passing silently. A buy rejected for buying power has been
-captured, and so has a price change to a working order; both used only types in
-that list. **Expiry and partial fill have not been captured**, so the first of
-each a process receives may log once. That is expected; please `open an issue
+rather than passing silently. The exception is an empty type carrying a notice
+written as text, described below, which is not logged. A buy rejected for
+buying power has been captured, and so has a price change to a working order;
+both used only types in that list. **Expiry and partial fill have not been
+captured**, so the first of each a process receives may log once. That is
+expected; please `open an issue
 <https://github.com/Hu1kSmash/schwaby/issues>`__ with the type it names.
 
 No other type is known from a captured frame. The absence of others from the
@@ -1566,8 +1568,9 @@ malformed message and should not be reported as one.
 
   That notice arrives as an ordinary ``data``-channel content item whose
   ``MESSAGE_TYPE`` is the empty string, so a handler that dispatches on the
-  type has nothing to dispatch on. The empty type is not logged as a message
-  type nobody has captured. It recurs: it was seen on at least 69 days
+  type has nothing to dispatch on. An empty type carrying a notice like this
+  is not logged as a message type nobody has captured; an empty type carrying a
+  payload still is. It recurs: it was seen on at least 69 days
   across about three months of one production feed, most often around 00:30
   Eastern, and also around 18:00 and 21:00.
 

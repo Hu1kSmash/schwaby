@@ -280,6 +280,19 @@ _MAX_REPORTED_MESSAGE_TYPES = 64
 _reported_message_types = set()
 
 
+def _is_notice_text(message_data):
+    """Whether ``MESSAGE_DATA`` is a notice written as text, read the way
+    ``parse_message_data`` reads it, so that the two cannot disagree about
+    what a notice is. Anything that cannot be read that way is not one."""
+    # contrib.util imports this module, so it is imported here rather than at
+    # the top.
+    from .contrib.util import parse_message_data
+    try:
+        return issubclass(type(parse_message_data(message_data)), str)
+    except Exception:
+        return False
+
+
 def _report_unknown_message_type(name):
     """Say once that ACCT_ACTIVITY carried a type nobody has captured.
 
@@ -2194,13 +2207,17 @@ class StreamClient(EnumEnforcer):
             if token is not None:
                 known = StreamClient._ACCOUNT_ACTIVITY_MESSAGE_TYPES_FOLDED
                 name = _safe_name(token)
-                # An empty type is not a type nobody has captured: it carries
-                # Schwab's own notices, "Feature not supported" among them,
-                # most nights around 00:30 Eastern. Reporting it asked every
-                # consumer to open an issue for a documented shape once per
-                # process start, which teaches an operator to acknowledge the
-                # one warning that has to be read when a real new type comes.
-                if name and name.casefold() not in known:
+                # An empty type carrying a notice written as text is not a type
+                # nobody has captured: Schwab's "Feature not supported" notice
+                # arrives that way, as the streaming documentation records.
+                # Reporting it asked for an issue about a documented shape, in
+                # every process that received it, which teaches an operator to
+                # acknowledge the one warning that has to be read when a real
+                # new type comes. An empty type carrying a payload is not that
+                # shape, and is still reported.
+                notice = not name and _is_notice_text(
+                        new_msg.get('MESSAGE_DATA'))
+                if not notice and name.casefold() not in known:
                     _report_unknown_message_type(name)
 
     #: ``MESSAGE_TYPE`` values observed on a live ``ACCT_ACTIVITY`` feed, as
@@ -2218,13 +2235,13 @@ class StreamClient(EnumEnforcer):
     #: seen.
     #:
     #: A type outside it is still delivered to your handler, and is logged once
-    #: on ``schwaby.streaming``. The empty type is not logged: it is not a type
-    #: but the carrier of Schwab's notices, which the streaming documentation
-    #: describes. A buy rejected for buying power and a price
-    #: change to a working order have both been captured using only types
-    #: listed here; expiry and partial fill have not, so the first of each a
-    #: process receives may log once. That is expected, and a report of the
-    #: type it names is how this list grows.
+    #: on ``schwaby.streaming``. An empty type carrying a notice written as
+    #: text, the way the streaming documentation records Schwab's "Feature not
+    #: supported" notice arriving, is not logged; one carrying a payload is. A
+    #: buy rejected for buying power and a price change to a working order have
+    #: both been captured using only types listed here; expiry and partial fill
+    #: have not, so the first of each a process receives may log once. That is
+    #: expected, and a report of the type it names is how this list grows.
     #:
     #: Held on ``StreamClient`` rather than on ``AccountActivityFields``,
     #: because a set in an ``Enum`` body silently becomes a member, which would
