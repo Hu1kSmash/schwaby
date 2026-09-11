@@ -1394,6 +1394,26 @@ class StoredTokenShapeTest(unittest.TestCase):
         self.assertEqual(200, client.get_quote('AAPL').status_code)
 
     @no_duplicates
+    def test_the_first_call_refresh_applies_only_where_authlib_counts(self):
+        # Without an expires_in there is no expiry to count from the build,
+        # and an expires_at that int() cannot take at all is authlib's to
+        # refuse, as it did before.
+        base = {'access_token': 'a', 'token_type': 'Bearer',
+                'refresh_token': 'r'}
+        for token in (dict(base, expires_at=None),
+                      dict(base, expires_at=None, expires_in=0)):
+            with self.subTest(token=token):
+                client = self.build(token)
+                requests = []
+                self.on_transport(client, requests)
+                client.get_quote('AAPL')
+                self.assertEqual(
+                        0, sum(p.endswith('/oauth/token') for p in requests))
+
+        with self.assertRaises(TypeError):
+            self.build(dict(base, expires_at=[1], expires_in=1800))
+
+    @no_duplicates
     def test_expires_in_without_expires_at_refreshes_on_the_first_call(self):
         # authlib would count the expiry from the build, so a process that
         # restarts often would never refresh a token that has lapsed.
