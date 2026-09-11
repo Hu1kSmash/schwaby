@@ -271,6 +271,22 @@ class _TestClient:
 
 
     @patch('schwaby.client.base.datetime.datetime', mockdatetime)
+    def test_a_wrong_type_whose_module_raises_is_still_refused_by_name(self):
+        class Meta(type):
+            @property
+            def __module__(cls):
+                raise RuntimeError('metaclass raised')
+
+        class Odd(metaclass=Meta):
+            pass
+
+        with self.assertRaises(ValueError) as cm:
+            self.client.get_orders_for_account(
+                    ACCOUNT_HASH, from_entered_datetime=Odd())
+        self.assertIn("got 'tests.client_test.Odd'", str(cm.exception))
+
+
+    @patch('schwaby.client.base.datetime.datetime', mockdatetime)
     def test_get_orders_for_account_max_results(self):
         self.client.get_orders_for_account(ACCOUNT_HASH, max_results=100)
         self.mock_session.get.assert_called_once_with(
