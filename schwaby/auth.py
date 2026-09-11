@@ -22,7 +22,8 @@ import warnings
 import webbrowser
 
 from schwaby.client import AsyncClient, Client
-from schwaby.utils import SchwabError, _expiry_authlib_acts_on
+from schwaby.utils import (
+        LoginExchangeError, SchwabError, _expiry_authlib_acts_on)
 from schwaby.debug import register_redactions
 
 
@@ -1182,11 +1183,16 @@ def client_from_received_url(
     oauth.register_compliance_hook(
             'access_token_response', _refuse_unusable_token_response)
 
-    token = oauth.fetch_token(
-        TOKEN_ENDPOINT,
-        authorization_response=received_url,
-        client_id=api_key, auth=(api_key, app_secret),
-        state=auth_context.state)
+    try:
+        token = oauth.fetch_token(
+            TOKEN_ENDPOINT,
+            authorization_response=received_url,
+            client_id=api_key, auth=(api_key, app_secret),
+            state=auth_context.state)
+    except OAuthError as e:
+        # This library's own class, and still an OAuthError, so code written
+        # against authlib's keeps catching it.
+        raise LoginExchangeError(e.error, e.description, e.uri) from e
 
     # Don't emit token details in debug logs
     register_redactions(token)

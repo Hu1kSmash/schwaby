@@ -743,6 +743,7 @@ class UtilsTest(unittest.TestCase):
             'AccountNumberNotFoundError': ('m',),
             'UnusableAccountNumbersError': ('m',),
             'TokenRefreshError': ('m',),
+            'LoginExchangeError': ('invalid_grant', 'code already used'),
             'RedirectTimeoutError': ('m',),
             'RedirectServerExitedError': ('m',),
             'InvalidOrderException': ('m',),

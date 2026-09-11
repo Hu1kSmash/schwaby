@@ -560,10 +560,13 @@ A refusal during a call reaches you as
 sets ``refresh_token_invalid``.
 
 A refusal while a login exchanges its code for a token is different: it raises
-authlib's ``OAuthError`` itself, with the code in ``error``, and has no
-``token_age`` or ``refresh_token_invalid``. No token exists yet, and a code is
-good for one exchange, so every refusal there means starting the login again.
-A server error or a response that is not JSON raises as it does during a call.
+:class:`~schwaby.utils.LoginExchangeError`, which is also authlib's
+``OAuthError``, with the code in ``error``. It has no ``token_age`` or
+``refresh_token_invalid``: no token exists yet, and a code is good for one
+exchange, so every refusal there means starting the login again. A server error
+or a response that is not JSON raises as it does during a call.
+
+.. autoclass:: schwaby.utils.LoginExchangeError
 
 ``OAuthError: invalid_client`` is reported with ``refresh_token_invalid``
 ``False``. RFC 6749 defines ``invalid_client`` as the client -- the app key and
@@ -580,8 +583,8 @@ days the exception's message says so, and the recipe alerts.
 ``OAuthError: unusable_token_response``
 +++++++++++++++++++++++++++++++++++++++
 
-A login raises this when the token endpoint answers with something that is not
-a usable token. Nothing is written, so a token file already on disk is left as
+A login raises this, as :class:`~schwaby.utils.LoginExchangeError`, when the
+token endpoint answers with something that is not a usable token. Nothing is written, so a token file already on disk is left as
 it was.
 
 During a call it arrives as :class:`~schwaby.utils.TokenRefreshError`, with

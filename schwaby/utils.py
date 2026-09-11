@@ -17,6 +17,8 @@ import time
 # `isinstance` against the original still holds.
 from httpx2 import HTTPStatusError
 
+from authlib.integrations.base_client.errors import OAuthError
+
 
 def class_fullname(o):
     return o.__module__ + '.' + o.__name__
@@ -487,6 +489,35 @@ class TokenRefreshError(SchwabError):
         #: will not change on its own -- and only a new login flow will help.
         #: ``False`` when the failure may be transient, or was not recognized.
         self.refresh_token_invalid = refresh_token_invalid
+
+
+class LoginExchangeError(SchwabError, OAuthError):
+    '''
+    Raised when a login cannot exchange its authorization code for a token:
+    the token endpoint refuses the code, or answers with something that is not
+    a usable token (``unusable_token_response``).
+
+    It is also authlib's ``OAuthError``, so ``except OAuthError`` written
+    before this class existed still catches it, and ``error`` and
+    ``description`` carry what the endpoint said. The original error is
+    preserved as ``__cause__``.
+
+    Unlike :class:`TokenRefreshError` it has no ``token_age`` or
+    ``refresh_token_invalid``. No token exists yet, and an authorization code
+    is good for one exchange, so every refusal means starting the login again.
+    Nothing is written, so a token file already on disk is left as it was.
+
+    A server error from the token endpoint, or a response that is not JSON,
+    raises as it does during a call rather than as this.
+    '''
+
+    def __init__(self, error=None, description=None, uri=None):
+        OAuthError.__init__(self, error, description, uri)
+
+    def __reduce__(self):
+        # Rebuilt from its parts: the default would pass the formatted message
+        # back as `error`.
+        return (type(self), (self.error, self.description, self.uri))
 
 
 class LazyLog:

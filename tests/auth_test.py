@@ -1446,6 +1446,49 @@ class StoredTokenShapeTest(unittest.TestCase):
         self.assertEqual(0, sum(p.endswith('/oauth/token') for p in requests))
 
 
+class LoginExchangeErrorTest(unittest.TestCase):
+    '''A refused code exchange raises this library's class, which is still
+    authlib's OAuthError.'''
+
+    CONTEXT = auth.AuthContext('https://127.0.0.1:8182',
+                               'https://example.invalid/authorize', 'state')
+    RECEIVED = 'https://127.0.0.1:8182/?code=c&state=state'
+
+    @no_duplicates
+    def test_a_refused_code_exchange_is_a_login_exchange_error(self):
+        from authlib.integrations.base_client.errors import OAuthError
+        from authlib.integrations.httpx_client import OAuth2Client
+        from schwaby.utils import LoginExchangeError, SchwabError
+
+        original = OAuthError(error='invalid_grant',
+                              description='code already used')
+        writes = []
+        with patch.object(OAuth2Client, 'fetch_token', side_effect=original):
+            with self.assertRaises(OAuthError) as cm:
+                auth.client_from_received_url(
+                        API_KEY, APP_SECRET, self.CONTEXT, self.RECEIVED,
+                        lambda *args, **kwargs: writes.append(args))
+
+        self.assertIsInstance(cm.exception, LoginExchangeError)
+        self.assertIsInstance(cm.exception, SchwabError)
+        self.assertEqual('invalid_grant', cm.exception.error)
+        self.assertEqual('code already used', cm.exception.description)
+        self.assertEqual('invalid_grant: code already used', str(cm.exception))
+        self.assertIs(original, cm.exception.__cause__)
+        self.assertEqual([], writes)
+
+    @no_duplicates
+    def test_a_failure_that_is_not_an_oauth_error_is_not_wrapped(self):
+        from authlib.integrations.httpx_client import OAuth2Client
+
+        with patch.object(OAuth2Client, 'fetch_token',
+                          side_effect=ValueError('not json')):
+            with self.assertRaises(ValueError):
+                auth.client_from_received_url(
+                        API_KEY, APP_SECRET, self.CONTEXT, self.RECEIVED,
+                        lambda *args, **kwargs: None)
+
+
 class TokenFileAgeTest(unittest.TestCase):
 
     def setUp(self):
