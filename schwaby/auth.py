@@ -25,7 +25,7 @@ import webbrowser
 
 from schwaby.client import AsyncClient, Client
 from schwaby.utils import (
-        LoginExchangeError, SchwabError, _expiry_authlib_acts_on)
+        LoginExchangeError, SchwabError, _expiry_authlib_acts_on, _printable)
 from schwaby.debug import register_redactions
 
 
@@ -1148,6 +1148,16 @@ def get_auth_context(api_key, callback_url, state=None):
     return AuthContext(callback_url, authorization_url, state)
 
 
+def _venue_text(value):
+    """Text a redirect or the token endpoint sent, escaped and cut to 200
+    characters, since it reaches an exception message and whatever logs it.
+    Anything that is not a string is left as it is."""
+    if not issubclass(type(value), str):
+        return value
+    text = str.__str__(value)
+    return _printable(text if len(text) <= 200 else text[:197] + '...', 200)
+
+
 def client_from_received_url(
         api_key, app_secret, auth_context, received_url, token_write_func, 
         asyncio=False, enforce_enums=True):
@@ -1190,14 +1200,20 @@ def client_from_received_url(
             'access_token_response', _refuse_unusable_token_response)
 
     # A redirect carrying the authorization server's refusal -- access_denied
-    # when the user declines -- has no code, and authlib would go on to ask
-    # for a different grant and report that refusal instead. The URL itself
-    # is not repeated: it can carry a code.
+    # when the user declines -- has no code, and neither does one that is no
+    # answer to the login at all. authlib sends either to the token endpoint
+    # as a client_credentials grant, with the app key and secret, and reports
+    # that grant's refusal instead. The URL itself is not repeated: it can
+    # carry a code.
     query = urllib.parse.parse_qs(urllib.parse.urlparse(received_url).query)
-    if query.get('error'):
+    error = (query.get('error') or [''])[0]
+    if error:
         raise LoginExchangeError(
-                query['error'][0],
-                (query.get('error_description') or [None])[0])
+                _venue_text(error),
+                _venue_text((query.get('error_description') or [None])[0]))
+    if '#' not in received_url and 'code' not in query:
+        raise LoginExchangeError(
+                'missing_code', 'the redirect carries no authorization code')
 
     try:
         token = oauth.fetch_token(
@@ -1207,9 +1223,10 @@ def client_from_received_url(
             state=auth_context.state)
     except AuthlibBaseError as e:
         # The endpoint's refusal, and what authlib refuses before asking: a
-        # state that does not match, an empty code. This library's class, and an
-        # OAuthError, so code written against authlib's keeps catching it.
-        raise LoginExchangeError(e.error, e.description, e.uri) from e
+        # state that does not match, an empty code. This library's class, and
+        # an OAuthError, so code written against authlib's keeps catching it.
+        raise LoginExchangeError(
+                _venue_text(e.error), _venue_text(e.description), e.uri) from e
 
     # Don't emit token details in debug logs
     register_redactions(token)

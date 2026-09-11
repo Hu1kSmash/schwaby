@@ -95,7 +95,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         mock_webbrowser_get.return_value = controller
         controller.open.side_effect = \
                 lambda auth_url: requests.get(
-                        'https://127.0.0.1:6969/callback', verify=False)
+                        'https://127.0.0.1:6969/callback?code=c', verify=False)
 
         client.return_value = 'returned client'
 
@@ -130,7 +130,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         mock_webbrowser_get.return_value = controller
         controller.open.side_effect = \
                 lambda auth_url: requests.get(
-                        'https://127.0.0.1:6969/callback', verify=False)
+                        'https://127.0.0.1:6969/callback?code=c', verify=False)
 
         auth.client_from_login_flow(
                 API_KEY, APP_SECRET, callback_url, self.token_path,
@@ -161,7 +161,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         mock_webbrowser_get.return_value = controller
         controller.open.side_effect = \
                lambda auth_url: requests.get(
-                        'https://127.0.0.1:6969/callback', verify=False)
+                        'https://127.0.0.1:6969/callback?code=c', verify=False)
 
         client.return_value = 'returned client'
 
@@ -199,7 +199,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         mock_webbrowser_get.return_value = controller
         controller.open.side_effect = \
                lambda auth_url: requests.get(
-                        'https://127.0.0.1:6969/', verify=False)
+                        'https://127.0.0.1:6969/?code=c', verify=False)
 
         client.return_value = 'returned client'
 
@@ -971,7 +971,7 @@ class ClientFromReceivedUrl(unittest.TestCase):
         token_capture = []
         auth.client_from_received_url(
                 API_KEY, APP_SECRET, auth_context, 
-                'http://redirect.url.com/?data',
+                'http://redirect.url.com/?code=data',
                 lambda token: token_capture.append(token))
 
         client.assert_called_once()
@@ -1034,7 +1034,7 @@ class ClientFromReceivedUrl(unittest.TestCase):
         token_capture = []
         auth.client_from_received_url(
                 API_KEY, APP_SECRET, auth_context,
-                'http://redirect.url.com/?data',
+                'http://redirect.url.com/?code=data',
                 lambda token: token_capture.append(token),
                 asyncio=True)
 
@@ -1075,7 +1075,7 @@ class ClientFromReceivedUrl(unittest.TestCase):
         token_capture = []
         auth.client_from_received_url(
                 API_KEY, APP_SECRET, auth_context, 
-                'http://redirect.url.com/?data',
+                'http://redirect.url.com/?code=data',
                 lambda token: token_capture.append(token),
                 asyncio=True)
 
@@ -1128,7 +1128,7 @@ class ClientFromManualFlow(unittest.TestCase):
         sync_session.fetch_token.return_value = self.raw_token
 
         client.return_value = 'returned client'
-        prompt_func.return_value = 'http://redirect.url.com/?data'
+        prompt_func.return_value = 'http://redirect.url.com/?code=data'
 
         self.assertEqual('returned client',
                          auth.client_from_manual_flow(
@@ -1155,7 +1155,7 @@ class ClientFromManualFlow(unittest.TestCase):
         sync_session.fetch_token.return_value = self.raw_token
 
         client.return_value = 'returned client'
-        prompt_func.return_value = 'http://redirect.url.com/?data'
+        prompt_func.return_value = 'http://redirect.url.com/?code=data'
 
         token_writes = []
 
@@ -1195,7 +1195,7 @@ class ClientFromManualFlow(unittest.TestCase):
         sync_session.fetch_token.return_value = self.raw_token
 
         client.return_value = 'returned client'
-        prompt_func.return_value = 'http://redirect.url.com/?data'
+        prompt_func.return_value = 'http://redirect.url.com/?code=data'
 
         self.assertEqual('returned client',
                          auth.client_from_manual_flow(
@@ -1224,7 +1224,7 @@ class ClientFromManualFlow(unittest.TestCase):
         sync_session.fetch_token.return_value = self.raw_token
 
         client.return_value = 'returned client'
-        prompt_func.return_value = 'http://redirect.url.com/?data'
+        prompt_func.return_value = 'http://redirect.url.com/?code=data'
 
         self.assertEqual('returned client',
                          auth.client_from_manual_flow(
@@ -1249,7 +1249,7 @@ class ClientFromManualFlow(unittest.TestCase):
         sync_session.fetch_token.return_value = self.raw_token
 
         client.return_value = 'returned client'
-        prompt_func.return_value = 'http://redirect.url.com/?data'
+        prompt_func.return_value = 'http://redirect.url.com/?code=data'
 
         self.assertEqual('returned client',
                          auth.client_from_manual_flow(
@@ -1529,6 +1529,8 @@ class LoginExchangeErrorTest(unittest.TestCase):
 
         base = 'https://127.0.0.1:8182/'
         cases = (
+            (base + '?state=state', 'missing_code'),
+            (base + '?error=&state=state', 'missing_code'),
             (base + '?code=c&state=OTHER', MismatchingStateException.error),
             (base + '?code=&state=state', MissingCodeException.error),
             (base + '?state=state#x', MissingTokenException.error),
@@ -1544,6 +1546,36 @@ class LoginExchangeErrorTest(unittest.TestCase):
                                 lambda *args, **kwargs: None)
                     self.assertEqual(error, cm.exception.error)
         self.assertEqual('The user declined', cm.exception.description)
+
+    @no_duplicates
+    def test_refusal_text_is_escaped_and_cut(self):
+        # It comes from the redirect or the endpoint and reaches whatever logs
+        # the exception: a line break there forged a log line.
+        import httpx2
+        from authlib.integrations.base_client.errors import OAuthError
+        from authlib.integrations.httpx_client import OAuth2Client
+        from schwaby.utils import LoginExchangeError
+
+        url = ('https://127.0.0.1:8182/?error=access_denied%0AFORGED'
+               '&error_description=%1b[31m' + 'x' * 500 + '&state=state')
+        with patch.object(httpx2.Client, 'send',
+                          side_effect=AssertionError('a request was sent')):
+            with self.assertRaises(LoginExchangeError) as cm:
+                auth.client_from_received_url(
+                        API_KEY, APP_SECRET, self.CONTEXT, url,
+                        lambda *args, **kwargs: None)
+        self.assertEqual('access_denied\\nFORGED', cm.exception.error)
+        self.assertNotIn('\x1b', str(cm.exception))
+        self.assertLessEqual(len(cm.exception.description), 200)
+
+        original = OAuthError(error='invalid_grant',
+                              description='line one\nline two')
+        with patch.object(OAuth2Client, 'fetch_token', side_effect=original):
+            with self.assertRaises(LoginExchangeError) as cm:
+                auth.client_from_received_url(
+                        API_KEY, APP_SECRET, self.CONTEXT, self.RECEIVED,
+                        lambda *args, **kwargs: None)
+        self.assertEqual('line one\\nline two', cm.exception.description)
 
     @no_duplicates
     def test_a_failure_that_is_not_an_oauth_error_is_not_wrapped(self):
