@@ -1343,7 +1343,6 @@ class StoredTokenShapeTest(unittest.TestCase):
         for token, message in (
                 (['a'], 'not a JSON object'),
                 ('token', 'not a JSON object'),
-                (dict(good, token_type=None), 'token_type is not a string'),
                 (dict(good, token_type=['Bearer']),
                  'token_type is not a string'),
                 (dict(good, refresh_token={'x': 1}),
@@ -1361,6 +1360,29 @@ class StoredTokenShapeTest(unittest.TestCase):
         self.build({'access_token': 'a', 'expires_at': MOCK_NOW + 1800})
 
     @no_duplicates
+    def test_a_null_token_type_or_refresh_token_counts_as_absent(self):
+        # A nullable field in a token store. 4.5.0 used such a token until it
+        # lapsed and then reported it terminal, and a null token_type made
+        # every call on a live token raise AttributeError.
+        import time
+        live = dict(self.GOOD, token_type=None, refresh_token=None,
+                    expires_at=int(time.time()) + 1800)
+        client = self.build(live)
+        requests = []
+        self.on_transport(client, requests)
+        self.assertEqual(200, client.get_quote('AAPL').status_code)
+
+        lapsed = dict(live, expires_at=int(time.time()) - 60)
+        client = self.build(lapsed)
+        requests = []
+        self.on_transport(client, requests)
+        from schwaby.utils import TokenRefreshError
+        with self.assertRaises(TokenRefreshError) as cm:
+            client.get_quote('AAPL')
+        self.assertTrue(cm.exception.refresh_token_invalid)
+        self.assertEqual([], requests)
+
+    @no_duplicates
     @patch('time.time', MagicMock(return_value=MOCK_NOW))
     def test_a_mapping_that_is_not_a_dict_is_used_as_one(self):
         # authlib converts only a real dict into its token type, so every call
@@ -1375,13 +1397,23 @@ class StoredTokenShapeTest(unittest.TestCase):
     def test_expires_in_without_expires_at_refreshes_on_the_first_call(self):
         # authlib would count the expiry from the build, so a process that
         # restarts often would never refresh a token that has lapsed.
-        token = {'access_token': 'a', 'token_type': 'Bearer',
-                 'expires_in': 1800, 'refresh_token': 'r'}
-        client = self.build(token)
-        requests = []
-        self.on_transport(client, requests)
-        client.get_quote('AAPL')
-        self.assertEqual(1, sum(p.endswith('/oauth/token') for p in requests))
+        base = {'access_token': 'a', 'token_type': 'Bearer',
+                'expires_in': 1800, 'refresh_token': 'r'}
+        # authlib falls back to expires_in for a null expires_at, and for one
+        # that does not parse as an int, as well as for a missing one.
+        for token in (base, dict(base, expires_at=None),
+                      dict(base, expires_at='soon'),
+                      dict(base, expires_at='1789073203.0')):
+            with self.subTest(token=token):
+                before = dict(token)
+                client = self.build(token)
+                requests = []
+                self.on_transport(client, requests)
+                client.get_quote('AAPL')
+                self.assertEqual(
+                        1, sum(p.endswith('/oauth/token') for p in requests))
+                # The caller's own object is left as it was.
+                self.assertEqual(before, token)
 
         # Without a refresh token there is nothing to refresh with, and the
         # token is used as authlib finds it.

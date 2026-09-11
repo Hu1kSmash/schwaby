@@ -267,25 +267,49 @@ def _stored_token_for_session(token):
         raise ValueError(
                 'The token\'s "token" entry is not a JSON object, so it is '
                 'not a token this library wrote. ' + advice)
-    if not issubclass(type(token), dict):
-        # authlib converts only a real dict into its own token type.
-        token = dict(token)
+    # A copy, and a real dict: authlib converts only a dict into its token
+    # type, and nothing below should reach the caller's own object.
+    token = dict(token)
     for key in ('token_type', 'refresh_token'):
-        if key in token and not issubclass(type(token[key]), str):
+        if key not in token:
+            continue
+        if token[key] is None:
+            # A nullable field in a token store. authlib reads an absent key
+            # the way a null means it: the bearer type, and no refresh token.
+            del token[key]
+        elif not issubclass(type(token[key]), str):
             raise ValueError(
                     'The token\'s {} is not a string, so the token cannot be '
                     'sent or refreshed. {}'.format(key, advice))
 
-    # A token built by a caller can carry expires_in and no expires_at.
-    # authlib then counts the expiry from the moment each client is built, so
-    # a process restarting more often than that never refreshes and goes on
-    # sending a token that has lapsed. When the token was issued is unknown,
-    # so with a refresh token to refresh it, its expiry is taken as now and
-    # the first call refreshes it.
-    if ('expires_at' not in token and 'expires_in' in token
-            and token.get('refresh_token')):
+    # authlib counts the expiry from the moment a client is built when the
+    # token has expires_in and no expires_at it can read, so a process
+    # restarting more often than that never refreshes and goes on sending a
+    # token that has lapsed. When the token was issued is unknown, so with a
+    # refresh token to refresh it, its expiry is taken as now and the first
+    # call refreshes it.
+    if token.get('refresh_token') and _expiry_counted_from_build(token):
         token['expires_at'] = int(time.time())
     return token
+
+
+def _expiry_counted_from_build(token):
+    '''Whether authlib would count this token's expiry from ``expires_in``, as
+    of the moment it is loaded. ``OAuth2Token`` does that when ``expires_at``
+    is missing, null, or does not parse as an int.'''
+    if not token.get('expires_in'):
+        return False
+    expires_at = token.get('expires_at')
+    if expires_at is None:
+        return True
+    try:
+        int(expires_at)
+    except ValueError:
+        return True
+    except Exception:
+        # authlib raises on this itself, and it is left to do so.
+        return False
+    return False
 
 
 def _new_session(session_class, api_key, app_secret, token, update_token):
@@ -1022,7 +1046,7 @@ def client_from_access_functions(api_key, app_secret, token_read_func,
 
     # Extract metadata and unpack the token, if necessary
     metadata = TokenMetadata.from_loaded_token(token, token_write_func)
-    token = metadata.token = _stored_token_for_session(metadata.token)
+    token = _stored_token_for_session(metadata.token)
 
     # Don't emit token details in debug logs. The walk recurses once per level,
     # so a token nested past the interpreter's depth -- which json can still
