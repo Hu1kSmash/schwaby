@@ -1836,8 +1836,8 @@ class StreamClient(EnumEnforcer):
                     relabel_failed = True
                     self._absorb(
                             'a %s message which could not be relabeled'
-                            % _printable(_safe_name(service), 64), msg, frame=msg, service=service,
-                            cause=exc)
+                            % _printable(_safe_name(service), 64),
+                            msg, frame=msg, service=service, cause=exc)
                 continue
 
             try:
