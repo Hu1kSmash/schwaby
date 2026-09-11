@@ -215,10 +215,11 @@ class OptionSymbol:
         # space of padding turned a 2026 expiration into 2061, and a
         # seven-digit strike turned 125 into 12.5.
         layout_error_str = format_error_str + ', 21 characters in all'
-        if not isinstance(symbol, str):
+        # The type through type(), which a class cannot fake the way it can
+        # fake __class__ for isinstance; then a plain str, so that a subclass
+        # cannot answer the length check for characters it does not have.
+        if not issubclass(type(symbol), str):
             raise ValueError(layout_error_str)
-        # A plain str, so that a subclass cannot answer the length check for
-        # characters it does not have.
         symbol = str.__str__(symbol)
         if len(symbol) != 21:
             raise ValueError(layout_error_str)

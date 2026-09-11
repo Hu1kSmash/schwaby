@@ -737,6 +737,7 @@ class OptionSymbolLayoutTest(unittest.TestCase):
                        'SOXL\t 261120P00125000',   # tab in the padding
                        'SOXL  2611\uff120P00125000',  # a non-ASCII digit
                        'SOXL  261120P0012500\u0660',  # a non-ASCII digit
+                       '      261120P00125000',   # no root at all
                        '', 'TQQQ', None, 261120):
             with self.subTest(symbol=symbol):
                 with self.assertRaisesRegex(
@@ -752,6 +753,13 @@ class OptionSymbolLayoutTest(unittest.TestCase):
         with self.assertRaisesRegex(
                 ValueError, 'option symbol must have format'):
             OptionSymbol.parse_symbol(Padded('SOXL  261120P0012500'))
+
+        class FakeStr:
+            __class__ = str
+
+        with self.assertRaisesRegex(
+                ValueError, 'option symbol must have format'):
+            OptionSymbol.parse_symbol(FakeStr())
 
     @no_duplicates
     def test_a_well_formed_symbol_still_parses_and_round_trips(self):
