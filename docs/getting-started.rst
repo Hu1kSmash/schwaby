@@ -147,8 +147,8 @@ Then install the library:
   They ship different packages --- ``schwaby`` and ``schwab`` --- so you can
   have both and import whichever you mean.
 
-  One case needs a step. If you are **upgrading from ``schwaby`` 3.0.3 or
-  earlier while ``schwab-py`` is also installed**, run ``pip install
+  One case needs a step. **If you are upgrading from** ``schwaby`` **3.0.3 or
+  earlier while** ``schwab-py`` **is also installed**, run ``pip install
   --force-reinstall schwab-py`` afterwards. Those versions shipped a package
   called ``schwab`` too, so uninstalling one deletes files the other is
   using --- and it does it quietly: ``pip check`` stays happy and ``import

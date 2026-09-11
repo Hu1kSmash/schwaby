@@ -109,6 +109,10 @@ setuptools.setup(
             'callee',
             'colorama',
             'coverage',
+            # packaging_test parses the documentation with it. sphinx_rtd_theme
+            # brings it in too, but a test should not rest on another
+            # package's dependency.
+            'docutils',
             'pytest',
             'requests',
             'pytz',

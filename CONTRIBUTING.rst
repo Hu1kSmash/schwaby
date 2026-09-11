@@ -53,10 +53,10 @@ so a green run here is a green run there:
 
 Two of those are easy to get wrong locally:
 
-- **``-W`` is not optional.** CI builds the documentation with warnings as
+- ``-W`` **is not optional.** CI builds the documentation with warnings as
   errors. Without it a broken cross-reference builds cleanly on your machine and
   fails on the pull request.
-- **``python -m build``, not ``setup.py``.** ``setup.py`` is not imported by the
+- ``python -m build``, **not** ``setup.py``. ``setup.py`` is not imported by the
   suite, so an edit that leaves it unparseable is invisible to ``pytest``. The
   build is what proves the package still assembles.
 

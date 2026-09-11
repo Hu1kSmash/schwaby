@@ -20,6 +20,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import docutils.core
+import docutils.nodes
 import setuptools
 
 from .utils import no_duplicates
@@ -871,6 +873,85 @@ class DocReferenceTest(unittest.TestCase):
                 ['schwaby.client.Client.search_instruments',
                  'schwaby.streaming.StreamClient.NoSuchEnum'],
                 sorted(name for name, _ in broken))
+
+
+class DocBoldLiteralTest(unittest.TestCase):
+    """An inline literal inside bold text renders as raw double backticks.
+
+    reStructuredText does not nest inline markup, so a literal written inside
+    a bold span is not a literal: the page shows its backticks. Sphinx builds
+    it without a warning, and it shipped that way on three lines, two in
+    CONTRIBUTING and one on the getting-started page, until the built HTML was
+    searched by hand. The house style closes the bold around the literal
+    instead.
+
+    Each source is parsed with docutils rather than matched with a regular
+    expression. A `**kwargs` in a code block, or a bold span broken across
+    lines, pairs the asterisks wrongly for a pattern.
+    """
+
+    @staticmethod
+    def literals_in_bold(text):
+        # Reports are silenced because plain docutils does not know the roles
+        # and directives sphinx adds. Bold text is still parsed around them.
+        doctree = docutils.core.publish_doctree(
+                text, settings_overrides={
+                    'report_level': 5, 'halt_level': 5,
+                    'warning_stream': False,
+                    'file_insertion_enabled': False})
+        return [node.astext()
+                for node in doctree.findall(docutils.nodes.strong)
+                if '``' in node.astext()]
+
+    @no_duplicates
+    def test_the_check_sees_a_literal_inside_bold(self):
+        self.assertEqual(['Use ``x`` here'],
+                         self.literals_in_bold('**Use ``x`` here** now.'))
+        self.assertEqual(['Use ``x``\nhere'],
+                         self.literals_in_bold('**Use ``x``\nhere** now.'))
+        self.assertEqual([],
+                         self.literals_in_bold('**Use** ``x`` **here** now.'))
+
+    @no_duplicates
+    def test_no_documentation_page_puts_a_literal_inside_bold(self):
+        pages = [p for p in DocReferenceTest.doc_files() if p.endswith('.rst')]
+        pages.append(os.path.join(REPO_ROOT, 'CONTRIBUTING.rst'))
+        self.assertGreaterEqual(len(pages), 11)
+
+        found = []
+        for path in pages:
+            with open(path, encoding='utf-8') as f:
+                for hit in self.literals_in_bold(f.read()):
+                    found.append('%s: %s' % (
+                        os.path.relpath(path, REPO_ROOT), hit))
+        self.assertEqual([], found)
+
+    @no_duplicates
+    def test_no_docstring_puts_a_literal_inside_bold(self):
+        # Autodoc renders these onto the same pages.
+        kinds = (ast.Module, ast.ClassDef, ast.FunctionDef,
+                 ast.AsyncFunctionDef)
+        found = []
+        read = 0
+        for dirpath, _, names in os.walk(os.path.join(REPO_ROOT, 'schwaby')):
+            for name in sorted(names):
+                if not name.endswith('.py'):
+                    continue
+                path = os.path.join(dirpath, name)
+                with open(path, encoding='utf-8') as f:
+                    tree = ast.parse(f.read())
+                for node in ast.walk(tree):
+                    doc = (ast.get_docstring(node)
+                           if isinstance(node, kinds) else None)
+                    if not doc:
+                        continue
+                    read += 1
+                    for hit in self.literals_in_bold(doc):
+                        found.append('%s:%d: %s' % (
+                            os.path.relpath(path, REPO_ROOT),
+                            getattr(node, 'lineno', 1), hit))
+        self.assertGreaterEqual(read, 300)
+        self.assertEqual([], found)
 
 
 class DocExampleTest(unittest.TestCase):
