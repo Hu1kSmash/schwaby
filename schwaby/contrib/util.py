@@ -33,9 +33,9 @@ class HeuristicJsonDecoder(StreamJsonDecoder):
             return json.loads(raw)
         except json.decoder.JSONDecodeError:  # pragma: no cover
             if isinstance(raw, (bytes, bytearray)):
-                # A bytes frame has no escaped text to repair, and replacing
-                # in it with str arguments raised TypeError, which ended the
-                # receive loop unreported.
+                # The repair works on text. Replacing in bytes with str
+                # arguments raised TypeError, which ended the receive loop
+                # unreported, so a bytes frame keeps its decode error.
                 raise
             raw = raw.replace('\\\\', '\\')
 

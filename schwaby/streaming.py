@@ -1645,7 +1645,8 @@ class StreamClient(EnumEnforcer):
           which leaves
           both unset by design, and every other site passes at least one:
           :class:`UnusableMessage` carries the containing frame and
-          :class:`UnparsableMessage` carries the raw text. But that is a
+          :class:`UnparsableMessage` carries the frame as it arrived, text
+          or bytes. But that is a
           property of today's call sites, not a contract --- a category added
           later with nothing to say would join the signature for free, which is
           how this warning came to be written twice. **Discriminate on the

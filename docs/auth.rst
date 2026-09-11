@@ -218,7 +218,8 @@ wrote. If this clock is behind that one's, the age reads low, and negative while
 the creation time is still ahead of this clock, so ``easy_client`` retires the
 token that much later. Such a token is not refused, because a clock that is only
 behind would then fail a working token at startup. An expired refresh token has
-been observed refused as ``invalid_grant``, which sets ``refresh_token_invalid``
+been observed refused as ``invalid_grant`` --- all 1,123 refresh failures one
+consumer logged, over four days --- which sets ``refresh_token_invalid``
 whatever the age says. A refusal under another code does not set it, and the
 seven-day alert in the recipe below then comes that much later.
 
@@ -309,8 +310,8 @@ token-shaped:
       else:
           if e.token_age is not None and e.token_age > 7 * 24 * 60 * 60:
               # Past Schwab's documented seven days. It may still recover,
-              # so keep retrying, but someone should know -- once, not on
-              # every retry.
+              # so keep retrying, but someone should know. This runs on every
+              # failed retry, so have alert() send it once.
               alert('token is past seven days and refreshes are failing')
           retry_later()
 
