@@ -24,8 +24,8 @@ import warnings
 import webbrowser
 
 from schwaby.client import AsyncClient, Client
-from schwaby.utils import (
-        LoginExchangeError, SchwabError, _expiry_authlib_acts_on, _printable)
+from schwaby.utils import (LoginExchangeError, SchwabError,
+        _expiry_authlib_acts_on, _refusal_text, _venue_text)
 from schwaby.debug import register_redactions
 
 
@@ -1154,20 +1154,6 @@ def get_auth_context(api_key, callback_url, state=None):
     return AuthContext(callback_url, authorization_url, state)
 
 
-def _venue_text(value):
-    """Text a redirect or the token endpoint sent, escaped and cut to 200
-    characters, since it reaches an exception message and whatever logs it.
-    A value that is not a string, which a JSON error body can carry, is taken
-    as its repr; ``None`` stays ``None``."""
-    if value is None:
-        return None
-    if issubclass(type(value), str):
-        text = str.__str__(value)
-    else:
-        text = repr(value)
-    return _printable(text if len(text) <= 200 else text[:197] + '...', 200)
-
-
 def client_from_received_url(
         api_key, app_secret, auth_context, received_url, token_write_func, 
         asyncio=False, enforce_enums=True):
@@ -1245,12 +1231,8 @@ def client_from_received_url(
         # an OAuthError, so code written against authlib's keeps catching it.
         # authlib's error is not chained: its text is not escaped, and a
         # logged traceback prints a cause in full.
-        if vars(e).get('_described_by_this_library') is True:
-            description = e.description
-        else:
-            description = _venue_text(e.description)
-        raise LoginExchangeError(
-                _venue_text(e.error), description, e.uri) from None
+        error, description = _refusal_text(e)
+        raise LoginExchangeError(error, description, e.uri) from None
 
     # Don't emit token details in debug logs
     register_redactions(token)

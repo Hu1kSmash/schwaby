@@ -307,6 +307,33 @@ def _printable(text, bound):
     return text if len(text) <= bound else text[:bound - 3] + '...'
 
 
+def _venue_text(value):
+    """Text a redirect or the token endpoint sent, escaped and cut to 200
+    characters, since it reaches an exception message and whatever logs it.
+    A value that is not a string, which a JSON error body can carry, is taken
+    as its repr; ``None`` stays ``None``."""
+    if value is None:
+        return None
+    if issubclass(type(value), str):
+        text = str.__str__(value)
+    else:
+        text = repr(value)
+    return _printable(text if len(text) <= 200 else text[:197] + '...', 200)
+
+
+def _refusal_text(error):
+    '''An authlib error's code and description, as text safe to put in a
+    message or a log: the endpoint's, escaped and cut. A description this
+    library wrote is kept whole -- an ``unusable_token_response`` refusal is
+    marked where it is raised -- and told apart by the mark rather than by the
+    code, which an endpoint can send too.'''
+    if vars(error).get('_described_by_this_library') is True:
+        description = error.description
+    else:
+        description = _venue_text(error.description)
+    return _venue_text(error.error), description
+
+
 def _type_name(value):
     '''A value's type name for a message, read through type's own descriptor
     so that a metaclass cannot raise inside the message.'''
@@ -648,7 +675,10 @@ class TokenRefreshError(SchwabError):
     surfaces from an ordinary call rather than from anything token-shaped. It
     exists so that an unattended application can catch a failure to refresh
     without importing ``authlib`` and catching an exception type this library
-    never mentions. The original error is preserved as ``__cause__``.
+    never mentions. The original error is preserved as ``__cause__``, with
+    its ``error`` and ``description`` as authlib set them. Text the endpoint
+    sent is escaped and cut to 200 characters in this message and in what
+    that error prints, since a traceback reaches logs.
 
     ``token_age`` is the number of seconds since the token was originally
     authorized, or ``None`` if this client was built without token metadata.

@@ -557,7 +557,10 @@ A refusal during a call reaches you as
 :class:`~schwaby.utils.TokenRefreshError`, with authlib's ``OAuthError`` as its
 ``__cause__``. The seven-day refusal has been observed as
 ``unsupported_token_type`` with ``invalid_grant`` nested inside it, and that
-sets ``refresh_token_invalid``.
+sets ``refresh_token_invalid``. Text the endpoint sent is escaped and cut to
+200 characters in the message and in what the chained error prints, since a
+traceback reaches logs; that error's ``error`` and ``description`` are as
+authlib set them.
 
 A refusal while a login exchanges its code for a token is different: it raises
 :class:`~schwaby.utils.LoginExchangeError`, which is also authlib's

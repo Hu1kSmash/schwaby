@@ -19,7 +19,7 @@ import warnings
 from schwaby.orders.generic import OrderBuilder
 
 from ..utils import (EnumEnforcer, TokenRefreshError, _expiry_authlib_acts_on,
-                     _qualified_type_name)
+                     _qualified_type_name, _refusal_text)
 
 
 def get_logger():
@@ -225,9 +225,16 @@ class BaseClient(EnumEnforcer):
                            'if this keeps failing, the login flow has to be '
                            'completed again.')
 
+            # The chained error prints the text its constructor built from the
+            # endpoint's code and description, raw, and this message repeats
+            # it; a traceback puts both in logs. Both carry that text escaped
+            # and cut, as a login's refusal does. The error keeps its class,
+            # attributes and identity, which callers classify a refresh by.
+            text = '{}: {}'.format(*_refusal_text(e))
+            e.args = (text,)
             raise TokenRefreshError(
                     'Failed to refresh the Schwab token: {}. {} {}'.format(
-                        e, detail, advice),
+                        text, detail, advice),
                     token_age=age,
                     refresh_token_invalid=invalid) from e
 

@@ -2665,6 +2665,51 @@ class _TestClient:
 
 
     @no_duplicates
+    def test_token_refresh_error_escapes_the_endpoints_text(self):
+        # The endpoint's code and description reach this message and the
+        # chained error's line in a traceback, and both end up in logs. The
+        # chained error is the same object, its attributes as authlib set
+        # them, since callers classify a refresh by walking the chain.
+        import traceback
+        description = 'line one\nline two \x1b[31m' + 'y' * 500
+        original = OAuthError(error='invalid_grant\nFORGED',
+                              description=description)
+        self.mock_session.get.side_effect = original
+
+        with self.assertRaises(TokenRefreshError) as cm:
+            self.client.get_quote(SYMBOL)
+
+        self.assertIs(original, cm.exception.__cause__)
+        self.assertEqual('invalid_grant\nFORGED', original.error)
+        self.assertEqual(description, original.description)
+        self.assertIn('invalid_grant\\nFORGED', str(cm.exception))
+        logged = ''.join(traceback.format_exception(cm.exception))
+        for raw in ('\nFORGED', 'line one\nline two', '\x1b', 'y' * 300):
+            with self.subTest(raw=raw):
+                self.assertNotIn(raw, logged)
+
+
+    @no_duplicates
+    def test_token_refresh_error_keeps_this_librarys_own_description(self):
+        # An unusable token response is refused with this library's text,
+        # which is longer than the cut and says what a usable token needs.
+        import httpx2
+        from schwaby import auth
+        request = httpx2.Request(
+                'POST', 'https://api.schwabapi.com/v1/oauth/token')
+        with self.assertRaises(OAuthError) as refused:
+            auth._refuse_unusable_token_response(httpx2.Response(
+                    200, json={'message': 'Unauthorized'}, request=request))
+        self.mock_session.get.side_effect = refused.exception
+
+        with self.assertRaises(TokenRefreshError) as cm:
+            self.client.get_quote(SYMBOL)
+
+        self.assertIn('no refresh token that is empty or not a string',
+                      str(cm.exception))
+
+
+    @no_duplicates
     def test_token_refresh_error_reports_token_age(self):
         # The age is the signal worth reasoning about: Schwab documents the
         # seven day term but not what it returns when the term expires.
