@@ -4,6 +4,7 @@ import datetime
 import re
 
 from schwaby.orders.generic import OrderBuilder
+from schwaby.utils import _is_instance
 
 
 # The symbol encodes the strike as eight digits of thousandths, so the largest
@@ -105,14 +106,14 @@ class OptionSymbol:
             raise ValueError(
                 'Contract type must be one of \'C\', \'CALL\', \'P\' or \'PUT\'')
 
-        if isinstance(expiration_date, str):
+        if _is_instance(expiration_date, str):
             self.expiration_date = _parse_expiration_date(expiration_date)
-        elif isinstance(expiration_date, datetime.datetime):
+        elif _is_instance(expiration_date, datetime.datetime):
             self.expiration_date = datetime.date(
                 year=expiration_date.year,
                 month=expiration_date.month,
                 day=expiration_date.day)
-        elif isinstance(expiration_date, datetime.date):
+        elif _is_instance(expiration_date, datetime.date):
             self.expiration_date = expiration_date
         else:
             raise ValueError(
@@ -135,7 +136,7 @@ class OptionSymbol:
         # and `nan <= 0` is False, so a strike of 'nan' or 'inf' used to pass
         # here and fail later inside build() -- as `cannot convert NaN to
         # integer`, naming neither the strike nor the symbol.
-        if (strike is None or not isinstance(strike_price_as_string, str)
+        if (strike is None or not _is_instance(strike_price_as_string, str)
                 or not math.isfinite(strike) or strike <= 0):
             raise ValueError(
                 'strike price must be a string representing a positive ' +

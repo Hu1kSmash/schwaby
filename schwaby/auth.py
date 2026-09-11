@@ -25,7 +25,7 @@ import webbrowser
 
 from schwaby.client import AsyncClient, Client
 from schwaby.utils import (LoginExchangeError, SchwabError,
-        _expiry_authlib_acts_on, _refusal_text, _venue_text)
+        _expiry_authlib_acts_on, _is_instance, _refusal_text, _venue_text)
 from schwaby.debug import register_redactions
 
 
@@ -363,7 +363,7 @@ def __normalize_credential(value, name):
     endpoints tolerate it and some reject it, so the symptom is an intermittent
     authentication failure a long way from its cause.
     '''
-    if not isinstance(value, str):
+    if not _is_instance(value, str):
         return value
 
     stripped = value.strip()

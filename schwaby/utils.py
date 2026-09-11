@@ -33,7 +33,7 @@ class EnumEnforcer:
     def type_error(self, value, required_enum_type):
         possible_members_message = ''
 
-        if isinstance(value, str):
+        if _is_instance(value, str):
             possible_members = []
             for member in required_enum_type.__members__:
                 fullname = class_fullname(required_enum_type) + '.' + member
@@ -57,7 +57,7 @@ class EnumEnforcer:
         if value is None:
             return None
 
-        if isinstance(value, required_enum_type):
+        if _is_instance(value, required_enum_type):
             return value.value
         elif self.enforce_enums:
             self.type_error(value, required_enum_type)
@@ -68,12 +68,12 @@ class EnumEnforcer:
         if iterable is None:
             return None
 
-        if isinstance(iterable, required_enum_type):
+        if _is_instance(iterable, required_enum_type):
             return [iterable.value]
 
         values = []
         for value in iterable:
-            if isinstance(value, required_enum_type):
+            if _is_instance(value, required_enum_type):
                 values.append(value.value)
             elif self.enforce_enums:
                 self.type_error(value, required_enum_type)
@@ -305,6 +305,21 @@ def _printable(text, bound):
     if not text.isprintable():
         text = ''.join(c if c.isprintable() else repr(c)[1:-1] for c in text)
     return text if len(text) <= bound else text[:bound - 3] + '...'
+
+
+def _is_instance(value, types):
+    '''``isinstance``, for a value a caller passed in.
+
+    ``isinstance`` asks ``value.__class__`` when the value's own type does not
+    match, and a class can make that raise, so a wrong type reached the caller
+    as that exception instead of the refusal naming it. The real type answers
+    then. Everything else is ``isinstance`` exactly: a mock with a ``spec``,
+    which reports the class it imitates, still passes where it did.
+    '''
+    try:
+        return isinstance(value, types)
+    except Exception:
+        return issubclass(type(value), types)
 
 
 def _venue_text(value):

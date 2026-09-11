@@ -4,14 +4,14 @@ import math
 from enum import Enum
 
 from schwaby.orders import common
-from schwaby.utils import EnumEnforcer
+from schwaby.utils import EnumEnforcer, _is_instance
 
 import httpx2
 
 
 def _build_object(obj):
     # Literals are passed straight through
-    if isinstance(obj, str) or isinstance(obj, int) or isinstance(obj, float):
+    if _is_instance(obj, (str, int, float)):
         return obj
 
     # A Decimal has no __dict__, so without a branch here it falls to the
@@ -24,7 +24,7 @@ def _build_object(obj):
     # "0.50", and a non-finite one would have gone out as "sNaN" instead of
     # failing. Only the price fields take a Decimal, and they convert it where
     # it is set.
-    elif isinstance(obj, decimal.Decimal):
+    elif _is_instance(obj, decimal.Decimal):
         raise ValueError(
                 'a decimal.Decimal reached the built order ({}). Only prices '
                 'take one -- set_price, set_stop_price and their copy_ '
@@ -36,9 +36,9 @@ def _build_object(obj):
     # values.
 
     # Dicts and lists are iterated over, with keys intact
-    elif isinstance(obj, dict):
+    elif _is_instance(obj, dict):
         return dict((key, _build_object(value)) for key, value in obj.items())
-    elif isinstance(obj, list):
+    elif _is_instance(obj, list):
         return [_build_object(i) for i in obj]
 
     # Objects have their variables translated into keys
@@ -93,7 +93,7 @@ def _assert_finite(name, price, *, price_field=False):
     # signalling NaN would then reach the <= 0 comparisons in the callers and
     # raise a bare decimal.InvalidOperation whose message is a repr of its own
     # class -- the exact failure this function runs first to prevent.
-    if isinstance(price, decimal.Decimal):
+    if _is_instance(price, decimal.Decimal):
         if price.is_nan() or price.is_infinite():
             raise ValueError(
                     '{} must be a finite number, got {!r}'.format(name, price))
@@ -108,7 +108,7 @@ def _assert_finite(name, price, *, price_field=False):
                 'it does not take a decimal.Decimal. Pass an int or a float. '
                 'Got: {}'.format(name, format(price, 'f')))
 
-    if isinstance(price, str):
+    if _is_instance(price, str):
         # Same distinction the Decimal branch above draws, for the same
         # reason. A price field is a string in Schwab's schema and a numeric
         # field is not, and only the caller knows which one this is -- so it
@@ -186,7 +186,7 @@ def _assert_finite(name, price, *, price_field=False):
         # bytes case: not wrong so much as unsendable. It arrives realistically
         # from a column pandas inferred as bool dtype, or a flag threaded into
         # the wrong argument.
-        if isinstance(price, bool) or not isinstance(price, (int, float)):
+        if _is_instance(price, bool) or not _is_instance(price, (int, float)):
             raise ValueError(
                     '{} must be a number, got {!r}'.format(name, price))
 
@@ -223,7 +223,7 @@ def _render_decimal(name, value):
     serialization rather than validation: the field holds a string either way,
     and a ``Decimal`` cannot survive to ``build()`` without becoming one.
     '''
-    if isinstance(value, decimal.Decimal):
+    if _is_instance(value, decimal.Decimal):
         # Refused even here, where nothing else is checked. The float escape
         # hatch is not equivalent: copy_price(float('nan')) yields a bare NaN,
         # which json.dumps emits as invalid JSON and a strict parser rejects,
@@ -263,7 +263,7 @@ def _require_price_string(name, price):
     merely long. ``Decimal(str(value))`` is still the right habit, and the
     docs say so.
     '''
-    if isinstance(price, decimal.Decimal):
+    if _is_instance(price, decimal.Decimal):
         # format() renders NaN and the infinities as 'sNaN'/'Infinity', and
         # _assert_finite reads a signalling NaN as "not a number at all" and
         # lets it past -- so without this, set_price(Decimal('sNaN')) reaches
@@ -276,7 +276,7 @@ def _require_price_string(name, price):
         # which is not a price. Neither form loses anything.
         price = format(price, 'f')
 
-    if not isinstance(price, str):
+    if not _is_instance(price, str):
         raise ValueError(
                 '{} must be a string or a decimal.Decimal, got {!r}. How to '
                 'round it is yours to decide -- note that '
@@ -720,14 +720,14 @@ class OrderBuilder(EnumEnforcer):
 
     # ChildOrderStrategies
     def add_child_order_strategy(self, child_order_strategy):
-        if isinstance(child_order_strategy, httpx2.Response):
+        if _is_instance(child_order_strategy, httpx2.Response):
             raise ValueError(
                     'Child order cannot be a response. See here for '
                     'details: https://github.com/Hu1kSmash/schwaby/blob/'
                     'main/docs/order-templates.rst')
 
-        if (not isinstance(child_order_strategy, OrderBuilder)
-                and not isinstance(child_order_strategy, dict)):
+        if (not _is_instance(child_order_strategy, OrderBuilder)
+                and not _is_instance(child_order_strategy, dict)):
             raise ValueError('child order must be OrderBuilder or dict')
 
         if self._childOrderStrategies is None:

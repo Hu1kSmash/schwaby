@@ -1465,3 +1465,92 @@ class ExecutionTotalsTest(unittest.TestCase):
             with self.subTest(bad=bad):
                 with self.assertRaises(UnusableOrderActivityError):
                     execution_totals(bad)
+
+
+class HostileClassTest(unittest.TestCase):
+    '''A value whose class makes ``__class__`` raise is refused exactly as an
+    ordinary instance of the same class is. ``isinstance`` asks ``__class__``
+    when the value's real type does not match, so a type check on a caller's
+    value let that exception through in place of the refusal.'''
+
+    class Plain:
+        def __float__(self):
+            return 10.0
+
+    class Hostile(Plain):
+        @property
+        def __class__(self):
+            raise RuntimeError('hostile __class__')
+
+    @staticmethod
+    def outcome(call, value):
+        try:
+            call(value)
+        except Exception as e:
+            return type(e)
+        return None
+
+    @no_duplicates
+    def test_a_class_that_raises_is_refused_like_any_other_instance(self):
+        import datetime
+        from unittest.mock import MagicMock
+        from schwaby import auth
+        from schwaby.client import Client
+        from schwaby.orders.common import Duration
+        from schwaby.orders.generic import OrderBuilder
+        from schwaby.orders.options import OptionSymbol
+        from schwaby.streaming import StreamClient
+
+        # Not place_order and its siblings: an order that is neither a builder
+        # nor JSON fails in JSON encoding, which reads __class__ itself.
+        client = Client('api-key', MagicMock(), token_metadata=MagicMock())
+        enforcer = EnumEnforcer(True)
+        # A module-level double-underscore name, read without the mangling a
+        # class body would apply.
+        normalize = getattr(auth, '__normalize_credential')
+        expiry = datetime.date(2027, 1, 15)
+        projection = Client.Instrument.Projection.SYMBOL_SEARCH
+        calls = (
+            ('convert_enum', lambda v: enforcer.convert_enum(v, Duration)),
+            ('convert_enum_iterable',
+             lambda v: enforcer.convert_enum_iterable(v, Duration)),
+            ('convert_enum_iterable member',
+             lambda v: enforcer.convert_enum_iterable([v], Duration)),
+            ('a datetime argument',
+             lambda v: client.get_orders_for_account(
+                 'hash', from_entered_datetime=v)),
+            ('get_quotes', lambda v: client.get_quotes(v)),
+            ('get_instruments',
+             lambda v: client.get_instruments(v, projection)),
+            ('get_instrument_by_cusip', client.get_instrument_by_cusip),
+            ('set_quantity', lambda v: OrderBuilder().set_quantity(v)),
+            ('set_price', lambda v: OrderBuilder().set_price(v)),
+            ('copy_price and build',
+             lambda v: OrderBuilder().copy_price(v).build()),
+            ('add_child_order_strategy',
+             lambda v: OrderBuilder().add_child_order_strategy(v)),
+            ('OptionSymbol expiration',
+             lambda v: OptionSymbol('F', v, 'C', '10')),
+            ('OptionSymbol strike',
+             lambda v: OptionSymbol('F', expiry, 'C', v)),
+            ('an app key', lambda v: normalize(v, 'api_key')),
+            ('set_json_decoder',
+             lambda v: StreamClient(MagicMock()).set_json_decoder(v)),
+        )
+        for name, call in calls:
+            with self.subTest(name):
+                ordinary = self.outcome(call, self.Plain())
+                self.assertIsNot(RuntimeError, ordinary)
+                self.assertEqual(ordinary, self.outcome(call, self.Hostile()))
+
+    @no_duplicates
+    def test_a_mock_with_a_spec_still_passes(self):
+        # The real type answers only when isinstance raises: a spec'd mock
+        # reports the class it imitates, and callers' tests rely on it.
+        import datetime
+        from unittest.mock import MagicMock
+        from schwaby.utils import _is_instance
+        self.assertTrue(_is_instance(
+                MagicMock(spec=datetime.datetime), datetime.datetime))
+        self.assertTrue(_is_instance(self.Hostile(), self.Plain))
+        self.assertFalse(_is_instance(self.Hostile(), str))

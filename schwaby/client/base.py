@@ -19,7 +19,7 @@ import warnings
 from schwaby.orders.generic import OrderBuilder
 
 from ..utils import (EnumEnforcer, TokenRefreshError, _expiry_authlib_acts_on,
-                     _qualified_type_name, _refusal_text)
+                     _is_instance, _qualified_type_name, _refusal_text)
 
 
 def get_logger():
@@ -262,7 +262,7 @@ class BaseClient(EnumEnforcer):
         value_type_name = _qualified_type_name(value)
         exp_type_names = ['{}.{}'.format(
             t.__module__, t.__name__) for t in exp_types]
-        if not any(isinstance(value, t) for t in exp_types):
+        if not any(_is_instance(value, t) for t in exp_types):
             if len(exp_types) == 1:
                 error_str = "expected type '{}' for {}, got '{}'".format(
                     exp_type_names[0], name, value_type_name)
@@ -794,7 +794,7 @@ class BaseClient(EnumEnforcer):
         :param fields: Fields to request. If unset, return all available data. 
                        i.e. all fields. See :class:`GetQuote.Field` for options.
         '''
-        if isinstance(symbols, str):
+        if _is_instance(symbols, str):
             symbols = [symbols]
 
         params = {
@@ -1540,7 +1540,7 @@ class BaseClient(EnumEnforcer):
              - String, or array of strings
              - Symbols for which to return fundamentals. Exact match.
         '''
-        if isinstance(symbols, str):
+        if _is_instance(symbols, str):
             symbols = [symbols]
 
         projection = self.convert_enum(projection, self.Instrument.Projection)
@@ -1559,7 +1559,7 @@ class BaseClient(EnumEnforcer):
         :param cusip: String representing CUSIP of instrument for which to fetch 
                       data. Note leading zeroes must be preserved.
         '''
-        if not isinstance(cusip, str):
+        if not _is_instance(cusip, str):
             raise ValueError('cusip must be passed as str')
 
         return self._get_request(

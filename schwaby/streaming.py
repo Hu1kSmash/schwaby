@@ -11,7 +11,8 @@ import logging
 
 import websockets.asyncio.client as ws_client
 
-from .utils import EnumEnforcer, LazyLog, SchwabError, _printable
+from .utils import (EnumEnforcer, LazyLog, SchwabError, _is_instance,
+                    _printable)
 
 
 class StreamJsonDecoder(ABC):
@@ -649,7 +650,7 @@ class StreamClient(EnumEnforcer):
         # package attribute raises AttributeError unless the caller happens to
         # have imported schwaby.contrib.util, which someone subclassing the
         # class where it is actually defined has no reason to have done.
-        if not isinstance(json_decoder, StreamJsonDecoder):
+        if not _is_instance(json_decoder, StreamJsonDecoder):
             raise ValueError('Custom JSON parser must be a subclass of ' +
                              'schwaby.contrib.util.StreamJsonDecoder')
         self.json_decoder = json_decoder
