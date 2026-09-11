@@ -1570,7 +1570,7 @@ malformed message and should not be reported as one.
   ``MESSAGE_TYPE`` is the empty string, so a handler that dispatches on the
   type has nothing to dispatch on. An empty type carrying a notice like this
   is not logged as a message type nobody has captured; an empty type carrying a
-  payload still is. It recurs: it was seen on at least 69 days
+  JSON object still is. It recurs: it was seen on at least 69 days
   across about three months of one production feed, most often around 00:30
   Eastern, and also around 18:00 and 21:00.
 

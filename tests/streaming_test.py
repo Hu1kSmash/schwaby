@@ -9891,17 +9891,37 @@ class AccountActivityMessageTypeTest(IsolatedAsyncioTestCase):
     @no_duplicates
     def test_an_empty_type_carrying_a_payload_is_still_reported(self):
         # Only the notice's shape is exempt. An empty type carrying a JSON
-        # payload, or text that starts like one and is broken, has never been
-        # captured, and passing it silently is what the report is for.
-        for data in ('{"OrderExpired": {}}', '{broken'):
+        # object, text that starts like one and is broken, or no text at all
+        # has never been captured, and passing it silently is what the report
+        # is for.
+        missing = object()
+        for data in ('{"OrderExpired": {}}', '{broken', '', '   ', None,
+                     missing):
             with self.subTest(data=data):
                 streaming._reported_message_types.clear()
-                raw = {'key': 'account', '1': 'account', '2': '', '3': data}
+                raw = {'key': 'account', '1': 'account', '2': ''}
+                if data is not missing:
+                    raw['3'] = data
                 with self.assertLogs(streaming.get_logger(),
                                      level='WARNING') as got:
                     self.fields.relabel_message(raw, copy.deepcopy(raw))
                 self.assertEqual(1, len(got.output))
                 self.assertIn("type ''", got.output[0])
+
+    @no_duplicates
+    def test_a_notice_that_cannot_be_checked_is_reported_not_dropped(self):
+        # If contrib.util cannot be imported, the notice check cannot run. The
+        # item is still relabeled, and reported as the empty type it is, rather
+        # than raising out of the relabel and taking the item with it.
+        import sys
+        from unittest.mock import patch
+        raw = {'key': 'account', '1': 'account', '2': '',
+               '3': 'Feature not supported'}
+        new = copy.deepcopy(raw)
+        with patch.dict(sys.modules, {'schwaby.contrib.util': None}):
+            with self.assertLogs(streaming.get_logger(), level='WARNING'):
+                self.fields.relabel_message(raw, new)
+        self.assertEqual('Feature not supported', new['MESSAGE_DATA'])
 
     @no_duplicates
     def test_a_newline_in_a_type_cannot_forge_a_log_line(self):

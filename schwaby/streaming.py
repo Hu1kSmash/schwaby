@@ -284,10 +284,11 @@ def _is_notice_text(message_data):
     """Whether ``MESSAGE_DATA`` is a notice written as text, read the way
     ``parse_message_data`` reads it, so that the two cannot disagree about
     what a notice is. Anything that cannot be read that way is not one."""
-    # contrib.util imports this module, so it is imported here rather than at
-    # the top.
-    from .contrib.util import parse_message_data
     try:
+        # contrib.util imports this module, so it is imported here rather than
+        # at the top, and inside the try: a notice that cannot be checked is
+        # reported, not dropped with the item it arrived in.
+        from .contrib.util import parse_message_data
         return issubclass(type(parse_message_data(message_data)), str)
     except Exception:
         return False
@@ -2213,8 +2214,8 @@ class StreamClient(EnumEnforcer):
                 # Reporting it asked for an issue about a documented shape, in
                 # every process that received it, which teaches an operator to
                 # acknowledge the one warning that has to be read when a real
-                # new type comes. An empty type carrying a payload is not that
-                # shape, and is still reported.
+                # new type comes. An empty type carrying a JSON object is not
+                # that shape, and is still reported.
                 notice = not name and _is_notice_text(
                         new_msg.get('MESSAGE_DATA'))
                 if not notice and name.casefold() not in known:
@@ -2237,11 +2238,12 @@ class StreamClient(EnumEnforcer):
     #: A type outside it is still delivered to your handler, and is logged once
     #: on ``schwaby.streaming``. An empty type carrying a notice written as
     #: text, the way the streaming documentation records Schwab's "Feature not
-    #: supported" notice arriving, is not logged; one carrying a payload is. A
-    #: buy rejected for buying power and a price change to a working order have
-    #: both been captured using only types listed here; expiry and partial fill
-    #: have not, so the first of each a process receives may log once. That is
-    #: expected, and a report of the type it names is how this list grows.
+    #: supported" notice arriving, is not logged; one carrying a JSON object
+    #: is. A buy rejected for buying power and a price change to a working
+    #: order have both been captured using only types listed here; expiry and
+    #: partial fill have not, so the first of each a process receives may log
+    #: once. That is expected, and a report of the type it names is how this
+    #: list grows.
     #:
     #: Held on ``StreamClient`` rather than on ``AccountActivityFields``,
     #: because a set in an ``Enum`` body silently becomes a member, which would
