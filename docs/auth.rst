@@ -213,6 +213,14 @@ age of the token <schwaby.client.Client.token_age>`. Note, however, that the
 seven day token age restriction is implemented by Schwab, and so the token may
 become expired sooner *or* later than seven days.
 
+The age is this machine's clock minus the creation time the logging-in machine
+wrote. If this clock is behind, or the token came from another host, the age
+reads low, and negative if the creation time is still ahead of this clock, so
+``easy_client`` retires the token that much later. Such a token is not refused,
+because a clock that is only behind would then fail a working token at startup.
+Once Schwab stops accepting the refresh token, that refusal is reported with
+``refresh_token_invalid`` whatever the age says.
+
 A program that only needs the age --- a monitor, or a job that warns before the
 window closes --- can read it from the token file without building a client:
 
@@ -547,6 +555,12 @@ A refusal during a call reaches you as
 ``__cause__``. The seven-day refusal has been observed as
 ``unsupported_token_type`` with ``invalid_grant`` nested inside it, and that
 sets ``refresh_token_invalid``.
+
+A refusal while a login exchanges its code for a token is different: it raises
+authlib's ``OAuthError`` itself, with the code in ``error``, and has no
+``token_age`` or ``refresh_token_invalid``. No token exists yet, and a code is
+good for one exchange, so every refusal there means starting the login again.
+A server error or a response that is not JSON raises as it does during a call.
 
 ``OAuthError: invalid_client`` is reported with ``refresh_token_invalid``
 ``False``. RFC 6749 defines ``invalid_client`` as the client -- the app key and
