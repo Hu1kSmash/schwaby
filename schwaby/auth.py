@@ -179,10 +179,11 @@ def _is_usable_token(token):
     authlib builds that from an ``expires_at`` it can read, or else from
     ``expires_in``, and checks it only when the result is an int. Without one
     the token is never refreshed, and every call fails once it lapses. It is
-    bounded too: a milliseconds ``expires_at``, or a huge ``expires_in``, is
-    never reached. An expiry already past, or inside the session's leeway, is
-    accepted -- that token is refreshed on every call, which works, and
-    refusing it would not stop the refreshes.
+    bounded too, by the seven days a refresh token lasts: an ``expires_in``
+    sent in milliseconds is 20.8 days read as seconds, and the token would fail
+    every call until then. An expiry already past, or inside the session's
+    leeway, is accepted -- that token is refreshed on every call, which
+    works, and refusing it would not stop the refreshes.
 
     A ``refresh_token`` may be absent, and authlib then keeps the stored one;
     present, it replaces the stored one, so an empty value would erase a
@@ -245,8 +246,8 @@ def _refuse_unusable_token_response(response):
             description='the token endpoint answered with something that is '
                         'not a usable token, so it was not stored: it needs a '
                         'non-empty string access token, the bearer type, an '
-                        'expiry that will be reached, and no refresh token '
-                        'that is empty or not a string')
+                        'expiry no more than seven days away, and no refresh '
+                        'token that is empty or not a string')
 
 
 def _new_session(session_class, api_key, app_secret, token, update_token):

@@ -152,7 +152,9 @@ class HTTPStatusErrorTest(unittest.TestCase):
                      dict(usable, expires_in=0),
                      dict(usable, expires_in='abc'),
                      dict(usable, expires_in=float('inf')),
-                     dict(usable, expires_at=int(time.time()) * 1000)):
+                     dict(usable, expires_at=int(time.time()) * 1000),
+                     # Milliseconds sent as expires_in: 20.8 days of 401s.
+                     dict(usable, expires_in=1800000)):
             with self.subTest(body=body):
                 answers = [(401, body), (200, self.GOOD_TOKEN)]
                 writes = []

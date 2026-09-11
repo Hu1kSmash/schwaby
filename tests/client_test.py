@@ -2848,6 +2848,10 @@ class _TestClient:
                        'expires_at': '1789073203.0', 'refresh_token': 'r'},
                       {'access_token': 'a', 'token_type': 'mac',
                        'expires_at': 1789073203000, 'refresh_token': 'r'},
+                      # Past the seven days a refresh token lasts.
+                      {'access_token': 'a', 'token_type': 'mac',
+                       'expires_at': int(time.time()) + 8 * 86400,
+                       'refresh_token': 'r'},
                       {'access_token': 'a', 'token_type': 'mac',
                        'expires_at': int(time.time()) + 3600}):
             with self.subTest(token=token):

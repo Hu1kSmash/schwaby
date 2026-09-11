@@ -1911,6 +1911,8 @@ class UsableTokenTest(unittest.TestCase):
                       dict(usable, expires_at=None),
                       dict(usable, expires_at=0),
                       dict(usable, expires_in=60),
+                      # Inside the seven days a refresh token lasts.
+                      dict(usable, expires_at=now + 6 * 86400),
                       {'access_token': 'a', 'token_type': 'Bearer',
                        'expires_at': now + 1800}):
             with self.subTest(usable=token):
@@ -1934,6 +1936,10 @@ class UsableTokenTest(unittest.TestCase):
                       dict(usable, expires_in=10 ** 10),
                       # Milliseconds: never refreshed.
                       dict(usable, expires_at=now * 1000),
+                      # An expires_in sent in milliseconds is 20.8 days read
+                      # as seconds, and nothing past seven days is Schwab's.
+                      dict(usable, expires_in=1800000),
+                      dict(usable, expires_at=now + 8 * 86400),
                       # authlib raises TypeError parsing it, on every call.
                       dict(usable, expires_at=[now + 1800]),
                       dict(usable, refresh_token=None),

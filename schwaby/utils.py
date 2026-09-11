@@ -401,18 +401,29 @@ def find_account_hash(account_numbers, account_number):
     return hashes[0]
 
 
+#: The furthest off an expiry may be. Schwab documents a 30-minute access
+#: token and a refresh token that lasts seven days, so an expiry beyond that is
+#: not one Schwab issued in seconds: an ``expires_in`` sent in milliseconds,
+#: read as seconds, is 20.8 days. authlib would not refresh such a token until
+#: then, and every call in between fails with a 401 and no exception. Refused,
+#: it fails loudly on the first refresh instead.
+_LONGEST_EXPIRY = 7 * 24 * 60 * 60
+
+
 def _expiry_authlib_acts_on(expires_at):
-    '''Whether authlib will refresh a token carrying this ``expires_at``.
+    '''Whether authlib will refresh a token carrying this ``expires_at`` while
+    it is still of use.
 
     authlib's ``OAuth2Token.is_expired`` checks one only when it is an int, and
-    one too far off -- in milliseconds, say -- is never reached. The check on a
-    token response and the classification of a stored token both ask this, so
-    that they cannot disagree. They did: a response with a milliseconds expiry
-    was refused as never reached, while a stored token with the same expiry was
-    reported as retryable on every call.
+    refreshes only once it is reached, so one further off than
+    ``_LONGEST_EXPIRY`` is refused. The check on a token response and the
+    classification of a stored token both ask this, so that they cannot
+    disagree. They did: a response with a milliseconds expiry was refused as
+    never reached, while a stored token with the same expiry was reported as
+    retryable on every call.
     '''
     return (isinstance(expires_at, int)
-            and expires_at <= time.time() + 10 ** 9)
+            and expires_at <= time.time() + _LONGEST_EXPIRY)
 
 
 class TokenRefreshError(SchwabError):
@@ -441,8 +452,8 @@ class TokenRefreshError(SchwabError):
     that cannot be used and will not change on its own, which the underlying
     OAuth library reports without contacting Schwab at all -- one with no
     refresh token, or one it cannot send and will never replace by itself: its
-    expiry is missing, cannot be read as an int, or is too far off to be
-    reached, or there is no refresh token to refresh it with.
+    expiry is missing, cannot be read as an int, or is more than seven days
+    off, or there is no refresh token to refresh it with.
 
     A stored token it cannot send that *will* be refreshed is ``False``,
     although nothing was sent: it is replaced as its expiry nears.
