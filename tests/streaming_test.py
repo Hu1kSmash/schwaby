@@ -8432,6 +8432,48 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
     @no_duplicates
     @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_an_unparsable_frame_is_quoted_and_cut_in_its_message(
+            self, ws_connect):
+        # The frame is whatever arrived. A line break in it forged a line in
+        # anything that printed the exception, and all of it went into the
+        # text however long it was.
+        socket = await self.login_and_get_socket(ws_connect)
+
+        raw = 'not json\nCRITICAL forged' + 'A' * 100000
+        socket.recv.side_effect = [raw]
+
+        with self.assertRaises(schwaby.streaming.UnparsableMessage) as cm:
+            await self.client.handle_message()
+
+        self.assertNotIn('\n', str(cm.exception))
+        self.assertLess(len(str(cm.exception)), 400)
+        # The frame itself is kept whole, as it arrived.
+        self.assertEqual(raw, cm.exception.raw_msg)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_frame_json_cannot_read_at_all_is_unparsable(
+            self, ws_connect):
+        # A binary frame that is not UTF-8 raises UnicodeDecodeError, one
+        # that is bytes but not JSON failed while its message was built, and
+        # one nested past the interpreter's depth raises RecursionError. None
+        # of them was UnparsableMessage, so each ended the loop unreported.
+        socket = await self.login_and_get_socket(ws_connect)
+        errors = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: errors.append(exc))
+
+        frames = [b'\x80\x81 not utf-8', b'not json either',
+                  '[' * 200000 + ']' * 200000]
+        socket.recv.side_effect = list(frames)
+        for raw in frames:
+            with self.subTest(raw=raw[:16]):
+                with self.assertRaises(schwaby.streaming.UnparsableMessage):
+                    await self.client.handle_message()
+        self.assertEqual(3, len(errors))
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_unparsable_frame_is_not_reported_as_a_close_failure(
             self, ws_connect):
         # (service=None, message=None) is the logout-close signature, and a

@@ -721,10 +721,16 @@ class StreamClient(EnumEnforcer):
         raw = await self._socket.recv()
         try:
             ret = self.json_decoder.decode_json_string(raw)
-        except json.decoder.JSONDecodeError as e:
+        except (ValueError, RecursionError) as e:
+            # ValueError covers JSONDecodeError and the UnicodeDecodeError of a
+            # binary frame that is not UTF-8; a frame nested past the
+            # interpreter's depth raises RecursionError. Each is a frame that
+            # will not parse, and the last two used to end the loop unreported.
+            # The text is quoted and cut: the frame is whatever arrived, line
+            # breaks and megabytes included, and raw_msg keeps all of it.
             msg = ('Failed to parse message. This often happens with ' +
                    'unknown symbols or other error conditions. Full ' +
-                   'message text: ' + raw)
+                   'message text: ' + _safe_value(raw))
             raise UnparsableMessage(raw, e, msg)
 
         self.logger.debug(
