@@ -22,6 +22,87 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 4.6.0
+
+*2026-09-11*
+
+A schwaby class for a refused login, a helper that adds up what an order
+filled, and two fixes. Four public names are added to `schwaby.utils`:
+`LoginExchangeError`, `execution_totals`, `ExecutionTotal` and
+`UnusableOrderActivityError`. Nothing is removed or renamed.
+
+Some calls now raise differently:
+- a refused login raises `LoginExchangeError`, which is still an `OAuthError`.
+  A redirect with a `state` that does not match, an empty `code` or a fragment
+  used to raise authlib's `MismatchingStateException`, `MissingCodeException`
+  or `MissingTokenException`, which are not; one carrying `access_denied` was
+  reported as `unsupported_grant_type`;
+- a stored token that has a refresh token, and an expiry authlib would not
+  refresh while it is of use, is refreshed on the first call. A dead refresh
+  token raises `TokenRefreshError` at once, where calls used to return 401 with
+  no exception, and a token that cannot be sent and has no expiry authlib acts
+  on is refreshed rather than reported with `refresh_token_invalid`;
+- the enum and argument type checks raise `ValueError` for a caller's type whose
+  name raises, rather than letting that exception through.
+
+### A refused login raises `LoginExchangeError`
+
+A login whose code exchange the token endpoint refuses, or answers with
+something that is not a usable token, raised authlib's `OAuthError` itself. It
+raises `schwaby.utils.LoginExchangeError` now. It is a `SchwabError` and still
+an `OAuthError`, so `except OAuthError` keeps working, and `error` and
+`description` carry the refusal's code and text, with the original as
+`__cause__`. For `unusable_token_response` that text is this library's
+description of what came back, not the endpoint's. It also covers a redirect
+authlib refuses before any exchange, one whose `state` does not match the
+login's or whose `code` is empty, and a redirect carrying the authorization
+server's own refusal, such as `access_denied`, which used to reach the caller
+as `unsupported_grant_type`. A redirect with no `code` parameter at all still
+goes to the token endpoint, as a different grant; its refusal arrives as
+`LoginExchangeError` with that refusal's code, and what Schwab answers there
+has not been observed.
+It has no `token_age` or `refresh_token_invalid`: no token exists yet, and a
+code is good for one exchange, so every refusal means starting the login again.
+A server error or a response that is not JSON raises as it did.
+
+### A stored expiry authlib would not act on is refreshed on the first call
+
+A caller-built token was never refreshed when authlib would not act on its
+expiry, and once the access token lapsed every call failed with a 401 and no
+exception. That covered an `expires_at` more than seven days off, one stored in
+milliseconds for instance; one authlib cannot read as an int, such as an ISO
+date or a float in a string, with no `expires_in` to fall back on; and no expiry
+at all. When the token has a refresh token, such an expiry is taken as now,
+so the first call refreshes, and a dead refresh token is reported as
+`TokenRefreshError` at once. Without a refresh token, the token is used as it
+is. This library has not written an expiry that far off since 4.5.1; 4.5.0
+could, from a refresh answered with `expires_in` in milliseconds.
+
+### `execution_totals`: what an order filled, per leg
+
+`execution_totals(order)` adds up a parsed order's executions into
+`{legId: ExecutionTotal(quantity, average_price)}`, in `Decimal` read from each
+number's shortest text, with the price weighted by quantity and no contract
+multiplier. It counts only activities whose `executionType` is `FILL`. A
+canceled or replaced order carries an `EXECUTION` activity too, with
+`executionType` `CANCELED` and execution legs whose quantities were never
+filled, so adding up by `activityType` alone reports them as filled. A shape it
+cannot read, or a `mismarkedQuantity` other than zero, raises
+`UnusableOrderActivityError`, which is also a `ValueError`.
+
+It was measured read-only over 423 orders: orders filled in one or two
+executions, the two-execution ones ETF orders; one vertical spread filled in one
+execution; and 25 canceled or replaced orders. Not observed, and not claimed: a
+partial fill before a replace, an option order filled in more than one
+execution, a ratio spread, and a plain `EQUITY` instrument.
+
+### A caller's type whose name raises
+
+The enum check and the argument type check named a refused value's type with
+`type(value).__name__`, which a metaclass can make raise, so the caller got
+that exception rather than the `ValueError` naming the type. Both read the name
+without the metaclass now.
+
 ## 4.5.1
 
 *2026-09-10*
