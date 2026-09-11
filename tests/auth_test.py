@@ -1306,6 +1306,93 @@ class TokenMetadataTest(unittest.TestCase):
                          MOCK_NOW - TOKEN_CREATION_TIMESTAMP)
 
 
+class StoredTokenShapeTest(unittest.TestCase):
+    '''The stored token is checked before a session is built on it, because
+    authlib fails on a wrong shape with an error that gets past
+    TokenRefreshError.'''
+
+    GOOD = {'access_token': 'a', 'token_type': 'Bearer', 'refresh_token': 'r',
+            'expires_at': MOCK_NOW + 1800}
+
+    @staticmethod
+    def build(token):
+        return auth.client_from_access_functions(
+                API_KEY, APP_SECRET,
+                lambda: {'creation_timestamp': TOKEN_CREATION_TIMESTAMP,
+                         'token': token},
+                lambda *args, **kwargs: None)
+
+    @staticmethod
+    def on_transport(client, requests):
+        import httpx2
+
+        def handler(request):
+            requests.append(request.url.path)
+            if request.url.path.endswith('/oauth/token'):
+                return httpx2.Response(200, request=request, json={
+                    'access_token': 'NEW', 'token_type': 'Bearer',
+                    'expires_in': 1800, 'refresh_token': 'r2'})
+            return httpx2.Response(200, json={}, request=request)
+        client.session._transport = httpx2.MockTransport(handler)
+        # A proxy variable routes requests through mounts, not `_transport`.
+        client.session._mounts = {}
+
+    @no_duplicates
+    def test_a_token_authlib_cannot_use_is_refused_at_build(self):
+        good = self.GOOD
+        for token, message in (
+                (['a'], 'not a JSON object'),
+                ('token', 'not a JSON object'),
+                (dict(good, token_type=None), 'token_type is not a string'),
+                (dict(good, token_type=['Bearer']),
+                 'token_type is not a string'),
+                (dict(good, refresh_token={'x': 1}),
+                 'refresh_token is not a string'),
+                (dict(good, refresh_token=5), 'refresh_token is not a string'),
+                (dict(good, refresh_token=b'r'),
+                 'refresh_token is not a string')):
+            with self.subTest(token=token):
+                with self.assertRaisesRegex(ValueError, message):
+                    self.build(token)
+
+        # Positive control: a good token builds, and so does one with no
+        # token_type or refresh token, which authlib handles on its own.
+        self.build(dict(good))
+        self.build({'access_token': 'a', 'expires_at': MOCK_NOW + 1800})
+
+    @no_duplicates
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    def test_a_mapping_that_is_not_a_dict_is_used_as_one(self):
+        # authlib converts only a real dict into its token type, so every call
+        # on a mappingproxy raised AttributeError on is_expired.
+        import types
+        client = self.build(types.MappingProxyType(dict(self.GOOD)))
+        requests = []
+        self.on_transport(client, requests)
+        self.assertEqual(200, client.get_quote('AAPL').status_code)
+
+    @no_duplicates
+    def test_expires_in_without_expires_at_refreshes_on_the_first_call(self):
+        # authlib would count the expiry from the build, so a process that
+        # restarts often would never refresh a token that has lapsed.
+        token = {'access_token': 'a', 'token_type': 'Bearer',
+                 'expires_in': 1800, 'refresh_token': 'r'}
+        client = self.build(token)
+        requests = []
+        self.on_transport(client, requests)
+        client.get_quote('AAPL')
+        self.assertEqual(1, sum(p.endswith('/oauth/token') for p in requests))
+
+        # Without a refresh token there is nothing to refresh with, and the
+        # token is used as authlib finds it.
+        client = self.build({'access_token': 'a', 'token_type': 'Bearer',
+                             'expires_in': 1800})
+        requests = []
+        self.on_transport(client, requests)
+        client.get_quote('AAPL')
+        self.assertEqual(0, sum(p.endswith('/oauth/token') for p in requests))
+
+
 class TokenFileAgeTest(unittest.TestCase):
 
     def setUp(self):

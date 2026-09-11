@@ -238,8 +238,13 @@ class BaseClient(EnumEnforcer):
         is the worse mistake.'''
         try:
             token = self.session.token
+            refresh_token = token.get('refresh_token')
+            # A refresh token authlib can send: a non-empty string, as the
+            # check on a token response requires. Anything else raises from
+            # authlib, or is sent as whatever bytes() makes of it.
             return bool(_expiry_authlib_acts_on(token.get('expires_at'))
-                        and token.get('refresh_token'))
+                        and issubclass(type(refresh_token), str)
+                        and refresh_token)
         except Exception:
             return True
 

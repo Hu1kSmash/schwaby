@@ -250,6 +250,44 @@ def _refuse_unusable_token_response(response):
                         'token that is empty or not a string')
 
 
+def _stored_token_for_session(token):
+    '''The stored token, in the shape authlib needs to send and refresh it.
+
+    Nothing checked it before a session was built on it, and authlib fails on
+    a wrong shape with something other than ``OAuthError``, which gets past
+    the translation into ``TokenRefreshError``: a mapping that is not a dict
+    has no ``is_expired``, a ``token_type`` that is not a string has no
+    ``lower``, and a refresh token that is not a string is sent as whatever
+    ``bytes()`` makes of it, or raises. A token this library wrote has none
+    of these shapes.
+    '''
+    advice = ('If it came from a token file, delete the file and create a '
+              'new one.')
+    if not issubclass(type(token), collections.abc.Mapping):
+        raise ValueError(
+                'The token\'s "token" entry is not a JSON object, so it is '
+                'not a token this library wrote. ' + advice)
+    if not issubclass(type(token), dict):
+        # authlib converts only a real dict into its own token type.
+        token = dict(token)
+    for key in ('token_type', 'refresh_token'):
+        if key in token and not issubclass(type(token[key]), str):
+            raise ValueError(
+                    'The token\'s {} is not a string, so the token cannot be '
+                    'sent or refreshed. {}'.format(key, advice))
+
+    # A token built by a caller can carry expires_in and no expires_at.
+    # authlib then counts the expiry from the moment each client is built, so
+    # a process restarting more often than that never refreshes and goes on
+    # sending a token that has lapsed. When the token was issued is unknown,
+    # so with a refresh token to refresh it, its expiry is taken as now and
+    # the first call refreshes it.
+    if ('expires_at' not in token and 'expires_in' in token
+            and token.get('refresh_token')):
+        token['expires_at'] = int(time.time())
+    return token
+
+
 def _new_session(session_class, api_key, app_secret, token, update_token):
     '''The refreshing session every client is built on.
 
@@ -984,7 +1022,7 @@ def client_from_access_functions(api_key, app_secret, token_read_func,
 
     # Extract metadata and unpack the token, if necessary
     metadata = TokenMetadata.from_loaded_token(token, token_write_func)
-    token = metadata.token
+    token = metadata.token = _stored_token_for_session(metadata.token)
 
     # Don't emit token details in debug logs. The walk recurses once per level,
     # so a token nested past the interpreter's depth -- which json can still

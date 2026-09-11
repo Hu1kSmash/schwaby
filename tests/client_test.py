@@ -2886,6 +2886,14 @@ class _TestClient:
                       {'access_token': 'a', 'token_type': 'mac',
                        'expires_at': int(time.time()) + 8 * 86400,
                        'refresh_token': 'r'},
+                      # A refresh token authlib cannot send: empty, as an
+                      # erased one is, or not a string at all.
+                      {'access_token': 'a', 'token_type': 'mac',
+                       'expires_at': int(time.time()) + 3600,
+                       'refresh_token': ''},
+                      {'access_token': 'a', 'token_type': 'mac',
+                       'expires_at': int(time.time()) + 3600,
+                       'refresh_token': {'x': 1}},
                       {'access_token': 'a', 'token_type': 'mac',
                        'expires_at': int(time.time()) + 3600}):
             with self.subTest(token=token):
