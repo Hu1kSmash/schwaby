@@ -224,7 +224,7 @@ Here is an example of how to fetch an account hash and use it to place an order:
   resp = c.get_account_numbers()
   assert resp.status_code == httpx2.codes.OK
 
-  # The response is a list, with one entry per account the token can use:
+  # resp.json() is a list, with one entry per account the token can use:
   # [
   #    {
   #        "accountNumber": "123456789",
@@ -338,11 +338,11 @@ to read the documentation below to learn how much data is available.
    <schwaby.client.Client.get_price_history_every_thirty_minutes>` has returned
    the candle that opened at that half hour, which cannot yet have closed. That
    was seen on liquid ETFs at nearly every request over one day on one account,
-   and not on a thinly traded one; the number of requests was not recorded.
-   :ref:`Seen once, not reproduced <confidence_tags>`. Other frequencies, other
-   times and extended hours were not checked. Before treating the last candle
-   as closed, check that its open time plus thirty minutes is not later than
-   your request.
+   and not on a thinly traded one; the number of requests was not recorded,
+   and it has not been checked on another day. Other frequencies, other times
+   and extended hours were not checked. Before treating the last candle as
+   closed, check that its open time plus thirty minutes is not later than your
+   request.
 
 .. automethod:: schwaby.client.Client.get_price_history_every_minute
 .. automethod:: schwaby.client.Client.get_price_history_every_five_minutes

@@ -313,9 +313,9 @@ class AccountNumberNotFoundError(SchwabError):
 class UnusableAccountNumbersError(SchwabError, ValueError):
     '''
     Raised by :func:`find_account_hash` when the account list is not the shape
-    :meth:`Client.get_account_numbers
-    <schwaby.client.Client.get_account_numbers>` returns, or lists the account
-    number more than once.
+    of the JSON body :meth:`Client.get_account_numbers
+    <schwaby.client.Client.get_account_numbers>` responds with, or lists the
+    account number more than once.
 
     Either way the answer cannot be trusted to name one account, so no hash is
     returned. Its message names neither account number.
@@ -327,7 +327,7 @@ def find_account_hash(account_numbers, account_number):
     Returns the account hash for ``account_number``, which is what every
     account-specific call takes in place of the account number.
 
-    ``account_numbers`` is the parsed response of
+    ``account_numbers`` is the parsed JSON body of the response from
     :meth:`Client.get_account_numbers
     <schwaby.client.Client.get_account_numbers>`, that is
     ``client.get_account_numbers().json()``. This makes no request, so it
@@ -337,7 +337,8 @@ def find_account_hash(account_numbers, account_number):
     list, so taking the first entry's ``hashValue`` picks an account rather
     than finding one.
 
-    :param account_numbers: The list ``get_account_numbers()`` returns, of
+    :param account_numbers: The parsed ``get_account_numbers()`` response
+                            body, a list of
                             ``{"accountNumber": ..., "hashValue": ...}``
                             objects.
     :param account_number: The account number, as a ``str`` --- Schwab's schema
@@ -345,8 +346,8 @@ def find_account_hash(account_numbers, account_number):
                            rather than converted, because converting a number
                            drops any leading zero and then matches nothing.
     :raises TypeError: ``account_number`` is not a ``str``.
-    :raises AccountNumberNotFoundError: No account has that number.
     :raises ValueError: ``account_number`` has whitespace around it.
+    :raises AccountNumberNotFoundError: No account has that number.
     :raises UnusableAccountNumbersError: The list is not that shape, or has
                                          that number more than once.
     '''
@@ -357,16 +358,16 @@ def find_account_hash(account_numbers, account_number):
                 'account_number must be a str, as Schwab types it, not a '
                 '{}'.format(_type_name(account_number)))
     account_number = str.__str__(account_number)
-
     # One read from a file or an environment variable can keep its newline,
     # and would otherwise read as an account the token does not cover.
     if account_number != account_number.strip():
         raise ValueError(
                 'account_number has whitespace around it; strip it first')
+
     if not issubclass(type(account_numbers), list):
         raise UnusableAccountNumbersError(
-                'expected the list get_account_numbers() returns, not a '
-                '{}'.format(_type_name(account_numbers)))
+                'expected the list get_account_numbers().json() returns, not '
+                'a {}'.format(_type_name(account_numbers)))
 
     # Read through the built-in types' own methods, and reduce every value to
     # a plain str, so that what is checked is what is matched and returned. A
