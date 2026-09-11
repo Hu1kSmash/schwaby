@@ -34,8 +34,10 @@ APP_SECRET = 'XXXXXX'
 TOKEN_PATH = './token.json'
 
 # The account to trade, as a string. A token can cover several accounts, and
-# the order of the account list does not tell you which one you mean.
-ACCOUNT_NUMBER = '123456789'
+# the order of the account list does not tell you which one you mean. The
+# placeholder is not digits, so an unedited run is refused as a bad number
+# rather than reported as an account the token does not cover.
+ACCOUNT_NUMBER = 'XXXXXXXX'
 
 # Deliberately far from the market so this does not fill while you read it.
 SYMBOL = 'AAPL'

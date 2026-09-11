@@ -279,10 +279,11 @@ an error handler:
 
   def on_stream_error(service, exception, message):
       # service is whatever Schwab sent. reprlib.repr escapes its line breaks
-      # as %r would, and also stops at a bounded depth and length, where a
-      # plain repr of a deeply nested value raises inside this handler.
-      alert('schwaby stream: %s raised %s'
-            % (reprlib.repr(service), reprlib.repr(exception)))
+      # as %r would, and also stops at a bounded depth, where a plain repr of a
+      # deeply nested value raises inside this handler. %r shows the exception
+      # whole: reprlib would cut its message short.
+      alert('schwaby stream: %s raised %r'
+            % (reprlib.repr(service), exception))
 
   stream_client.add_error_handler(on_stream_error)
 
@@ -314,7 +315,7 @@ For the late rejection, the ``UnexpectedResponseCode`` carries the whole
 frame — which can hold several responses — so read the rejected one from
 ``message`` rather than from ``exception.response['response'][0]``. ``service``
 and ``message`` are ``None`` where they do not apply --- but do not use that as
-a discriminator. ``UnparsableMessage`` carries the raw undecodable text as
+a discriminator. ``UnparsableMessage`` carries the frame as it arrived, text or bytes, as
 ``message`` for exactly this reason. Only the close failure leaves both unset *by design*; an
 ``UnusableMessage`` reports the containing frame as ``message``, which is
 non-``None`` in every case but a top-level JSON ``null``. Test

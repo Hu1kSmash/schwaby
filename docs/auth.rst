@@ -214,12 +214,13 @@ seven day token age restriction is implemented by Schwab, and so the token may
 become expired sooner *or* later than seven days.
 
 The age is this machine's clock minus the creation time the logging-in machine
-wrote. If this clock is behind, or the token came from another host, the age
-reads low, and negative if the creation time is still ahead of this clock, so
-``easy_client`` retires the token that much later. Such a token is not refused,
-because a clock that is only behind would then fail a working token at startup.
-Once Schwab stops accepting the refresh token, that refusal is reported with
-``refresh_token_invalid`` whatever the age says.
+wrote. If this clock is behind that one's, the age reads low, and negative while
+the creation time is still ahead of this clock, so ``easy_client`` retires the
+token that much later. Such a token is not refused, because a clock that is only
+behind would then fail a working token at startup. An expired refresh token has
+been observed refused as ``invalid_grant``, which sets ``refresh_token_invalid``
+whatever the age says. A refusal under another code does not set it, and the
+seven-day alert in the recipe below then comes that much later.
 
 A program that only needs the age --- a monitor, or a job that warns before the
 window closes --- can read it from the token file without building a client:
@@ -308,7 +309,8 @@ token-shaped:
       else:
           if e.token_age is not None and e.token_age > 7 * 24 * 60 * 60:
               # Past Schwab's documented seven days. It may still recover,
-              # so keep retrying, but someone should know.
+              # so keep retrying, but someone should know -- once, not on
+              # every retry.
               alert('token is past seven days and refreshes are failing')
           retry_later()
 
