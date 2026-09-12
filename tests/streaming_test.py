@@ -6214,6 +6214,39 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
     @no_duplicates
     @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_an_id_one_past_the_highest_issued_fails_the_request(
+            self, ws_connect):
+        # The boundary the stale-response guard draws, and the single value
+        # that decides it. While request 1 is in flight _request_id is 2, so a
+        # frame carrying 2 names an id this client has never issued -- the
+        # server and this client disagreeing about what was asked, not a late
+        # answer to something abandoned. It must fail the request rather than
+        # be set aside as an orphan, which is what `<` rather than `<=`
+        # decides. Nothing else in this file uses that one value: loosening
+        # the comparison left every other test in the suite passing.
+        socket = await self.login_and_get_socket(ws_connect)
+        self.client._response_timeout = 0.5
+
+        frames = [json.dumps(self.success_response(2, 'CHART_EQUITY', 'SUBS'))]
+
+        async def recv():
+            if frames:
+                return frames.pop(0)
+            # Nothing further is coming. Sleeping rather than exhausting the
+            # mock matters for the mutation: with `<=` the frame is set aside
+            # as an orphan, and an exhausted AsyncMock would then fail this
+            # test on StopAsyncIteration -- a red arriving from the harness
+            # rather than from the timeout the mutation actually causes.
+            await asyncio.sleep(10)
+
+        socket.recv.side_effect = recv
+
+        with self.assertRaisesRegex(schwaby.streaming.UnexpectedResponse,
+                                    'unexpected requestid: 2'):
+            await self.client.chart_equity_subs(['GOOG'])
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_handle_message_orphaned_failure_is_a_warning(
             self, ws_connect):
         # A late acknowledgement of something that worked is routine. A late

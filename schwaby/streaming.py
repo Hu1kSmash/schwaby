@@ -3589,6 +3589,15 @@ class StreamClient(EnumEnforcer):
         nothing and reports no error. See :ref:`screener` for the
         full set of prefixes, sort fields and frequencies.
 
+        **Ten keys is the most this takes.** Eleven are refused with response
+        code 19, which arrives as ``UnexpectedResponseCode``; Schwab's message
+        ends with the cap and the excess,
+        ``(SCREENER_EQUITY=10, DISCARDED=1)``.
+        How much of a refused ``SUBS`` survives is not known --- the message
+        names the cap and a discard count, not what is subscribed --- so
+        subscribe ten or fewer rather than relying on submission order.
+        :ref:`screener` has the measurement and its limits.
+
         :param symbols: Screener keys to subscribe to.
         '''
         await self._service_op(symbols, 'SCREENER_EQUITY', 'SUBS', self.ScreenerFields)
@@ -3605,6 +3614,11 @@ class StreamClient(EnumEnforcer):
     async def screener_equity_add(self, symbols):
         '''
         Add keys to the Screener Equity subscription.
+
+        Schwab's response code 19 is defined for "Subscribe or Add", so an
+        ``ADD`` can be refused the same way. Whether added keys share the ten
+        :meth:`~schwaby.streaming.StreamClient.screener_equity_subs` describes
+        or get a budget of their own was not measured --- only ``SUBS`` was.
 
         :param symbols: Screener keys to add, in the
                         ``(PREFIX)_(SORTFIELD)_(FREQUENCY)`` form.
@@ -3629,6 +3643,11 @@ class StreamClient(EnumEnforcer):
         nothing and reports no error. See :ref:`screener` for the
         full set of prefixes, sort fields and frequencies.
 
+        Schwab's code-19 *table entry* names no service, so this service may
+        have a key limit too. Nothing has been measured for
+        ``SCREENER_OPTION``: neither whether it has one nor what it is. Do not
+        assume ten. See :ref:`screener`.
+
         :param symbols: Screener keys to subscribe to.
         '''
         await self._service_op(symbols, 'SCREENER_OPTION', 'SUBS', self.ScreenerFields)
@@ -3645,6 +3664,10 @@ class StreamClient(EnumEnforcer):
     async def screener_option_add(self, symbols):
         '''
         Add keys to the Screener Option subscription.
+
+        Schwab's response code 19 is defined for "Subscribe or Add", so an
+        ``ADD`` can be refused for a key limit the same way a ``SUBS`` can.
+        Nothing about this service's limit has been measured.
 
         :param symbols: Screener keys to add, in the
                         ``(PREFIX)_(SORTFIELD)_(FREQUENCY)`` form.

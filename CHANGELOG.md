@@ -22,6 +22,40 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 4.7.3
+
+*2026-09-12*
+
+Documentation, and one test. The library's parsed trees are identical to
+4.7.2's with docstrings stripped, `version.py` aside; nothing public is added,
+removed or renamed.
+
+- `SCREENER_EQUITY` takes at most ten subscription keys. An eleventh is refused
+  with response code 19, which arrives as `UnexpectedResponseCode` carrying
+  Schwab's own message: `SCREENER_EQUITY=10, DISCARDED=1`. The boundary was
+  walked rather than read off a single refusal --- ten accepted, eleven refused
+  --- and the ten belongs to the service rather than to the connection: twelve
+  keys drew the same refusal while twenty-five `LEVELONE_EQUITIES` symbols were
+  live and never refused. What the service keeps when it refuses is documented
+  as unknown, because that needs delivered frames and a closed market delivers
+  none. `SCREENER_OPTION` was not measured, so its own limit is documented as
+  unknown rather than as ten, and `screener_equity_add` says only that code 19
+  covers "Subscribe or Add" --- whether added keys share the ten was not
+  measured either.
+- A refused screener `SUBS` may be answered twice: a late `code: 0, "SUBS
+  command succeeded"` arriving after the code-19 rejection. It reaches the
+  orphan path, logs at INFO, and is deliberately not reported to
+  `add_error_handler`, which reports a late rejection but not a late success ---
+  so it is expected rather than this client losing a response. Sixty refusals in
+  one session were each paired with one; a separate probe saw the pairing on one
+  of three refusals and read a single frame after each, so how reliably it
+  happens is not established.
+- A test for the one value the stale-response guard's boundary decides: a
+  response id one past the highest this client has issued must fail the request
+  rather than be set aside as a late answer to an abandoned one. Loosening that
+  comparison left the whole suite passing, so the strictness had no test behind
+  it.
+
 ## 4.7.2
 
 *2026-09-11*

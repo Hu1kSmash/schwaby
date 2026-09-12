@@ -884,6 +884,77 @@ and frequency is:
   over REST it is an HTTP 400, and on the stream it is accepted and silent
   forever.
 
+.. warning::
+
+  **Subscribe ten keys or fewer: ten is the most a SCREENER_EQUITY
+  subscription took.** An eleventh is refused with response code 19, which
+  reaches you as ``UnexpectedResponseCode``, whose text carries Schwab's own
+  message. For eleven keys, verbatim:
+
+  .. code-block:: text
+
+    You've reached the maximum number of symbols allowed.  (SCREENER_EQUITY=10, DISCARDED=1)
+
+  The parenthetical names the cap and a count of the keys past it.
+
+  ``SCREENER_OPTION``'s key limit was not measured. The numbers here are the
+  equity service's; whether the option screener has a limit of its own is
+  unknown.
+
+  **The boundary was walked rather than inferred.** Ten keys are accepted,
+  ``code 0``. Eleven are refused, and the refusal counts the excess exactly:
+  ``DISCARDED=1`` for eleven keys, ``DISCARDED=2`` for twelve. So ten is the
+  cap itself and not a number read off one refusal's arithmetic. Measured
+  against a live account with nothing else subscribed, and corroborated
+  separately by sixty identical twelve-key refusals in ordinary use.
+
+  **The ten belongs to this service, not to the connection.** Schwab's table
+  calls code 19 ``REACHED_SYMBOL_LIMIT``, "Subscribe or Add command has
+  reached a *total* subscription symbol limit", and *total* is not what was
+  measured. Twelve screener keys drew the identical ``DISCARDED=2`` on a
+  connection already carrying twenty-five ``LEVELONE_EQUITIES`` symbols ---
+  which were themselves never refused --- so the screener's own budget was
+  still ten while twenty-five were in use elsewhere. A connection-wide budget
+  of ten cannot do that. What code 19 means for the other services which
+  share it is a separate question, and unmeasured.
+
+  **This is not the ten in "top 10" above.** That is how many symbols a push
+  ranks, and it is a property of the payload. This one is how many keys you
+  may subscribe to, and it is a property of this service's subscription.
+
+  **What the service keeps when it refuses is not known.** The message names
+  the cap and a discard count; it does not say what is now subscribed. The
+  market was closed when this was measured and no frames were delivered at
+  all, so a screener holding ten and one holding nothing looked identical. Do
+  not assume the first ten you sent are live --- assume nothing is until
+  frames arrive. Subscribe ten or fewer and the question does not arise.
+
+.. note::
+
+  **A refused screener SUBS may be answered twice.** On a live account in
+  ordinary use, sixty code-19 refusals were each followed within the same
+  second by a second response to the same request: ``code: 0, "SUBS command
+  succeeded"`` --- sixty rejections, sixty late successes, one-to-one. A
+  separate probe saw the same pairing on one of three refusals, and read
+  exactly one frame after each, so the other two say nothing either way.
+  Expect it; do not rely on it.
+
+  Only one request is outstanding at a time, so the code-19 frame has already
+  resolved your ``subs`` --- by raising --- and the late success answers a
+  request nothing is waiting on. It is logged at INFO by the orphan path the
+  next time you call ``handle_message``, and is *not* reported to
+  :meth:`add_error_handler
+  <schwaby.streaming.StreamClient.add_error_handler>`, which reports a late
+  *rejection* but not a late success. A ``SUBS command succeeded`` after a
+  code-19 raise is therefore expected, and is not this client losing a
+  response.
+
+  It cannot damage the request after it either. A response carrying an id this
+  client issued earlier goes to the orphan path rather than to whichever
+  request is in flight, so the next subscribe still receives its own answer;
+  handing it over instead would fail an innocent request and leave its real
+  answer queued for the one after that.
+
 .. note::
 
   ``AVERAGE_PERCENT_VOLUME`` is documented by Schwab and accepted by the
