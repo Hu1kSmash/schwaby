@@ -22,6 +22,59 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 5.0.0
+
+*2026-09-17*
+
+One rename, and it is breaking. One documentation fix rides along.
+
+- **The level two book's per-exchange `SEQUENCE` is now `QUOTE_TIME`.** It
+  never held a sequence number. Measured against a live account during market
+  hours: all 8,904 per-exchange entries on `NASDAQ_BOOK` and `NYSE_BOOK`
+  carried a value from inside the hour before their frame arrived, a median of
+  one to two minutes. Schwab's own field table agrees, calling index 2 the
+  quote time for this market maker's quote; only this library's reading of the
+  number was wrong.
+
+  It affects `PerExchangeBidFields` and `PerExchangeAskFields`, which relabel
+  the innermost dictionaries of `NYSE_BOOK`, `NASDAQ_BOOK` and `OPTIONS_BOOK`
+  messages. **Upgrading:** `entry['SEQUENCE']` becomes a loud `KeyError`, but
+  `entry.get('SEQUENCE')` becomes a silent `None`, so grep for the name rather
+  than waiting for an exception. Anyone who was treating the value as an
+  opaque counter --- comparing it, sorting on it, deduplicating with it --- has
+  a semantic change to make and not only a key to rename. Nothing else is
+  renamed and nothing is removed.
+
+  An alias for the old name would not have avoided the major version.
+  `key_mapping()` iterates the enum rather than its members, deliberately, so
+  that an alias cannot decide what a field is labelled --- the payload key
+  changes either way, which is the half a consumer trips on.
+
+  **The value is milliseconds since midnight Eastern, not epoch
+  milliseconds.** That is the trap the old name hid and the new name does not
+  fix by itself: every other time in a book frame is epoch milliseconds,
+  `BOOK_TIME` included, so the obvious reading turns this morning's quote into
+  a moment in January 1970 and raises nothing. The member documentation and
+  the streaming page say what it is, how to turn it into an instant, that it
+  was measured in September so daylight saving is unestablished, and that it
+  is **not a freshness signal**: one participant's quote was still being
+  re-sent half an hour after it was made, and was still arriving when the
+  capture ended, so nothing bounds how stale one can be. `OPTIONS_BOOK` shares
+  the same two field tables and delivered no per-exchange entries when tried,
+  so none of that was measured there.
+
+- **`ChartEquityFields` fields 2 to 6 are documented as what they carry**: the
+  minute bar's open, high, low, close and volume, which is what
+  `ChartFuturesFields` has always said about the same five numbers. They read
+  "Today's open price", "Previous day's close price" and "Today's trading
+  volume". Measured on consecutive live bars: the close went 760.41, 760.53,
+  760.3505, so it is not a previous close; the volume went 933, 636, 140, so
+  it is not a running total. A reader summing that field for the day's volume
+  got one minute of it and nothing said so. Names and numbers are unchanged,
+  so nothing breaks here. The `SEQUENCE` three lines above them is genuine ---
+  it rose by one per minute bar and matched across symbols in a frame --- and
+  now says what was measured and what was not.
+
 ## 4.8.0
 
 *2026-09-17*
