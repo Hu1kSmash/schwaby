@@ -534,7 +534,8 @@ The following streams are confirmed working:
  * :ref:`level_one`
  * :ref:`level_two`
  * :ref:`screener`
- * :ref:`news_headline` (``SUBS`` only)
+ * :ref:`news_headline` (``SUBS`` and ``ADD``; ``UNSUBS`` acknowledged, its
+   effect unconfirmed)
  * :ref:`account_activity`
 
 
@@ -933,7 +934,7 @@ and frequency is:
 
 .. warning::
 
-  **Subscribe ten keys or fewer: ten is the most a SCREENER_EQUITY
+  **Subscribe ten keys or fewer: ten is the most either screener's
   subscription took.** An eleventh is refused with response code 19, which
   reaches you as ``UnexpectedResponseCode``, whose text carries Schwab's own
   message. For eleven keys, verbatim:
@@ -943,17 +944,18 @@ and frequency is:
     You've reached the maximum number of symbols allowed.  (SCREENER_EQUITY=10, DISCARDED=1)
 
   The parenthetical names the cap and a count of the keys past it.
-
-  ``SCREENER_OPTION``'s key limit was not measured. The numbers here are the
-  equity service's; whether the option screener has a limit of its own is
-  unknown.
+  ``SCREENER_OPTION`` refuses the same way, with its own name in the
+  parenthetical: ten keys accepted, eleven ``DISCARDED=1``, twelve
+  ``DISCARDED=2``.
 
   **The boundary was walked rather than inferred.** Ten keys are accepted,
   ``code 0``. Eleven are refused, and the refusal counts the excess exactly:
   ``DISCARDED=1`` for eleven keys, ``DISCARDED=2`` for twelve. So ten is the
-  cap itself and not a number read off one refusal's arithmetic. Measured
-  against a live account with nothing else subscribed, and corroborated
-  separately by sixty identical twelve-key refusals in ordinary use.
+  cap itself and not a number read off one refusal's arithmetic, on both
+  screeners. Measured against a live account: the equity walk with nothing
+  else subscribed, the option walk alongside a news subscription. Sixty
+  identical twelve-key equity refusals in ordinary use corroborate the equity
+  figure separately.
 
   **The ten belongs to this service, not to the connection.** Schwab's table
   calls code 19 ``REACHED_SYMBOL_LIMIT``, "Subscribe or Add command has
@@ -969,32 +971,38 @@ and frequency is:
   ranks, and it is a property of the payload. This one is how many keys you
   may subscribe to, and it is a property of this service's subscription.
 
-  **What the service keeps when it refuses is not known.** The message names
-  the cap and a discard count; it does not say what is now subscribed. The
-  market was closed when this was measured and no frames were delivered at
-  all, so a screener holding ten and one holding nothing looked identical. Do
-  not assume the first ten you sent are live --- assume nothing is until
-  frames arrive. Subscribe ten or fewer and the question does not arise.
+  **A refused SUBS is not an empty subscription.** Twelve ``SCREENER_EQUITY``
+  keys drew code 19 and ``DISCARDED=2``, and then the first ten keys sent, in
+  the order sent, delivered pushes, every one of them. So the exception you
+  caught means two keys were dropped, not that nothing is subscribed, and a
+  handler keeps receiving pushes for the ten. Which ten was seen for one order
+  of keys; it is what happened, not a rule Schwab states. ``ADD`` spends the
+  same ten: eight keys subscribed and three added drew ``DISCARDED=1``, and the
+  first two added delivered. The keys past the cap delivered nothing, but
+  neither was ever subscribed inside it, so their silence cannot tell a dropped
+  key from a quiet one. Subscribe ten or fewer and the question does not
+  arise.
 
 .. note::
 
-  **A refused screener SUBS may be answered twice.** On a live account in
-  ordinary use, sixty code-19 refusals were each followed within the same
-  second by a second response to the same request: ``code: 0, "SUBS command
-  succeeded"`` --- sixty rejections, sixty late successes, one-to-one. A
-  separate probe saw the same pairing on one of three refusals, and read
-  exactly one frame after each, so the other two say nothing either way.
-  Expect it; do not rely on it.
+  **A refused screener SUBS is answered twice, and the one refused ADD was
+  too.** On a live account in ordinary use, sixty code-19 refusals were each
+  followed within the same second by a second response to the same request:
+  ``code: 0, "SUBS command succeeded"`` --- sixty rejections, sixty late
+  successes, one-to-one. A probe that went on reading after each refusal saw
+  the same pairing on nine of nine, on both screeners, each within a tenth of a
+  second. One of the nine was an ``ADD``, on the equity screener, answered
+  ``"ADD command succeeded"``. Expect it after a ``SUBS``, and probably after
+  an ``ADD``.
 
   Only one request is outstanding at a time, so the code-19 frame has already
-  resolved your ``subs`` --- by raising --- and the late success answers a
-  request nothing is waiting on. It is logged at INFO by the orphan path the
-  next time you call ``handle_message``, and is *not* reported to
-  :meth:`add_error_handler
-  <schwaby.streaming.StreamClient.add_error_handler>`, which reports a late
-  *rejection* but not a late success. A ``SUBS command succeeded`` after a
-  code-19 raise is therefore expected, and is not this client losing a
-  response.
+  resolved your ``subs`` or ``add`` --- by raising --- and the late success
+  answers a request nothing is waiting on. It is logged at INFO by the orphan
+  path the next time you call ``handle_message``, and is *not* reported to
+  :meth:`add_error_handler <schwaby.streaming.StreamClient.add_error_handler>`,
+  which reports a late *rejection* but not a late success. A ``SUBS command
+  succeeded`` or ``ADD command succeeded`` after a code-19 raise is therefore
+  expected, and is not this client losing a response.
 
   It cannot damage the request after it either. A response carrying an id this
   client issued earlier goes to the orphan path rather than to whichever
@@ -1103,24 +1111,53 @@ the fields was delivered all eleven, so the subscribe methods here take no
 ``fields`` argument. The subscribed symbol arrives as the item's ``key``, not
 as field ``0``.
 
-**A story can arrive several times, once under each of the subscribed symbols
-it is delivered for.** One story arrived under three subscribed symbols, each
-copy with its own ``key`` and ``seq`` and the same identifiers, so a handler
-that does not deduplicate will see it three times. Whether a story is ever sent
-again under the same identifier with different content --- a correction, say
---- has not been ruled out, since one evening's capture could not show it, so
-deduplicating on the identifier alone could drop one.
+**A story arrives several times.** A copy arrives under each subscribed
+symbol it names, each with its own ``key`` and ``seq`` and the same
+identifiers. Of 191 identifiers, 184 arrived that way; the seven that reached
+only some of their symbols all came in the burst on subscribing, described
+below. Copies also arrived again under the same symbol: 100 identifiers
+arrived more than once and 43 more than once under one symbol, 40 of those 43
+differing only in ``CATEGORIES`` or ``SYMBOLS``. A handler that does not
+deduplicate will see most stories repeatedly.
+
+**Deduplicating on the identifier alone can drop a change.** Two identifiers
+were sent again with different content: one under a minute later with a
+different headline and text and a new timestamp, the other with a new timestamp
+and the same headline and text. Keying on the identifier together with
+``TIMESTAMP`` and ``HEADLINE`` kept both versions of each and removed every
+other repeat in that capture. Two things that key gives up: a repeat can carry
+a longer ``SYMBOLS`` list than the copy kept, and without ``key`` in it the
+copies under other subscribed symbols are dropped, which a handler that routes
+by symbol needs.
 
 **The same story can arrive again in another language.** A translation carries
 its own identifiers and a different ``LANGUAGE``, so deduplicating on the
-identifiers alone does not remove it. Filter on ``LANGUAGE`` if you want one.
+identifiers alone does not remove it. Filter on ``LANGUAGE`` if you want one:
+fourteen languages arrived, and fewer than half of the items were
+``'en-US'``.
 
-Two fields, ``UNKNOWN_3`` and ``UNKNOWN_8``, each carried a single value
-(``'A'`` and ``False``) in every item captured, and what they mean is not
-established. Only ``SUBS`` has been tried against a live account; ``ADD`` and
-``UNSUBS`` are sent the way the other services send them, and have not been.
-How many headlines to expect is not established either: the observations come
-from an evening, not a trading session.
+.. warning::
+
+  **TEXT is not the story.** In 449 items it was never longer than 100
+  characters, and 440 were exactly 100 --- the shape of a limit, not of how
+  long stories are. A program that stores it as the article keeps a fragment
+  and nothing says so. What further text exists, and how to get it, is not
+  established.
+
+What ``UNKNOWN_3`` and ``UNKNOWN_8`` mean is not established. ``UNKNOWN_8``
+was ``False`` in every item captured; ``UNKNOWN_3`` was ``'A'`` in all but one,
+which carried ``'D'``.
+
+``SUBS`` and ``ADD`` each delivered one item for every symbol straight away,
+some of them up to a day old by ``TIMESTAMP``, so expect a burst on subscribing
+that is not new news. ``UNSUBS`` was answered ``code: 0``; that nothing more
+arrives for the symbol afterwards is not established, because in the three
+minutes watched only one headline arrived for any symbol.
+
+How many headlines to expect was measured once. Thirty widely held symbols
+drew 416 items with 191 distinct identifiers in eighty minutes of one morning,
+thirty of those items the burst on subscribing. Other symbols and hours were
+not measured.
 
 .. autoclass:: schwaby.streaming::StreamClient.NewsHeadlineFields
   :members:

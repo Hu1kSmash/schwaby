@@ -3755,10 +3755,10 @@ class StreamClient(EnumEnforcer):
         code 19, which arrives as ``UnexpectedResponseCode``; Schwab's message
         ends with the cap and the excess,
         ``(SCREENER_EQUITY=10, DISCARDED=1)``.
-        How much of a refused ``SUBS`` survives is not known --- the message
-        names the cap and a discard count, not what is subscribed --- so
-        subscribe ten or fewer rather than relying on submission order.
-        :ref:`screener` has the measurement and its limits.
+        The refusal does not leave nothing subscribed: the first ten keys
+        sent delivered. Subscribe ten or fewer rather than relying
+        on which ten survive. :ref:`screener` has the measurement and its
+        limits.
 
         :param symbols: Screener keys to subscribe to.
         '''
@@ -3777,10 +3777,10 @@ class StreamClient(EnumEnforcer):
         '''
         Add keys to the Screener Equity subscription.
 
-        Schwab's response code 19 is defined for "Subscribe or Add", so an
-        ``ADD`` can be refused the same way. Whether added keys share the ten
-        :meth:`~schwaby.streaming.StreamClient.screener_equity_subs` describes
-        or get a budget of their own was not measured --- only ``SUBS`` was.
+        Added keys share the ten
+        :meth:`~schwaby.streaming.StreamClient.screener_equity_subs`
+        describes: with eight subscribed, adding three is refused with code 19
+        and ``DISCARDED=1``, and the first two added delivered.
 
         :param symbols: Screener keys to add, in the
                         ``(PREFIX)_(SORTFIELD)_(FREQUENCY)`` form.
@@ -3805,10 +3805,10 @@ class StreamClient(EnumEnforcer):
         nothing and reports no error. See :ref:`screener` for the
         full set of prefixes, sort fields and frequencies.
 
-        Schwab's code-19 *table entry* names no service, so this service may
-        have a key limit too. Nothing has been measured for
-        ``SCREENER_OPTION``: neither whether it has one nor what it is. Do not
-        assume ten. See :ref:`screener`.
+        **Ten keys is the most this takes**, as for
+        :meth:`~schwaby.streaming.StreamClient.screener_equity_subs`. Eleven
+        are refused with response code 19, ending
+        ``(SCREENER_OPTION=10, DISCARDED=1)``. See :ref:`screener`.
 
         :param symbols: Screener keys to subscribe to.
         '''
@@ -3828,8 +3828,9 @@ class StreamClient(EnumEnforcer):
         Add keys to the Screener Option subscription.
 
         Schwab's response code 19 is defined for "Subscribe or Add", so an
-        ``ADD`` can be refused for a key limit the same way a ``SUBS`` can.
-        Nothing about this service's limit has been measured.
+        ``ADD`` can be refused for the ten-key limit the same way a ``SUBS``
+        can. That added keys share it was measured on the equity screener,
+        not on this one.
 
         :param symbols: Screener keys to add, in the
                         ``(PREFIX)_(SORTFIELD)_(FREQUENCY)`` form.
@@ -3860,7 +3861,8 @@ class StreamClient(EnumEnforcer):
         #: no item delivered to a live account carried a field ``0``.
         SYMBOL = 0
 
-        #: Epoch milliseconds. Which moment it marks is not established.
+        #: Epoch milliseconds. Which moment it marks is not established; it
+        #: was never later than receipt.
         TIMESTAMP = 1
 
         #: An identifier. Named after TD Ameritrade's field one position
@@ -3868,7 +3870,8 @@ class StreamClient(EnumEnforcer):
         #: every item captured, so which is which is not established.
         HEADLINE_ID = 2
 
-        #: Meaning not established. ``'A'`` in every item captured.
+        #: Meaning not established. ``'A'`` in every item captured but one,
+        #: which carried ``'D'``.
         UNKNOWN_3 = 3
 
         #: The headline.
@@ -3890,8 +3893,8 @@ class StreamClient(EnumEnforcer):
         #: The name of the news source.
         SOURCE = 9
 
-        #: Further text. How it relates to the headline, and whether it is the
-        #: whole story, is not established.
+        #: Further text, never over 100 characters in any item captured: not
+        #: the story. See :ref:`news_headline`.
         TEXT = 10
 
         #: A language tag, such as ``'en-US'``.
@@ -3902,8 +3905,8 @@ class StreamClient(EnumEnforcer):
         Subscribe to news headlines for the given symbols.
 
         Schwab does not document this service. It was found by asking the
-        venue, and could change or stop without notice. Only ``SUBS`` has been
-        tried against a live account. See :ref:`news_headline`.
+        venue, and could change or stop without notice. See
+        :ref:`news_headline`.
 
         :param symbols: Symbols to receive headlines for.
         '''
@@ -3912,8 +3915,8 @@ class StreamClient(EnumEnforcer):
 
     async def news_headline_unsubs(self, symbols):
         '''
-        Un-Subscribe to news headlines for the given symbols. Not tried
-        against a live account; see :ref:`news_headline`.
+        Un-Subscribe to news headlines for the given symbols. See
+        :ref:`news_headline`.
 
         :param symbols: Symbols to stop receiving headlines for.
         '''
@@ -3921,8 +3924,8 @@ class StreamClient(EnumEnforcer):
 
     async def news_headline_add(self, symbols):
         '''
-        Add symbols to the news headline subscription. Not tried against a
-        live account; see :ref:`news_headline`.
+        Add symbols to the news headline subscription. See
+        :ref:`news_headline`.
 
         :param symbols: Symbols to receive headlines for.
         '''
