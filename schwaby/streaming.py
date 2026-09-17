@@ -123,6 +123,7 @@ _KNOWN_SERVICES = frozenset((
     'LEVELONE_FUTURES_OPTIONS',
     'LEVELONE_OPTIONS',
     'NASDAQ_BOOK',
+    'NEWS_HEADLINE',
     'NYSE_BOOK',
     'OPTIONS_BOOK',
     'SCREENER_EQUITY',
@@ -3707,3 +3708,96 @@ class StreamClient(EnumEnforcer):
         '''
         self._handlers['SCREENER_OPTION'].append(
             _Handler(handler, self.ScreenerFields))
+
+    ##########################################################################
+    # NEWS_HEADLINE
+
+    class NewsHeadlineFields(_BaseFieldEnum):
+        '''
+        Fields of a ``NEWS_HEADLINE`` item. Schwab's streamer documentation
+        does not describe this service at all. The numbering comes from items
+        delivered to a live account; the names describe the values seen there,
+        except where a member says otherwise. See :ref:`news_headline` for what
+        was measured and what was not.
+        '''
+
+        #: Held for the subscribed symbol, which arrives as the item's ``key``:
+        #: no item delivered to a live account carried a field ``0``.
+        SYMBOL = 0
+
+        #: Epoch milliseconds. Which moment it marks is not established.
+        TIMESTAMP = 1
+
+        #: An identifier. Named after TD Ameritrade's field one position
+        #: higher, not from anything measured: it has equalled ``STORY_ID`` in
+        #: every item captured, so which is which is not established.
+        HEADLINE_ID = 2
+
+        #: Meaning not established. ``'A'`` in every item captured.
+        UNKNOWN_3 = 3
+
+        #: The headline.
+        HEADLINE = 4
+
+        #: An identifier. Named after TD Ameritrade's field one position
+        #: higher; it has equalled ``HEADLINE_ID`` in every item captured.
+        STORY_ID = 5
+
+        #: A list of category names.
+        CATEGORIES = 6
+
+        #: A list of symbols, including the subscribed one.
+        SYMBOLS = 7
+
+        #: Meaning not established. ``False`` in every item captured.
+        UNKNOWN_8 = 8
+
+        #: The name of the news source.
+        SOURCE = 9
+
+        #: Further text. How it relates to the headline, and whether it is the
+        #: whole story, is not established.
+        TEXT = 10
+
+        #: A language tag, such as ``'en-US'``.
+        LANGUAGE = 11
+
+    async def news_headline_subs(self, symbols):
+        '''
+        Subscribe to news headlines for the given symbols.
+
+        Schwab does not document this service. It was found by asking the
+        venue, and could change or stop without notice. Only ``SUBS`` has been
+        tried against a live account. See :ref:`news_headline`.
+
+        :param symbols: Symbols to receive headlines for.
+        '''
+        await self._service_op(
+            symbols, 'NEWS_HEADLINE', 'SUBS', self.NewsHeadlineFields)
+
+    async def news_headline_unsubs(self, symbols):
+        '''
+        Un-Subscribe to news headlines for the given symbols. Not tried
+        against a live account; see :ref:`news_headline`.
+
+        :param symbols: Symbols to stop receiving headlines for.
+        '''
+        await self._service_op(symbols, 'NEWS_HEADLINE', 'UNSUBS')
+
+    async def news_headline_add(self, symbols):
+        '''
+        Add symbols to the news headline subscription. Not tried against a
+        live account; see :ref:`news_headline`.
+
+        :param symbols: Symbols to receive headlines for.
+        '''
+        await self._service_op(
+            symbols, 'NEWS_HEADLINE', 'ADD', self.NewsHeadlineFields)
+
+    def add_news_headline_handler(self, handler):
+        '''
+        Register a function to handle news headlines as they are sent. See
+        :ref:`registering_handlers` for details.
+        '''
+        self._handlers['NEWS_HEADLINE'].append(
+            _Handler(handler, self.NewsHeadlineFields))

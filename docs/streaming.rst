@@ -534,6 +534,7 @@ The following streams are confirmed working:
  * :ref:`level_one`
  * :ref:`level_two`
  * :ref:`screener`
+ * :ref:`news_headline` (``SUBS`` only)
  * :ref:`account_activity`
 
 
@@ -1022,6 +1023,67 @@ Screener Option
 .. automethod:: schwaby.streaming::StreamClient.screener_option_unsubs
 .. automethod:: schwaby.streaming::StreamClient.screener_option_add
 .. automethod:: schwaby.streaming::StreamClient.add_screener_option_handler
+
+
+.. _news_headline:
+
++++++++++++++
+News Headline
++++++++++++++
+
+Headlines for the symbols you subscribe to, from sources including Reuters,
+MT Newswire and Briefing.com.
+
+.. warning::
+
+  **Schwab does not document this service.** Its streamer documentation lists
+  thirteen services and none of them is news. ``NEWS_HEADLINE`` was found by
+  subscribing to it: Schwab answers ``code: 0`` and then delivers headlines.
+  Nothing on this page about it comes from Schwab: what is here was measured
+  against a live account, and where it was not, the page says so. An
+  undocumented service can change or stop without notice. Do not make it the
+  only way your program learns about news.
+
+``schwab-py`` 1.0.0 to 1.2.1 carried a news enum written for TD Ameritrade,
+whose numbering Schwab does not follow. The timestamp, the identifiers, the
+headline and the source each arrive one field lower than that enum put them;
+Schwab's field ``6`` is a list where the enum's ``COUNT_FOR_KEYWORD``, one
+higher, expected a count; and Schwab's fields ``10`` and ``11`` have nothing
+one higher to correspond to. Relabeled with it, the fields get the wrong
+names; use :class:`~schwaby.streaming.StreamClient.NewsHeadlineFields`.
+
+**The fields you ask for are ignored.** A subscription asking for a subset of
+the fields was delivered all eleven, so the subscribe methods here take no
+``fields`` argument. The subscribed symbol arrives as the item's ``key``, not
+as field ``0``.
+
+**A story can arrive several times, once under each of the subscribed symbols
+it is delivered for.** One story arrived under three subscribed symbols, each
+copy with its own ``key`` and ``seq`` and the same identifiers, so a handler
+that does not deduplicate will see it three times. Whether a story is ever sent
+again under the same identifier with different content --- a correction, say
+--- has not been ruled out, since one evening's capture could not show it, so
+deduplicating on the identifier alone could drop one.
+
+**The same story can arrive again in another language.** A translation carries
+its own identifiers and a different ``LANGUAGE``, so deduplicating on the
+identifiers alone does not remove it. Filter on ``LANGUAGE`` if you want one.
+
+Two fields, ``UNKNOWN_3`` and ``UNKNOWN_8``, each carried a single value
+(``'A'`` and ``False``) in every item captured, and what they mean is not
+established. Only ``SUBS`` has been tried against a live account; ``ADD`` and
+``UNSUBS`` are sent the way the other services send them, and have not been.
+How many headlines to expect is not established either: the observations come
+from an evening, not a trading session.
+
+.. autoclass:: schwaby.streaming::StreamClient.NewsHeadlineFields
+  :members:
+  :undoc-members:
+
+.. automethod:: schwaby.streaming::StreamClient.news_headline_subs
+.. automethod:: schwaby.streaming::StreamClient.news_headline_unsubs
+.. automethod:: schwaby.streaming::StreamClient.news_headline_add
+.. automethod:: schwaby.streaming::StreamClient.add_news_headline_handler
 
 
 .. _account_activity:

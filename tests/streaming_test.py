@@ -6039,6 +6039,220 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assert_handler_called_once_with(handler, expected_item)
         self.assert_handler_called_once_with(async_handler, expected_item)
 
+    ##########################################################################
+    # NEWS_HEADLINE
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_news_headline_subs_and_add_success_all_fields(
+            self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+
+        socket.recv.side_effect = [json.dumps(self.success_response(
+            1, 'NEWS_HEADLINE', 'SUBS'))]
+
+        await self.client.news_headline_subs(['AAPL', 'MSFT'])
+        socket.recv.assert_awaited_once()
+        request = self.request_from_socket_mock(socket)
+
+        self.assertEqual(request, {
+            'service': 'NEWS_HEADLINE',
+            'command': 'SUBS',
+            'requestid': '1',
+            'SchwabClientCustomerId': self.pref_customer_id,
+            'SchwabClientCorrelId': self.pref_correl_id,
+            'parameters': {
+                'keys': 'AAPL,MSFT',
+                'fields': '0,1,2,3,4,5,6,7,8,9,10,11'
+            }
+        })
+
+        socket.reset_mock()
+
+        socket.recv.side_effect = [json.dumps(self.success_response(
+            2, 'NEWS_HEADLINE', 'ADD'))]
+
+        await self.client.news_headline_add(['NVDA'])
+        socket.recv.assert_awaited_once()
+        request = self.request_from_socket_mock(socket)
+
+        self.assertEqual(request, {
+            'service': 'NEWS_HEADLINE',
+            'command': 'ADD',
+            'requestid': '2',
+            'SchwabClientCustomerId': self.pref_customer_id,
+            'SchwabClientCorrelId': self.pref_correl_id,
+            'parameters': {
+                'keys': 'NVDA',
+                'fields': '0,1,2,3,4,5,6,7,8,9,10,11'
+            }
+        })
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_news_headline_unsubs_success(
+            self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+
+        stream_item = self.streaming_entry('NEWS_HEADLINE', 'SUBS')
+
+        socket.recv.side_effect = [
+            json.dumps(self.success_response(1, 'NEWS_HEADLINE', 'SUBS')),
+            json.dumps(stream_item),
+            json.dumps(self.success_response(
+                2, 'NEWS_HEADLINE', 'UNSUBS', 'UNSUBS command succeeded'))
+        ]
+        handler = Mock()
+        async_handler = AsyncMock()
+        self.client.add_news_headline_handler(handler)
+        self.client.add_news_headline_handler(async_handler)
+
+        await self.client.news_headline_subs(['AAPL', 'MSFT'])
+        await self.client.handle_message()
+        await self.client.news_headline_unsubs(['AAPL', 'MSFT'])
+
+        self.assert_handler_called_once_with(
+                handler, {'service': 'NEWS_HEADLINE',
+                          'command': 'SUBS',
+                          'timestamp': REQUEST_TIMESTAMP})
+        self.assert_handler_called_once_with(
+                async_handler, {'service': 'NEWS_HEADLINE',
+                                'command': 'SUBS',
+                                'timestamp': REQUEST_TIMESTAMP})
+
+        send_awaited = [
+            call(StringMatchesJson({
+                'requests': [{
+                    'service': 'NEWS_HEADLINE',
+                    'requestid': '1',
+                    'command': 'SUBS',
+                    'SchwabClientCustomerId': CLIENT_CUSTOMER_ID,
+                    'SchwabClientCorrelId': CLIENT_CORRELATION_ID,
+                    'parameters': {
+                        'keys': 'AAPL,MSFT',
+                        'fields': '0,1,2,3,4,5,6,7,8,9,10,11'
+                    }
+                }]
+            })),
+            call(StringMatchesJson({
+                'requests': [{
+                    'service': 'NEWS_HEADLINE',
+                    'requestid': '2',
+                    'command': 'UNSUBS',
+                    'SchwabClientCustomerId': CLIENT_CUSTOMER_ID,
+                    'SchwabClientCorrelId': CLIENT_CORRELATION_ID,
+                    'parameters': {
+                        'keys': 'AAPL,MSFT'
+                    }
+                }]
+            })),
+        ]
+        socket.send.assert_has_awaits(send_awaited, any_order=False)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_news_headline_subs_failure(self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+
+        response = self.success_response(1, 'NEWS_HEADLINE', 'SUBS')
+        response['response'][0]['content']['code'] = 21
+        socket.recv.side_effect = [json.dumps(response)]
+
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
+            await self.client.news_headline_subs(['AAPL', 'MSFT'])
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_news_headline_unsubs_failure(self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+
+        response = self.success_response(1, 'NEWS_HEADLINE', 'UNSUBS')
+        response['response'][0]['content']['code'] = 21
+        socket.recv.side_effect = [json.dumps(response)]
+
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
+            await self.client.news_headline_unsubs(['AAPL', 'MSFT'])
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_news_headline_add_failure(self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+
+        response = self.success_response(1, 'NEWS_HEADLINE', 'ADD')
+        response['response'][0]['content']['code'] = 21
+        socket.recv.side_effect = [json.dumps(response)]
+
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
+            await self.client.news_headline_add(['NVDA'])
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_news_headline_handler(self, ws_connect):
+        # Shaped like the items delivered to a live account: numbered fields
+        # 1-11, the subscribed symbol in `key`, and `seq`. The values are
+        # abbreviated rather than copied.
+        socket = await self.login_and_get_socket(ws_connect)
+
+        stream_item = {
+            'data': [{
+                'service': 'NEWS_HEADLINE',
+                'timestamp': 1789602230512,
+                'command': 'SUBS',
+                'content': [{
+                    'key': 'NVDA',
+                    'seq': 1174,
+                    '1': 1789602230000,
+                    # Fields 2 and 5 were equal in every live item. Distinct
+                    # here, so a swap of their names cannot pass.
+                    '2': 'tag_example_newsml_2',
+                    '3': 'A',
+                    '4': 'Chipmaker announces a product',
+                    '5': 'tag_example_newsml_5',
+                    '6': ['Software', 'Semiconductors'],
+                    '7': ['NVDA', 'META'],
+                    '8': False,
+                    '9': 'Reuters',
+                    '10': 'Chipmaker announces a product, with more text',
+                    '11': 'en-US',
+                }]
+            }]
+        }
+
+        socket.recv.side_effect = [
+            json.dumps(self.success_response(1, 'NEWS_HEADLINE', 'SUBS')),
+            json.dumps(stream_item)]
+        await self.client.news_headline_subs(['NVDA'])
+
+        handler = Mock()
+        async_handler = AsyncMock()
+        self.client.add_news_headline_handler(handler)
+        self.client.add_news_headline_handler(async_handler)
+        await self.client.handle_message()
+
+        expected_item = {
+            'service': 'NEWS_HEADLINE',
+            'timestamp': 1789602230512,
+            'command': 'SUBS',
+            'content': [{
+                'key': 'NVDA',
+                'seq': 1174,
+                'TIMESTAMP': 1789602230000,
+                'HEADLINE_ID': 'tag_example_newsml_2',
+                'UNKNOWN_3': 'A',
+                'HEADLINE': 'Chipmaker announces a product',
+                'STORY_ID': 'tag_example_newsml_5',
+                'CATEGORIES': ['Software', 'Semiconductors'],
+                'SYMBOLS': ['NVDA', 'META'],
+                'UNKNOWN_8': False,
+                'SOURCE': 'Reuters',
+                'TEXT': 'Chipmaker announces a product, with more text',
+                'LANGUAGE': 'en-US',
+            }]
+        }
+
+        self.assert_handler_called_once_with(handler, expected_item)
+        self.assert_handler_called_once_with(async_handler, expected_item)
+
     ###########################################################################
     # Handler edge cases
     #
