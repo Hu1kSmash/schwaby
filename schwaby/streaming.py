@@ -1577,14 +1577,23 @@ class StreamClient(EnumEnforcer):
         a number. ``SYMBOL`` is added when missing, as the subscribe methods
         add it.
 
-        A string or bytes is refused rather than iterated: ``'12'`` would
-        otherwise become the fields ``1`` and ``2``.
+        A string or a buffer is refused rather than iterated: ``'12'`` would
+        otherwise become the fields ``1`` and ``2``, and ``b'12'`` the fields
+        ``49`` and ``50``. So is a value that is not iterable at all, which
+        would otherwise escape as the ``TypeError`` raised inside the
+        conversion.
         '''
-        if _is_instance(fields, (str, bytes)):
+        if _is_instance(fields, (str, bytes, bytearray, memoryview)):
             raise ValueError(
                 'fields must be an iterable of {} members or field numbers, '
                 'not a {}'.format(field_type.__name__, _type_name(fields)))
-        values = self.convert_enum_iterable(fields, field_type)
+        try:
+            values = self.convert_enum_iterable(fields, field_type)
+        except TypeError:
+            raise ValueError(
+                'fields must be an iterable of {} members or field numbers; '
+                '{} is not iterable'.format(
+                    field_type.__name__, _type_name(fields))) from None
         numbers = set()
         for value in values or ():
             try:

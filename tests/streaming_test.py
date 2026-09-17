@@ -6389,11 +6389,15 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.client = StreamClient(self.http_client, enforce_enums=False)
         socket = await self.login_and_get_socket(ws_connect)
         socket.recv.side_effect = [json.dumps(
-            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))] * 4
+            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))] * 6
         with self.assertRaisesRegex(ValueError, 'not a str'):
             await self.client.level_one_equity_view('12')
         with self.assertRaisesRegex(ValueError, 'not a bytes'):
             await self.client.level_one_equity_view(b'12')
+        with self.assertRaisesRegex(ValueError, 'not a bytearray'):
+            await self.client.level_one_equity_view(bytearray(b'12'))
+        with self.assertRaisesRegex(ValueError, 'int is not iterable'):
+            await self.client.level_one_equity_view(12)
         with self.assertRaisesRegex(ValueError, 'got -1'):
             await self.client.level_one_equity_view([-1])
         with self.assertRaisesRegex(ValueError, "got 'BID_PRICE'"):
@@ -6407,9 +6411,14 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         # A reply is queued, so a VIEW sent without the guard would succeed
         # and fail this test on the missing ValueError, not on the mock.
         socket.recv.side_effect = [json.dumps(
-            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))]
+            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))] * 2
         with self.assertRaisesRegex(ValueError, 'at least one field'):
             await self.client.level_one_equity_view([])
+        # None means every field to subs and add, and the conversion hands it
+        # back unchanged, so it reaches the same refusal rather than a
+        # TypeError from iterating it.
+        with self.assertRaisesRegex(ValueError, 'at least one field'):
+            await self.client.level_one_equity_view(None)
         socket.send.assert_not_awaited()
 
     @no_duplicates
