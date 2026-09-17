@@ -6253,6 +6253,150 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assert_handler_called_once_with(handler, expected_item)
         self.assert_handler_called_once_with(async_handler, expected_item)
 
+    ##########################################################################
+    # VIEW
+
+    _VIEW_SERVICES = (
+        ('level_one_equity_view', 'LEVELONE_EQUITIES', 'LevelOneEquityFields'),
+        ('level_one_option_view', 'LEVELONE_OPTIONS', 'LevelOneOptionFields'),
+        ('level_one_futures_view', 'LEVELONE_FUTURES',
+         'LevelOneFuturesFields'),
+        ('level_one_futures_options_view', 'LEVELONE_FUTURES_OPTIONS',
+         'LevelOneFuturesOptionsFields'),
+        ('level_one_forex_view', 'LEVELONE_FOREX', 'LevelOneForexFields'),
+    )
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_view_sends_fields_and_no_keys(self, ws_connect):
+        # A VIEW naming one symbol changed every symbol's fields, measured
+        # live, so the request carries no keys. SYMBOL is added.
+        for method, service, enum_name in self._VIEW_SERVICES:
+            with self.subTest(method):
+                self.setUp()
+                socket = await self.login_and_get_socket(ws_connect)
+                socket.recv.side_effect = [json.dumps(
+                    self.success_response(1, service, 'VIEW'))]
+                enum = getattr(StreamClient, enum_name)
+
+                await getattr(self.client, method)([enum(2), enum(1)])
+
+                socket.recv.assert_awaited_once()
+                self.assertEqual(self.request_from_socket_mock(socket), {
+                    'service': service,
+                    'command': 'VIEW',
+                    'requestid': '1',
+                    'SchwabClientCustomerId': CLIENT_CUSTOMER_ID,
+                    'SchwabClientCorrelId': CLIENT_CORRELATION_ID,
+                    'parameters': {'fields': '0,1,2'},
+                })
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_view_does_not_change_the_callers_list(self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+        socket.recv.side_effect = [json.dumps(
+            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))]
+        fields = [StreamClient.LevelOneEquityFields.BID_PRICE]
+
+        await self.client.level_one_equity_view(fields)
+
+        self.assertEqual([StreamClient.LevelOneEquityFields.BID_PRICE], fields)
+        request = self.request_from_socket_mock(socket)
+        self.assertEqual('0,1', request['parameters']['fields'])
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_view_sends_symbol_once_when_the_caller_names_it(
+            self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+        socket.recv.side_effect = [json.dumps(
+            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))]
+        fields = StreamClient.LevelOneEquityFields
+        await self.client.level_one_equity_view(
+            [fields.SYMBOL, fields.BID_PRICE, fields.BID_PRICE])
+        request = self.request_from_socket_mock(socket)
+        self.assertEqual('0,1', request['parameters']['fields'])
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_view_takes_a_single_member_and_raw_numbers(
+            self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+        socket.recv.side_effect = [json.dumps(
+            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))]
+        await self.client.level_one_equity_view(
+            StreamClient.LevelOneEquityFields.ASK_PRICE)
+        self.assertEqual('0,2', self.request_from_socket_mock(
+            socket)['parameters']['fields'])
+
+        self.setUp()
+        self.client = StreamClient(self.http_client, enforce_enums=False)
+        socket = await self.login_and_get_socket(ws_connect)
+        socket.recv.side_effect = [json.dumps(
+            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))]
+        await self.client.level_one_equity_view([0, 1, '1', 3])
+        self.assertEqual('0,1,3', self.request_from_socket_mock(
+            socket)['parameters']['fields'])
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_view_refuses_values_that_are_not_field_numbers(
+            self, ws_connect):
+        # '12' iterated is the fields 1 and 2, and b'12' the fields 49 and
+        # 50; a name skipped would send the rest without it. Each is refused.
+        # Replies are queued, so a missing refusal fails on the missing
+        # ValueError rather than on the mock.
+        self.client = StreamClient(self.http_client, enforce_enums=False)
+        socket = await self.login_and_get_socket(ws_connect)
+        socket.recv.side_effect = [json.dumps(
+            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))] * 4
+        with self.assertRaisesRegex(ValueError, 'not a str'):
+            await self.client.level_one_equity_view('12')
+        with self.assertRaisesRegex(ValueError, 'not a bytes'):
+            await self.client.level_one_equity_view(b'12')
+        with self.assertRaisesRegex(ValueError, 'got -1'):
+            await self.client.level_one_equity_view([-1])
+        with self.assertRaisesRegex(ValueError, "got 'BID_PRICE'"):
+            await self.client.level_one_equity_view(['BID_PRICE', 1])
+        socket.send.assert_not_awaited()
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_view_refuses_no_fields(self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+        # A reply is queued, so a VIEW sent without the guard would succeed
+        # and fail this test on the missing ValueError, not on the mock.
+        socket.recv.side_effect = [json.dumps(
+            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))]
+        with self.assertRaisesRegex(ValueError, 'at least one field'):
+            await self.client.level_one_equity_view([])
+        socket.send.assert_not_awaited()
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_view_failure(self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+        response = self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW')
+        response['response'][0]['content']['code'] = 25
+        socket.recv.side_effect = [json.dumps(response)]
+        with self.assertRaises(schwaby.streaming.UnexpectedResponseCode):
+            await self.client.level_one_equity_view(
+                [StreamClient.LevelOneEquityFields.BID_PRICE])
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_view_enforces_the_enum(self, ws_connect):
+        socket = await self.login_and_get_socket(ws_connect)
+        # A reply is queued, so a VIEW without the enum check fails on this
+        # test's message rather than on the mock.
+        socket.recv.side_effect = [json.dumps(
+            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))]
+        with self.assertRaisesRegex(
+                ValueError, 'expected type "LevelOneEquityFields"'):
+            await self.client.level_one_equity_view(
+                [StreamClient.LevelOneOptionFields.BID_PRICE])
+
     ###########################################################################
     # Handler edge cases
     #

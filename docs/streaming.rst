@@ -592,6 +592,47 @@ Level one quotes provide an up-to-date view of bid/ask/volume data. In
 particular they list the best available bid and ask prices, together with the
 requested volume of each. They are updated live as market conditions change.
 
+.. _level_one_view:
+
+**Changing the fields of a live subscription.** Each level one service has a
+``*_view`` method that sends Schwab's ``VIEW`` command, which changes the
+fields delivered without resubscribing. Resubscribing to change fields is the
+alternative, and a ``SUBS`` replaces the service's whole symbol list.
+
+.. note::
+
+  **A VIEW applies to every symbol in the service, whatever symbols it
+  names.** Schwab documents it that way, and it was measured against a live
+  account: two futures and two currency pairs were subscribed without a field,
+  and a VIEW naming only the first of each pair added it to both. So the view
+  methods take no symbols, and send none.
+
+  The well-evidenced measurement used a VIEW that named a symbol: a field was
+  added to every symbol across dozens of frames, on futures and on forex, and
+  a field was added on futures options too. A VIEW sent without symbols, as
+  these methods send it, was seen on only four frames, on futures and forex,
+  and what it brought back was ``LAST_PRICE``, which the keyed VIEW before it
+  had removed. That removal is the weakly evidenced direction, because level
+  one frames carry only the fields that changed, so its return shows little.
+  On equities and options Schwab accepted a VIEW
+  but delivered nothing afterwards to show its effect. So that these methods
+  change the fields is expected, from Schwab's description and from the keyed
+  measurement, rather than established for the form they send. A successful
+  VIEW answered ``code 0``, not the ``29`` Schwab documents.
+
+  Whether an ``add`` sent after a VIEW brings back every field for the whole
+  service has not been measured. An ``add`` without ``fields`` asks for all of
+  them, so pass the same fields to it if that matters to you.
+
+  The other services are not offered a VIEW. Schwab answers ``code 0`` on
+  every other service it lists VIEW for, but a VIEW asking for fewer fields
+  changed nothing on ``NASDAQ_BOOK``, ``NYSE_BOOK`` and ``CHART_EQUITY``,
+  measured before the open, or on either screener, measured overnight: every
+  field kept arriving.
+  Those measurements named symbols. ``OPTIONS_BOOK`` and ``CHART_FUTURES``
+  delivered nothing to measure. Those services' subscribe methods do not
+  choose fields either.
+
 
 .. _level_one_quotes_stream:
 
@@ -604,6 +645,7 @@ Level one quotes for equities traded on NYSE, AMEX, and PACIFIC.
 .. automethod:: schwaby.streaming::StreamClient.level_one_equity_subs
 .. automethod:: schwaby.streaming::StreamClient.level_one_equity_unsubs
 .. automethod:: schwaby.streaming::StreamClient.level_one_equity_add
+.. automethod:: schwaby.streaming::StreamClient.level_one_equity_view
 .. automethod:: schwaby.streaming::StreamClient.add_level_one_equity_handler
 .. autoclass:: schwaby.streaming::StreamClient.LevelOneEquityFields
   :members:
@@ -623,6 +665,7 @@ available option symbols.
 .. automethod:: schwaby.streaming::StreamClient.level_one_option_subs
 .. automethod:: schwaby.streaming::StreamClient.level_one_option_unsubs
 .. automethod:: schwaby.streaming::StreamClient.level_one_option_add
+.. automethod:: schwaby.streaming::StreamClient.level_one_option_view
 .. automethod:: schwaby.streaming::StreamClient.add_level_one_option_handler
 .. autoclass:: schwaby.streaming::StreamClient.LevelOneOptionFields
   :members:
@@ -640,6 +683,7 @@ Level one quotes for futures.
 .. automethod:: schwaby.streaming::StreamClient.level_one_futures_subs
 .. automethod:: schwaby.streaming::StreamClient.level_one_futures_unsubs
 .. automethod:: schwaby.streaming::StreamClient.level_one_futures_add
+.. automethod:: schwaby.streaming::StreamClient.level_one_futures_view
 .. automethod:: schwaby.streaming::StreamClient.add_level_one_futures_handler
 .. autoclass:: schwaby.streaming::StreamClient.LevelOneFuturesFields
   :members:
@@ -657,6 +701,7 @@ Level one quotes for futures options.
 .. automethod:: schwaby.streaming::StreamClient.level_one_futures_options_subs
 .. automethod:: schwaby.streaming::StreamClient.level_one_futures_options_unsubs
 .. automethod:: schwaby.streaming::StreamClient.level_one_futures_options_add
+.. automethod:: schwaby.streaming::StreamClient.level_one_futures_options_view
 .. automethod:: schwaby.streaming::StreamClient.add_level_one_futures_options_handler
 .. autoclass:: schwaby.streaming::StreamClient.LevelOneFuturesOptionsFields
   :members:
@@ -674,6 +719,7 @@ Level one quotes for foreign exchange pairs.
 .. automethod:: schwaby.streaming::StreamClient.level_one_forex_subs
 .. automethod:: schwaby.streaming::StreamClient.level_one_forex_unsubs
 .. automethod:: schwaby.streaming::StreamClient.level_one_forex_add
+.. automethod:: schwaby.streaming::StreamClient.level_one_forex_view
 .. automethod:: schwaby.streaming::StreamClient.add_level_one_forex_handler
 .. autoclass:: schwaby.streaming::StreamClient.LevelOneForexFields
   :members:

@@ -1562,6 +1562,50 @@ class StreamClient(EnumEnforcer):
 
         await self._request_response(request, request_id, service, command)
 
+    async def _view_op(self, service, field_type, fields):
+        '''Sends VIEW, which changes the fields delivered for a service.
+
+        No ``keys``: Schwab documents a VIEW as applying to all symbols of the
+        service, and a VIEW naming one symbol was measured changing the fields
+        of every symbol, on futures and on forex. Keys would suggest a scoping
+        Schwab does not do.
+
+        Fields are converted first and handled as numbers, so the caller's
+        iterable is never changed, a single member or a generator works, and
+        a field given twice -- or ``SYMBOL`` given explicitly -- is sent once,
+        whether it was given as a member or, with ``enforce_enums=False``, as
+        a number. ``SYMBOL`` is added when missing, as the subscribe methods
+        add it.
+
+        A string or bytes is refused rather than iterated: ``'12'`` would
+        otherwise become the fields ``1`` and ``2``.
+        '''
+        if _is_instance(fields, (str, bytes)):
+            raise ValueError(
+                'fields must be an iterable of {} members or field numbers, '
+                'not a {}'.format(field_type.__name__, _type_name(fields)))
+        values = self.convert_enum_iterable(fields, field_type)
+        numbers = set()
+        for value in values or ():
+            try:
+                number = int(str(value))
+            except ValueError:
+                number = -1
+            if number < 0:
+                raise ValueError(
+                    'fields must be {} members or field numbers, got '
+                    '{}'.format(field_type.__name__, _safe_value(value)))
+            numbers.add(number)
+        if not numbers:
+            raise ValueError('fields must name at least one field')
+        numbers.add(field_type.SYMBOL.value)
+        parameters = {'fields': ','.join(str(n) for n in sorted(numbers))}
+
+        request, request_id = self._make_request(
+            service=service, command='VIEW', parameters=parameters)
+
+        await self._request_response(request, request_id, service, 'VIEW')
+
     def add_error_handler(self, error_handler):
         '''
         Registers a callback for failures this client absorbs rather than
@@ -2685,6 +2729,24 @@ class StreamClient(EnumEnforcer):
             symbols, 'LEVELONE_EQUITIES', 'ADD',
             self.LevelOneEquityFields, fields=fields)
 
+    async def level_one_equity_view(self, fields):
+        '''
+        Change the fields delivered for every symbol in the level one
+        equity quotes subscription, without resubscribing.
+
+        This applies to the whole subscription, not to particular symbols:
+        Schwab documents a VIEW as applying to every symbol of the service,
+        and that was measured on futures and forex, though not on this
+        service. So this method takes no symbols. See
+        :ref:`the note on VIEW <level_one_view>`.
+
+        :param fields: Iterable of :class:`LevelOneEquityFields`
+                       to deliver from now on. ``SYMBOL`` is added if
+                       missing.
+        '''
+        await self._view_op(
+            'LEVELONE_EQUITIES', self.LevelOneEquityFields, fields)
+
     def add_level_one_equity_handler(self, handler):
         '''
         Register a function to handle level one equity quotes as they are sent.
@@ -2909,6 +2971,24 @@ class StreamClient(EnumEnforcer):
             symbols, 'LEVELONE_OPTIONS', 'ADD',
             self.LevelOneOptionFields, fields=fields)
 
+    async def level_one_option_view(self, fields):
+        '''
+        Change the fields delivered for every symbol in the level one
+        option quotes subscription, without resubscribing.
+
+        This applies to the whole subscription, not to particular symbols:
+        Schwab documents a VIEW as applying to every symbol of the service,
+        and that was measured on futures and forex, though not on this
+        service. So this method takes no symbols. See
+        :ref:`the note on VIEW <level_one_view>`.
+
+        :param fields: Iterable of :class:`LevelOneOptionFields`
+                       to deliver from now on. ``SYMBOL`` is added if
+                       missing.
+        '''
+        await self._view_op(
+            'LEVELONE_OPTIONS', self.LevelOneOptionFields, fields)
+
     def add_level_one_option_handler(self, handler):
         '''
         Register a function to handle level one options quotes as they are sent.
@@ -3089,6 +3169,24 @@ class StreamClient(EnumEnforcer):
             symbols, 'LEVELONE_FUTURES', 'ADD',
             self.LevelOneFuturesFields, fields=fields)
 
+    async def level_one_futures_view(self, fields):
+        '''
+        Change the fields delivered for every symbol in the level one
+        futures quotes subscription, without resubscribing.
+
+        This applies to the whole subscription, not to particular symbols:
+        Schwab documents a VIEW as applying to every symbol of the service,
+        and one naming a single symbol was measured changing the fields of
+        every symbol here. So this method takes no symbols. See
+        :ref:`the note on VIEW <level_one_view>`.
+
+        :param fields: Iterable of :class:`LevelOneFuturesFields`
+                       to deliver from now on. ``SYMBOL`` is added if
+                       missing.
+        '''
+        await self._view_op(
+            'LEVELONE_FUTURES', self.LevelOneFuturesFields, fields)
+
     def add_level_one_futures_handler(self, handler):
         '''
         Register a function to handle level one futures quotes as they are sent.
@@ -3236,6 +3334,24 @@ class StreamClient(EnumEnforcer):
         await self._service_op(
             symbols, 'LEVELONE_FOREX', 'ADD',
             self.LevelOneForexFields, fields=fields)
+
+    async def level_one_forex_view(self, fields):
+        '''
+        Change the fields delivered for every symbol in the level one
+        forex quotes subscription, without resubscribing.
+
+        This applies to the whole subscription, not to particular symbols:
+        Schwab documents a VIEW as applying to every symbol of the service,
+        and one naming a single symbol was measured changing the fields of
+        every symbol here. So this method takes no symbols. See
+        :ref:`the note on VIEW <level_one_view>`.
+
+        :param fields: Iterable of :class:`LevelOneForexFields`
+                       to deliver from now on. ``SYMBOL`` is added if
+                       missing.
+        '''
+        await self._view_op(
+            'LEVELONE_FOREX', self.LevelOneForexFields, fields)
 
     def add_level_one_forex_handler(self, handler):
         '''
@@ -3389,6 +3505,25 @@ class StreamClient(EnumEnforcer):
         await self._service_op(
             symbols, 'LEVELONE_FUTURES_OPTIONS', 'ADD',
             self.LevelOneFuturesOptionsFields, fields=fields)
+
+    async def level_one_futures_options_view(self, fields):
+        '''
+        Change the fields delivered for every symbol in the level one
+        futures options quotes subscription, without resubscribing.
+
+        This applies to the whole subscription, not to particular symbols:
+        Schwab documents a VIEW as applying to every symbol of the service,
+        and that was measured on futures and forex, though not on this
+        service. So this method takes no symbols. See
+        :ref:`the note on VIEW <level_one_view>`.
+
+        :param fields: Iterable of :class:`LevelOneFuturesOptionsFields`
+                       to deliver from now on. ``SYMBOL`` is added if
+                       missing.
+        '''
+        await self._view_op(
+            'LEVELONE_FUTURES_OPTIONS', self.LevelOneFuturesOptionsFields,
+            fields)
 
     def add_level_one_futures_options_handler(self, handler):
         '''
