@@ -333,7 +333,9 @@ class BaseClient(EnumEnforcer):
         The two encodings resolve the ambiguity
         differently -- the epoch-millisecond parameters read a naive datetime
         as the host's local time, the ISO ones send its wall clock labelled as
-        UTC -- so the same code sends different requests on different machines.
+        UTC; a ``tzinfo`` set but returning no offset raises on the
+        millisecond path rather than being read either way -- so the same
+        code sends different requests on different machines.
         Rather than pick one and silently reinterpret what the caller wrote,
         say so and let them attach the timezone they meant.
         '''

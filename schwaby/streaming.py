@@ -1582,6 +1582,11 @@ class StreamClient(EnumEnforcer):
         ``49`` and ``50``. So is a value that is not iterable at all, which
         would otherwise escape as the ``TypeError`` raised inside the
         conversion.
+
+        A ``TypeError`` from the conversion is relabelled only when
+        ``fields`` is itself not iterable. One raised inside a caller's own
+        generator says nothing about ``fields``, and relabelling that would
+        tell them the wrong thing and drop the traceback that says otherwise.
         '''
         if _is_instance(fields, (str, bytes, bytearray, memoryview)):
             raise ValueError(
@@ -1590,10 +1595,18 @@ class StreamClient(EnumEnforcer):
         try:
             values = self.convert_enum_iterable(fields, field_type)
         except TypeError:
-            raise ValueError(
-                'fields must be an iterable of {} members or field numbers; '
-                '{} is not iterable'.format(
-                    field_type.__name__, _type_name(fields))) from None
+            # A single member is accepted and is not iterable, so this asks
+            # about the value rather than assuming the conversion's complaint
+            # was about it. None reaches the refusal below, as it means every
+            # field to subs and add and no field here.
+            try:
+                iter(fields)
+            except TypeError:
+                raise ValueError(
+                    'fields must be an iterable of {} members or field '
+                    'numbers; {} is not iterable'.format(
+                        field_type.__name__, _type_name(fields))) from None
+            raise
         numbers = set()
         for value in values or ():
             try:

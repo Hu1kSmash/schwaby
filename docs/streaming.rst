@@ -598,9 +598,10 @@ requested volume of each. They are updated live as market conditions change.
 .. _level_one_view:
 
 **Changing the fields of a live subscription.** Each level one service has a
-``*_view`` method that sends Schwab's ``VIEW`` command, which changes the
-fields delivered without resubscribing. Resubscribing to change fields is the
-alternative, and a ``SUBS`` replaces the service's whole symbol list.
+``*_view`` method that sends Schwab's ``VIEW`` command, which asks Schwab to
+change the fields delivered without resubscribing. Resubscribing to change
+fields is the alternative, and a ``SUBS`` replaces the service's whole symbol
+list.
 
 .. note::
 

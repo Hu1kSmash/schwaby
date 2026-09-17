@@ -6389,13 +6389,15 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.client = StreamClient(self.http_client, enforce_enums=False)
         socket = await self.login_and_get_socket(ws_connect)
         socket.recv.side_effect = [json.dumps(
-            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))] * 6
+            self.success_response(1, 'LEVELONE_EQUITIES', 'VIEW'))] * 7
         with self.assertRaisesRegex(ValueError, 'not a str'):
             await self.client.level_one_equity_view('12')
         with self.assertRaisesRegex(ValueError, 'not a bytes'):
             await self.client.level_one_equity_view(b'12')
         with self.assertRaisesRegex(ValueError, 'not a bytearray'):
             await self.client.level_one_equity_view(bytearray(b'12'))
+        with self.assertRaisesRegex(ValueError, 'not a memoryview'):
+            await self.client.level_one_equity_view(memoryview(b'12'))
         with self.assertRaisesRegex(ValueError, 'int is not iterable'):
             await self.client.level_one_equity_view(12)
         with self.assertRaisesRegex(ValueError, 'got -1'):

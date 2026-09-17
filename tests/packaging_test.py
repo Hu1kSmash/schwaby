@@ -888,6 +888,12 @@ class DocBoldLiteralTest(unittest.TestCase):
     Each source is parsed with docutils rather than matched with a regular
     expression. A `**kwargs` in a code block, or a bold span broken across
     lines, pairs the asterisks wrongly for a pattern.
+
+    It reads docstrings and the pages, and not the `#:` autodoc comments on
+    enum members, which render onto those same pages: associating a comment
+    block with its member is parsing this does not do. Those are checked by
+    reading them. Extending the walk is worth doing on its own, with a case
+    that nests a literal inside one and proves the walk goes red.
     """
 
     @staticmethod
