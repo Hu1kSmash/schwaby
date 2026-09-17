@@ -19,7 +19,9 @@ import warnings
 from schwaby.orders.generic import OrderBuilder
 
 from ..utils import (EnumEnforcer, TokenRefreshError, _expiry_authlib_acts_on,
-                     _is_instance, _qualified_type_name, _refusal_text)
+                     _format_iso_instant, _is_instance, _qualified_type_name,
+                     _refusal_text)
+from .. import utils as _utils
 
 
 def get_logger():
@@ -58,10 +60,11 @@ class BaseClient(EnumEnforcer):
         self.set_timeout(30.0)
 
     # XXX: This class's tests perform monkey patching to inject synthetic values
-    # of utcnow(). To avoid being confused by this, capture these values here so
-    # we can use them later.
-    _DATETIME = datetime.datetime
-    _DATE = datetime.date
+    # of utcnow(). To avoid being confused by this, these are the values
+    # captured before any patch, taken from utils so there is one capture
+    # rather than two that could disagree.
+    _DATETIME = _utils._DATETIME
+    _DATE = _utils._DATE
 
     def _log_response(self, resp, req_num):
         self.logger.debug('Req %s: GET response: %s, content=%s',
@@ -345,18 +348,7 @@ class BaseClient(EnumEnforcer):
         self._assert_type(var_name, dt, [self._DATE, self._DATETIME])
         self._warn_if_naive(var_name, dt)
 
-        if not _is_instance(dt, self._DATETIME):
-            dt = datetime.datetime(year=dt.year, month=dt.month, day=dt.day)
-
-        # The trailing Z asserts UTC, so a datetime carrying some other
-        # timezone has to be converted rather than merely formatted. Without
-        # this, 00:03:02-04:00 is sent as '00:03:02Z', which is a different
-        # instant by the size of the offset. A naive datetime has no timezone
-        # to convert from and is passed through as written.
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(datetime.timezone.utc)
-
-        return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+        return _format_iso_instant(dt)
 
     def _format_date_as_day(self, var_name, dt):
         '''Formats datetime or date objects as YYYY-MM-DD'''

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 import pytz
 import sys
+import time
 import unittest
 import warnings
 from unittest.mock import ANY, MagicMock, Mock, patch
@@ -2317,6 +2318,42 @@ class _TestClient:
                     t.value for t in self.client.Transactions.TransactionType),
                 'startDate': '2024-06-05T04:03:02Z',
                 'endDate': '2024-06-05T04:03:02Z',
+            })
+
+
+    @no_duplicates
+    @unittest.skipUnless(hasattr(time, 'tzset'),
+                         'needs time.tzset to pin a non-UTC local zone')
+    def test_a_naive_datetime_is_sent_as_written_not_as_local_time(self):
+        # A naive datetime has no zone to convert from, so its wall clock is
+        # sent as written. Converting it anyway reads it as the host's local
+        # time, and on a host set to UTC that gives the identical string --
+        # which is what CI runners are. So the zone is pinned here to one
+        # that is not UTC, or a regression would pass everywhere it runs.
+        naive = datetime.datetime(year=2024, month=6, day=5,
+                                  hour=4, minute=3, second=2)
+
+        original = os.environ.get('TZ')
+        os.environ['TZ'] = 'America/New_York'
+        time.tzset()
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                self.client.get_orders_for_account(
+                        ACCOUNT_HASH,
+                        from_entered_datetime=naive,
+                        to_entered_datetime=naive)
+        finally:
+            if original is None:
+                del os.environ['TZ']
+            else:
+                os.environ['TZ'] = original
+            time.tzset()
+
+        self.mock_session.get.assert_called_once_with(
+            self.make_url('/trader/v1/accounts/{accountHash}/orders'), params={
+                'fromEnteredTime': '2024-06-05T04:03:02Z',
+                'toEnteredTime': '2024-06-05T04:03:02Z',
             })
 
 

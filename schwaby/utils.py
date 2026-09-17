@@ -2,6 +2,9 @@
 module.'''
 
 import collections
+# Aliased so `from schwaby.utils import *` cannot rebind a caller's own
+# `datetime`, which is most often the class rather than the module.
+import datetime as _datetime
 import decimal
 import logging
 import re
@@ -321,6 +324,43 @@ def _is_instance(value, types):
         return isinstance(value, types)
     except Exception:
         return issubclass(type(value), types)
+
+
+# Captured when this module is imported, and read from here rather than from
+# the `datetime` module at call time. The client's tests replace
+# `datetime.datetime` with a subclass to fix the current time, and that
+# replacement lands on the module itself, so it is visible to every importer
+# for the length of the test. Checked against the name at call time, a real
+# datetime is not an instance of the subclass: the client's type checks would
+# refuse it, and `_format_iso_instant` below would silently treat it as a date
+# and send midnight with no timezone -- a wrong instant and no error.
+_DATETIME = _datetime.datetime
+_DATE = _datetime.date
+
+
+def _format_iso_instant(dt):
+    '''``dt`` as Schwab's ISO-8601 form, ``yyyy-MM-dd'T'HH:mm:ssZ``.
+
+    The one place that decides what string an instant becomes for the
+    client's ISO date parameters, kept apart from the type check and the
+    naive-datetime warning so another caller can share the conversion without
+    also inheriting those. The caller has already checked the type and decided
+    what to do about a missing timezone; this only converts.
+
+    A ``date`` becomes midnight of that day, with no timezone.
+    '''
+    if not _is_instance(dt, _DATETIME):
+        dt = _datetime.datetime(year=dt.year, month=dt.month, day=dt.day)
+
+    # The trailing Z asserts UTC, so a datetime carrying some other
+    # timezone has to be converted rather than merely formatted. Without
+    # this, 00:03:02-04:00 is sent as '00:03:02Z', which is a different
+    # instant by the size of the offset. A naive datetime has no timezone
+    # to convert from and is passed through as written.
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(_datetime.timezone.utc)
+
+    return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def _venue_text(value):
