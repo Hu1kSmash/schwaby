@@ -7055,6 +7055,134 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         self.assertEqual(batched, standalone)
         self.assertEqual([('ACCT_ACTIVITY', rejected)], batched)
 
+    ##########################################################################
+    # Documented success codes other than 0
+
+    async def _subscribe_answered_with_code(self, ws_connect, code):
+        socket = await self.login_and_get_socket(ws_connect)
+        response = self.success_response(1, 'LEVELONE_EQUITIES', 'SUBS')
+        response['response'][0]['content']['code'] = code
+        socket.recv.side_effect = [json.dumps(response)]
+        await self.client.level_one_equity_subs(['GOOG'])
+        # The answer was read, so the absence of a raise is about the code.
+        socket.recv.assert_awaited_once()
+
+    # Schwab documents 26-29 as successes. None has been observed -- every
+    # success seen, VIEW included, was 0 -- so the fixtures are synthetic, and
+    # there is one test per code because each is a separate claim.
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_response_code_26_is_a_success(self, ws_connect):
+        await self._subscribe_answered_with_code(ws_connect, 26)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_response_code_27_is_a_success(self, ws_connect):
+        await self._subscribe_answered_with_code(ws_connect, 27)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_response_code_28_is_a_success(self, ws_connect):
+        await self._subscribe_answered_with_code(ws_connect, 28)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_response_code_29_is_a_success(self, ws_connect):
+        await self._subscribe_answered_with_code(ws_connect, 29)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_the_failure_codes_beside_them_are_not_successes(
+            self, ws_connect):
+        # 22-25 are FAILED_COMMAND_* and 30 is STOP_STREAMING, next to the
+        # success codes in Schwab's table. `!= 0` could not be edited into
+        # accepting one; a tuple can, and would turn a failed subscribe into a
+        # silently dead feed.
+        for code in (22, 23, 24, 25, 30):
+            with self.subTest(code):
+                self.setUp()
+                with self.assertRaises(
+                        schwaby.streaming.UnexpectedResponseCode):
+                    await self._subscribe_answered_with_code(ws_connect, code)
+
+    @staticmethod
+    def _late_response(requestid, code):
+        return {
+            'service': 'LEVELONE_EQUITIES',
+            'command': 'SUBS',
+            'requestid': requestid,
+            'content': {'code': code, 'msg': 'late'},
+        }
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_late_documented_success_is_not_reported(self, ws_connect):
+        # The orphan path must agree with the request path: a late 26 is a
+        # success, logged at INFO and not reported. The late 21 beside it is
+        # the positive control -- it must be reported, or the empty result for
+        # 26 would mean nothing.
+        socket = await self.login_and_get_socket(ws_connect)
+        socket.recv.side_effect = [
+            json.dumps({'response': [self._late_response('9998', 26)]}),
+            json.dumps({'response': [self._late_response('9999', 21)]}),
+        ]
+        errors = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: errors.append(exc))
+
+        with self.assertLogs('schwaby.streaming', level='INFO') as logged:
+            await self.client.handle_message()
+            await self.client.handle_message()
+
+        self.assertEqual(1, len(errors))
+        self.assertIn('code 21', str(errors[0]))
+        levels = {r.levelname for r in logged.records
+                  if 'code 26' in r.getMessage()}
+        self.assertEqual({'INFO'}, levels)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_a_batched_documented_success_is_not_reported(
+            self, ws_connect):
+        # The same agreement for a late answer batched behind a live one.
+        socket = await self.login_and_get_socket(ws_connect)
+        frame = self.success_response(1, 'LEVELONE_EQUITIES', 'SUBS')
+        frame['response'].append(self._late_response('77', 26))
+        frame['response'].append(self._late_response('78', 21))
+        socket.recv.side_effect = [json.dumps(frame)]
+        errors = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: errors.append(exc))
+
+        with self.assertLogs('schwaby.streaming', level='INFO') as logged:
+            await self.client.level_one_equity_subs(['GOOG'])
+
+        self.assertEqual(1, len(errors))
+        self.assertIn('code 21', str(errors[0]))
+        levels = {r.levelname for r in logged.records
+                  if 'code 26' in r.getMessage()}
+        self.assertEqual({'INFO'}, levels)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_an_unhashable_late_code_is_a_rejection_not_a_crash(
+            self, ws_connect):
+        # A code is whatever the venue sent. Judged by membership in a set it
+        # would raise TypeError and end the receive loop; it must be reported
+        # as a rejection instead, as `!= 0` always did.
+        socket = await self.login_and_get_socket(ws_connect)
+        socket.recv.side_effect = [
+            json.dumps({'response': [self._late_response('9999', [26])]})]
+        errors = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: errors.append(exc))
+
+        await self.client.handle_message()
+
+        self.assertEqual(1, len(errors))
+        self.assertIsInstance(
+            errors[0], schwaby.streaming.UnexpectedResponseCode)
+
     @no_duplicates
     @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_an_extra_success_is_not_reported(self, ws_connect):

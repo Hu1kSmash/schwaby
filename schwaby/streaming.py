@@ -134,6 +134,30 @@ _KNOWN_SERVICES = frozenset((
 #: is being dropped rather than one field being unnamed.
 _KNOWN_CHANNELS = frozenset(('response', 'data', 'notify'))
 
+#: Response codes that mean success. Schwab's streamer documentation lists 0
+#: and also 26-29, SUCCEEDED_COMMAND_SUBS, _UNSUBS, _ADD and _VIEW. Every
+#: success observed against a live account, VIEW included, has been 0; the
+#: others are accepted so a documented success cannot surface as a failure.
+#:
+#: A success code is accepted whatever command it answers, so a 29
+#: (SUCCEEDED_COMMAND_VIEW) would pass as the answer to a SUBS. The service and
+#: command echoes are checked before the code, and matching codes to commands
+#: would assert a pairing nobody has observed, where the cost of the leniency
+#: is accepting a documented success.
+#:
+#: A tuple rather than a set. `in` on a tuple compares with ==, as the `!= 0`
+#: it replaces did, so a code of an unhashable type -- the venue's to choose --
+#: is judged rather than raising TypeError.
+_SUCCESS_CODES = (0, 26, 27, 28, 29)
+
+
+def _is_success_code(code):
+    """Whether a response code means success. The one place that decides it:
+    the request path and both late-response paths ask here, so a code cannot
+    succeed on one path and be reported as a rejection on another."""
+    return code in _SUCCESS_CODES
+
+
 #: How many distinct (field table, field id) pairs to name before giving up.
 #: The set never shrinks and what goes into it is the venue's to choose.
 _MAX_REPORTED_FIELDS = 64
@@ -901,7 +925,7 @@ class StreamClient(EnumEnforcer):
         # message is still a rejection, and reporting it as an unreadable
         # frame instead would lose the code -- the one part the caller can act
         # on.
-        if resp_code != 0:
+        if not _is_success_code(resp_code):
             return UnexpectedResponseCode(
                 resp,
                 'unexpected response code: {}, msg is {}'.format(
@@ -1253,7 +1277,8 @@ class StreamClient(EnumEnforcer):
 
             # Matches the orphan path: a late acknowledgement of something that
             # worked is routine and logs at INFO, a late rejection warns.
-            log = self.logger.info if code == 0 else self.logger.warning
+            log = (self.logger.info if _is_success_code(code)
+                   else self.logger.warning)
             log('Response frame carried an additional %s/%s response: code %s, '
                 'msg %s. It answers no request this client is waiting on.',
                 _safe_value(response.get('service')),
@@ -1263,7 +1288,7 @@ class StreamClient(EnumEnforcer):
             # `is not None` as well, for the same reason as the orphan path: a
             # response with no code at all is neither a rejection nor a
             # success, and reporting it would page someone over `code None`.
-            if code is not None and code != 0:
+            if code is not None and not _is_success_code(code):
                 self._pending_reports.append((
                         UnexpectedResponseCode(
                             frame,
@@ -1973,7 +1998,8 @@ class StreamClient(EnumEnforcer):
                 # nothing else will ever report that Schwab refused it, and at
                 # INFO it would not be seen at all. Losing the raise is right;
                 # losing the news is not.
-                log = self.logger.info if code == 0 else self.logger.warning
+                log = (self.logger.info if _is_success_code(code)
+                       else self.logger.warning)
 
                 log('Received a response to %s/%s with no request '
                     'outstanding: code %s, msg %s. Ignoring it.',
@@ -1989,7 +2015,7 @@ class StreamClient(EnumEnforcer):
                 # `is not None` as well: a response with no code at all is
                 # neither a late rejection nor a late success, and reporting it
                 # as a rejection pages someone over `code None, msg None`.
-                if code is not None and code != 0:
+                if code is not None and not _is_success_code(code):
                     # msg, not response: _validate_response builds this same
                     # exception from the whole frame, and handing it a single
                     # element would make one type mean two shapes -- the
