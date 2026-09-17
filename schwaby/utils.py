@@ -357,7 +357,13 @@ def _format_iso_instant(dt):
     # this, 00:03:02-04:00 is sent as '00:03:02Z', which is a different
     # instant by the size of the offset. A naive datetime has no timezone
     # to convert from and is passed through as written.
-    if dt.tzinfo is not None:
+    #
+    # Aware means `utcoffset()` returns an offset, Python's own definition
+    # and the one `_cancel_time_string` refuses against. A `tzinfo` whose
+    # `utcoffset` returns None is naive despite being set, and `astimezone`
+    # reads such a value as the host's local time -- so keying on `tzinfo`
+    # alone sent a different instant from each machine, silently.
+    if dt.utcoffset() is not None:
         dt = dt.astimezone(_datetime.timezone.utc)
 
     return dt.strftime('%Y-%m-%dT%H:%M:%SZ')

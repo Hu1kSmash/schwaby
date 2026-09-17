@@ -325,14 +325,19 @@ class BaseClient(EnumEnforcer):
         '''Warns that a datetime carrying no timezone is ambiguous.
 
         Schwab's date parameters name an instant, and a datetime with no
-        ``tzinfo`` does not. The two encodings resolve the ambiguity
+        timezone does not. Naive means ``utcoffset()`` returns ``None``,
+        Python's own definition: a ``tzinfo`` that returns no offset is naive
+        despite being set, and keying on ``tzinfo`` alone let such a value
+        pass silently and be read as the host's local time.
+
+        The two encodings resolve the ambiguity
         differently -- the epoch-millisecond parameters read a naive datetime
         as the host's local time, the ISO ones send its wall clock labelled as
         UTC -- so the same code sends different requests on different machines.
         Rather than pick one and silently reinterpret what the caller wrote,
         say so and let them attach the timezone they meant.
         '''
-        if _is_instance(dt, self._DATETIME) and dt.tzinfo is None:
+        if _is_instance(dt, self._DATETIME) and dt.utcoffset() is None:
             warnings.warn(
                     ('{} was given a datetime with no timezone. Schwab\'s date '
                      'parameters identify an instant, so the request depends on '

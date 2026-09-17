@@ -2358,6 +2358,49 @@ class _TestClient:
 
 
     @no_duplicates
+    @unittest.skipUnless(hasattr(time, 'tzset'),
+                         'needs time.tzset to pin a non-UTC local zone')
+    def test_a_tzinfo_with_no_offset_is_naive(self):
+        # Python calls a datetime naive when utcoffset() returns None, even
+        # with a tzinfo set. Keying on tzinfo alone skipped the warning and
+        # then converted from the host's zone, so the same code sent a
+        # different instant from each machine. The zone is pinned for the
+        # reason the naive test above pins it.
+        class NoOffset(datetime.tzinfo):
+            def utcoffset(self, dt):
+                return None
+
+            def dst(self, dt):
+                return None
+
+        value = datetime.datetime(year=2024, month=6, day=5, hour=4,
+                                  minute=3, second=2, tzinfo=NoOffset())
+
+        original = os.environ.get('TZ')
+        os.environ['TZ'] = 'America/New_York'
+        time.tzset()
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter('always')
+                self.client.get_orders_for_account(
+                        ACCOUNT_HASH, from_entered_datetime=value)
+        finally:
+            if original is None:
+                del os.environ['TZ']
+            else:
+                os.environ['TZ'] = original
+            time.tzset()
+
+        # Only the parameter under test: the other end of the range defaults
+        # to now, so asserting the whole dict would compare against the clock.
+        params = self.mock_session.get.call_args[1]['params']
+        self.assertEqual('2024-06-05T04:03:02Z', params['fromEnteredTime'])
+        messages = [str(w.message) for w in caught]
+        self.assertEqual(
+                1, len([m for m in messages if 'no timezone' in m]), messages)
+
+
+    @no_duplicates
     def test_utc_aware_datetime_is_unchanged(self):
         # The same instant already expressed in UTC must serialize identically,
         # so the conversion cannot be doing something zone-specific.
