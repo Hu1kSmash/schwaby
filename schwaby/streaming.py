@@ -2772,8 +2772,8 @@ class StreamClient(EnumEnforcer):
 
     async def level_one_equity_view(self, fields):
         '''
-        Change the fields delivered for every symbol in the level one
-        equity quotes subscription, without resubscribing.
+        Ask Schwab to change the fields delivered for every symbol in the
+        level one equity quotes subscription, without resubscribing.
 
         This applies to the whole subscription, not to particular symbols:
         Schwab documents a VIEW as applying to every symbol of the service,
@@ -3014,8 +3014,8 @@ class StreamClient(EnumEnforcer):
 
     async def level_one_option_view(self, fields):
         '''
-        Change the fields delivered for every symbol in the level one
-        option quotes subscription, without resubscribing.
+        Ask Schwab to change the fields delivered for every symbol in the
+        level one option quotes subscription, without resubscribing.
 
         This applies to the whole subscription, not to particular symbols:
         Schwab documents a VIEW as applying to every symbol of the service,
@@ -3212,8 +3212,8 @@ class StreamClient(EnumEnforcer):
 
     async def level_one_futures_view(self, fields):
         '''
-        Change the fields delivered for every symbol in the level one
-        futures quotes subscription, without resubscribing.
+        Ask Schwab to change the fields delivered for every symbol in the
+        level one futures quotes subscription, without resubscribing.
 
         This applies to the whole subscription, not to particular symbols:
         Schwab documents a VIEW as applying to every symbol of the service,
@@ -3378,8 +3378,8 @@ class StreamClient(EnumEnforcer):
 
     async def level_one_forex_view(self, fields):
         '''
-        Change the fields delivered for every symbol in the level one
-        forex quotes subscription, without resubscribing.
+        Ask Schwab to change the fields delivered for every symbol in the
+        level one forex quotes subscription, without resubscribing.
 
         This applies to the whole subscription, not to particular symbols:
         Schwab documents a VIEW as applying to every symbol of the service,
@@ -3549,8 +3549,8 @@ class StreamClient(EnumEnforcer):
 
     async def level_one_futures_options_view(self, fields):
         '''
-        Change the fields delivered for every symbol in the level one
-        futures options quotes subscription, without resubscribing.
+        Ask Schwab to change the fields delivered for every symbol in the
+        level one futures options quotes subscription, without resubscribing.
 
         This applies to the whole subscription, not to particular symbols:
         Schwab documents a VIEW as applying to every symbol of the service,

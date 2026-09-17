@@ -509,7 +509,9 @@ can find them by investigating the various enum classes ending in ``***Fields``.
 Some streams let you ask for a subset of the fields. The five
 :ref:`level_one` subscription functions take a list of the appropriate field
 enums as an extra ``fields`` argument; omit it and every supported field is
-requested. No other service accepts one.
+requested. No other service accepts one. To change the fields of a
+subscription that is already running, rather than at subscribe time, see
+:ref:`the note on VIEW <level_one_view>`.
 
 
 ---------------
@@ -1111,7 +1113,7 @@ News Headline
 +++++++++++++
 
 Headlines for the symbols you subscribe to, from sources including Reuters,
-MT Newswire and Briefing.com.
+MT Newswire and GlobeNewswire.
 
 .. warning::
 
@@ -1163,11 +1165,11 @@ fourteen languages arrived, and fewer than half of the items were
 
 .. warning::
 
-  **TEXT is not the story.** In 449 items it was never longer than 100
-  characters, and 440 were exactly 100 --- the shape of a limit, not of how
-  long stories are. A program that stores it as the article keeps a fragment
-  and nothing says so. What further text exists, and how to get it, is not
-  established.
+  **TEXT is not the story.** Across both captures, 449 items, it was never
+  longer than 100 characters, and 440 of the 449 were exactly 100 --- the shape
+  of a limit, not of how long stories are. A program that stores it as the
+  article keeps a fragment and nothing says so. What further text exists, and
+  how to get it, is not established.
 
 What ``UNKNOWN_3`` and ``UNKNOWN_8`` mean is not established. ``UNKNOWN_8``
 was ``False`` in every item captured; ``UNKNOWN_3`` was ``'A'`` in all but one,
