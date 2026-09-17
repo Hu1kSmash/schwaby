@@ -4,9 +4,51 @@ import math
 from enum import Enum
 
 from schwaby.orders import common
-from schwaby.utils import EnumEnforcer, _is_instance
+from schwaby.utils import (EnumEnforcer, _DATETIME, _format_iso_instant,
+                           _is_instance, _qualified_type_name)
 
 import httpx2
+
+
+def _cancel_time_string(dt):
+    '''``dt`` as the string ``cancelTime`` is sent as.
+
+    Refuses a value that is not an aware datetime with ``ValueError``. A
+    datetime whose conversion to UTC fails -- ``datetime.max`` in a zone
+    behind UTC overflows, for one -- raises what the conversion raises, as
+    the client's own date parameters do.
+
+    Only a datetime that names an instant is accepted. A naive datetime means a
+    different instant on every machine that reads it, and a plain date would
+    be sent as midnight UTC, which is not what "cancel on that day" means in
+    any zone a trader is likely to be in. On an order both are worth refusing
+    rather than warning about: the mistake is in something sent to the venue,
+    not in something reported.
+
+    Aware means ``utcoffset()`` returns an offset, which is Python's own
+    definition. A ``tzinfo`` whose ``utcoffset`` returns ``None`` is naive
+    despite being set, and the UTC conversion would read it as local time.
+
+    The type is checked with ``_is_instance`` so a value whose ``__class__``
+    raises gets this refusal rather than that exception, and against the
+    ``datetime`` captured at import, for the reason given where it is captured.
+    '''
+    if not _is_instance(dt, _DATETIME):
+        raise ValueError(
+            "cancel time must be a datetime.datetime with a timezone, "
+            "got '{}'".format(_qualified_type_name(dt)))
+
+    if dt.utcoffset() is None:
+        raise ValueError(
+            "cancel time must carry a timezone, and this datetime has no UTC "
+            "offset. "
+            "An order's cancelTime names an instant, and a datetime without "
+            "a timezone names a different one on each machine. Attach one "
+            "explicitly, for example "
+            "datetime.datetime(..., tzinfo=datetime.timezone.utc) or "
+            "zoneinfo.ZoneInfo('America/New_York').")
+
+    return _format_iso_instant(dt)
 
 
 def _build_object(obj):
@@ -305,6 +347,7 @@ class OrderBuilder(EnumEnforcer):
 
         self._session = None
         self._duration = None
+        self._cancelTime = None
         self._orderType = None
         self._complexOrderStrategyType = None
         self._quantity = None
@@ -356,6 +399,29 @@ class OrderBuilder(EnumEnforcer):
         Clear the order duration.
         '''
         self._duration = None
+        return self
+
+    # CancelTime
+    def set_cancel_time(self, cancel_time):
+        '''
+        Set the order's ``cancelTime`` field. Takes a ``datetime.datetime``
+        that carries a timezone; a naive datetime, a ``datetime.date`` or a
+        string raises ``ValueError`` here, when it is set. It is sent in UTC,
+        to the second.
+
+        Schwab documents the field on its order schema. It has not been tested
+        against a live order here, so how Schwab treats it, including whether
+        it acts on it at all, is not established. See
+        :ref:`the note on cancel times <cancel_time>`.
+        '''
+        self._cancelTime = _cancel_time_string(cancel_time)
+        return self
+
+    def clear_cancel_time(self):
+        '''
+        Clear the order cancel time.
+        '''
+        self._cancelTime = None
         return self
 
     # OrderType

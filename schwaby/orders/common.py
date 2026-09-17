@@ -46,11 +46,11 @@ class Duration(Enum):
     #: be filled all at once, you may see partial executions throughout the day.
     DAY = 'DAY'
 
-    # TODO: Implement order cancellation date
-
-    #: Keep the trade open for six months, or until the end of the cancel date,
-    #: whichever is shorter. Note if the order cannot be filled all at once, you
-    #: may see partial executions over the lifetime of the order.
+    #: Keep the trade open past the end of the trading day. How long Schwab
+    #: keeps it open, and how that combines with a cancel time set through
+    #: :meth:`~schwaby.orders.generic.OrderBuilder.set_cancel_time`, has not
+    #: been measured. Note if the order cannot be filled all at once, you may
+    #: see partial executions over the lifetime of the order.
     GOOD_TILL_CANCEL = 'GOOD_TILL_CANCEL'
 
     #: Either execute the order immediately at the specified price, or cancel it

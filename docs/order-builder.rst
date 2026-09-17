@@ -285,6 +285,31 @@ these methods to do so.
 .. automethod:: schwaby.orders.generic.OrderBuilder.set_session
 .. automethod:: schwaby.orders.generic.OrderBuilder.clear_session
 
+.. _cancel_time:
+
+An order's ``cancelTime`` is set separately from its duration:
+
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_cancel_time
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_cancel_time
+
+.. note::
+
+  **A cancel time must carry a timezone.** A naive ``datetime``, a
+  ``datetime.date`` and a string are all refused when the cancel time is set,
+  rather than sent. A cancel time without a timezone names a different instant
+  on every machine that reads it, and a date alone would go out as midnight
+  UTC, which is the previous evening in New York.
+
+  The value is sent in UTC, to the second, the same form the client's other
+  ISO date parameters use. Schwab's schema types ``cancelTime`` only as a
+  date-time string, without saying which form it expects.
+
+  Schwab documents the field, but it has not been tested against a live order
+  here. Whether Schwab acts on it at all, for which durations, and at what
+  granularity, is not established. Reading an order's
+  ``cancelTime`` back after placing it shows what Schwab stored, not that it
+  will act on it.
+
 
 +++++
 Price

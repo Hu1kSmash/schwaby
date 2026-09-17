@@ -38,8 +38,8 @@ are:
 Secondly, they serve as starting points for building more complex order types.
 All templates return a pre-populated ``OrderBuilder`` object, meaning complex
 functionality can be specified by modifying the returned object. For example,
-here is how you would place an order to buy ``GOOG`` for no more than $1250 at
-any time in the next six months:
+here is how you would place an order to buy ``GOOG`` for no more than $1250,
+and keep it open beyond today:
 
 .. code-block:: python
 

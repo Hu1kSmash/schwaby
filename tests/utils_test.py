@@ -1590,6 +1590,7 @@ class HostileClassTest(unittest.TestCase):
             ('get_instrument_by_cusip', client.get_instrument_by_cusip),
             ('set_quantity', lambda v: OrderBuilder().set_quantity(v)),
             ('set_price', lambda v: OrderBuilder().set_price(v)),
+            ('set_cancel_time', lambda v: OrderBuilder().set_cancel_time(v)),
             ('copy_price and build',
              lambda v: OrderBuilder().copy_price(v).build()),
             ('add_child_order_strategy',

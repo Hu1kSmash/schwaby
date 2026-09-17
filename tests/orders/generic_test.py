@@ -1,3 +1,4 @@
+import datetime
 import decimal
 import os
 import fractions
@@ -68,6 +69,79 @@ class OrderBuilderTest(unittest.TestCase):
         self.assertFalse(has_diff({
             'duration': 'DAY'
         }, self.order_builder.build()))
+
+    ##########################################################################
+    # Cancel time
+
+    @no_duplicates
+    def test_cancel_time_is_sent_in_utc(self):
+        # 16:00 in New York in June is 20:00 UTC. A non-UTC zone, so a builder
+        # which formatted the wall clock without converting it would send
+        # 16:00:00Z -- four hours early -- and this would catch it.
+        new_york = datetime.timezone(datetime.timedelta(hours=-4))
+        self.order_builder.set_cancel_time(
+                datetime.datetime(2027, 6, 18, 16, 0, 0, tzinfo=new_york))
+        self.assertFalse(has_diff({
+            'cancelTime': '2027-06-18T20:00:00Z'
+        }, self.order_builder.build()))
+
+        self.order_builder.clear_cancel_time()
+        self.assertFalse(has_diff({}, self.order_builder.build()))
+
+    @no_duplicates
+    def test_cancel_time_accepts_a_datetime_under_the_class_patch(self):
+        # Tests elsewhere replace datetime.datetime with a subclass to fix the
+        # current time, and the replacement lands on the module itself. A type
+        # check reading the name at call time would then refuse a real
+        # datetime, so the check reads the class captured at import.
+        from unittest.mock import patch
+
+        class Patched(datetime.datetime):
+            pass
+
+        aware = datetime.datetime(2027, 6, 18, 20, 0, 0,
+                                  tzinfo=datetime.timezone.utc)
+        with patch.object(datetime, 'datetime', Patched):
+            self.order_builder.set_cancel_time(aware)
+        self.assertFalse(has_diff({
+            'cancelTime': '2027-06-18T20:00:00Z'
+        }, self.order_builder.build()))
+
+    @no_duplicates
+    def test_cancel_time_refuses_a_naive_datetime(self):
+        with self.assertRaisesRegex(ValueError, 'must carry a timezone'):
+            self.order_builder.set_cancel_time(
+                    datetime.datetime(2027, 6, 18, 16, 0, 0))
+        self.assertFalse(has_diff({}, self.order_builder.build()))
+
+    @no_duplicates
+    def test_cancel_time_refuses_a_tzinfo_that_gives_no_offset(self):
+        # Set, but naive by Python's definition: utcoffset() is None. Checked
+        # on tzinfo alone this would pass, and the UTC conversion would then
+        # read it as the host's local time.
+        class NoOffset(datetime.tzinfo):
+            def utcoffset(self, dt):
+                return None
+
+            def dst(self, dt):
+                return None
+
+        with self.assertRaisesRegex(ValueError, 'must carry a timezone'):
+            self.order_builder.set_cancel_time(
+                    datetime.datetime(2027, 6, 18, 16, 0, 0,
+                                      tzinfo=NoOffset()))
+
+    @no_duplicates
+    def test_cancel_time_refuses_a_date(self):
+        with self.assertRaisesRegex(
+                ValueError, "must be a datetime.datetime.*'datetime.date'"):
+            self.order_builder.set_cancel_time(datetime.date(2027, 6, 18))
+
+    @no_duplicates
+    def test_cancel_time_refuses_a_string(self):
+        with self.assertRaisesRegex(
+                ValueError, "must be a datetime.datetime.*'builtins.str'"):
+            self.order_builder.set_cancel_time('2027-06-18T20:00:00Z')
 
     ##########################################################################
     # OrderType
