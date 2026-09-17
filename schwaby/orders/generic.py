@@ -807,8 +807,9 @@ class OrderBuilder(EnumEnforcer):
         return self
 
     # OrderLegCollection
-    def __add_order_leg(self, instruction, instrument, quantity):
-        # instruction is assumed to have been verified
+    def __add_order_leg(self, instruction, instrument, quantity,
+                        quantity_type=None):
+        # instruction and quantity_type are assumed to have been verified
 
         _assert_finite('quantity', quantity)
         if quantity <= 0:
@@ -817,15 +818,21 @@ class OrderBuilder(EnumEnforcer):
         if self._orderLegCollection is None:
             self._orderLegCollection = []
 
-        self._orderLegCollection.append({
+        leg = {
             'instruction': instruction,
             'instrument': instrument,
             'quantity': quantity,
-        })
+        }
+        # Added only when asked for, so a leg built without one is exactly the
+        # leg every earlier version built.
+        if quantity_type is not None:
+            leg['quantityType'] = quantity_type
+        self._orderLegCollection.append(leg)
 
         return self
 
-    def add_equity_leg(self, instruction, symbol, quantity):
+    def add_equity_leg(self, instruction, symbol, quantity, *,
+                       quantity_type=None):
         '''
         Add an equity order leg.
 
@@ -833,13 +840,22 @@ class OrderBuilder(EnumEnforcer):
                             :class:`~schwaby.orders.common.EquityInstruction` for
                             valid options.
         :param symbol: Equity symbol
-        :param quantity: Number of shares for the order
+        :param quantity: Number of shares for the order. Required and positive
+                         whatever ``quantity_type`` is, and always sent. What
+                         it means alongside a ``quantity_type`` is not
+                         established.
+        :param quantity_type: Sent as the leg's ``quantityType``. See
+                              :class:`~schwaby.orders.common.QuantityType`.
+                              If unset, the leg carries no ``quantityType``.
         '''
         instruction = self.convert_enum(instruction, common.EquityInstruction)
+        quantity_type = self.convert_enum(quantity_type, common.QuantityType)
         return self.__add_order_leg(
-            instruction, common.EquityInstrument(symbol), quantity)
+            instruction, common.EquityInstrument(symbol), quantity,
+            quantity_type)
 
-    def add_option_leg(self, instruction, symbol, quantity):
+    def add_option_leg(self, instruction, symbol, quantity, *,
+                       quantity_type=None):
         '''
         Add an option order leg.
 
@@ -847,11 +863,19 @@ class OrderBuilder(EnumEnforcer):
                             :class:`~schwaby.orders.common.OptionInstruction` for
                             valid options.
         :param symbol: Option symbol
-        :param quantity: Number of contracts for the order
+        :param quantity: Number of contracts for the order. Required and
+                         positive whatever ``quantity_type`` is, and always
+                         sent. What it means alongside a ``quantity_type`` is
+                         not established.
+        :param quantity_type: Sent as the leg's ``quantityType``. See
+                              :class:`~schwaby.orders.common.QuantityType`.
+                              If unset, the leg carries no ``quantityType``.
         '''
         instruction = self.convert_enum(instruction, common.OptionInstruction)
+        quantity_type = self.convert_enum(quantity_type, common.QuantityType)
         return self.__add_order_leg(
-            instruction, common.OptionInstrument(symbol), quantity)
+            instruction, common.OptionInstrument(symbol), quantity,
+            quantity_type)
 
     def clear_order_legs(self):
         '''

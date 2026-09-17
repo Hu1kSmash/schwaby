@@ -340,6 +340,19 @@ class OptionInstruction(Enum):
     BUY_TO_CLOSE = 'BUY_TO_CLOSE'
 
 
+class QuantityType(Enum):
+    '''
+    Values for an order leg's ``quantityType``. Schwab's order schema lists
+    these three on each ``orderLegCollection`` entry and describes none of
+    them, so what each means -- and how it relates to the leg's ``quantity`` --
+    is not established. None has been tested against a live order here.
+    '''
+
+    SHARES = 'SHARES'
+    DOLLARS = 'DOLLARS'
+    ALL_SHARES = 'ALL_SHARES'
+
+
 class SpecialInstruction(Enum):
     '''
     Special instruction for trades.

@@ -523,6 +523,30 @@ With all that out of the way, order legs are relatively simple to specify.
 
 .. automethod:: schwaby.orders.generic.OrderBuilder.clear_order_legs
 
+Either kind of leg takes a ``quantity_type``, sent as the leg's
+``quantityType``:
+
+.. autoclass:: schwaby.orders.common::QuantityType
+  :members:
+  :undoc-members:
+
+.. note::
+
+  **Schwab lists these values and says nothing about them.** Its order schema
+  gives ``quantityType`` on each ``orderLegCollection`` entry as
+  ``ALL_SHARES``, ``DOLLARS`` or ``SHARES``, with no description, and none has
+  been tried against a live order here. Which asset types and instructions
+  accept each is not established.
+
+  **The leg's quantity is still required, and still sent.** The builder asks
+  for a positive ``quantity`` on every leg whatever ``quantity_type`` is, and
+  sends both. So an ``ALL_SHARES`` leg carries a number you had to choose, and
+  whether Schwab reads that number, ignores it, or needs something else for
+  ``DOLLARS`` or ``ALL_SHARES`` is not established.
+
+  A leg built without a ``quantity_type`` carries no ``quantityType`` at all,
+  as before.
+
 
 
 +++++++++++++++++++++

@@ -856,6 +856,102 @@ class OrderBuilderTest(unittest.TestCase):
             self.order_builder.add_option_leg(
                 OptionInstruction.BUY_TO_OPEN, 'GOOG31433C1342', 0)
 
+    ##########################################################################
+    # Leg quantityType
+
+    @no_duplicates
+    def test_add_equity_leg_quantity_type(self):
+        self.order_builder.add_equity_leg(
+            EquityInstruction.BUY, 'GOOG', 250,
+            quantity_type=QuantityType.DOLLARS)
+        self.assertFalse(has_diff({
+            'orderLegCollection': [{
+                'instruction': 'BUY',
+                'instrument': {
+                    'symbol': 'GOOG',
+                    'assetType': 'EQUITY'
+                },
+                'quantity': 250,
+                'quantityType': 'DOLLARS',
+            }]
+        }, self.order_builder.build()))
+
+    @no_duplicates
+    def test_add_option_leg_quantity_type(self):
+        # Tests that the value is passed through, not that DOLLARS means
+        # anything on an option leg -- which is not established.
+        self.order_builder.add_option_leg(
+            OptionInstruction.SELL_TO_CLOSE, 'GOOG31433C1342', 3,
+            quantity_type=QuantityType.DOLLARS)
+        legs = self.order_builder.build()['orderLegCollection']
+        self.assertEqual('DOLLARS', legs[0]['quantityType'])
+
+    @no_duplicates
+    def test_a_leg_without_a_quantity_type_carries_none(self):
+        self.order_builder.add_equity_leg(EquityInstruction.BUY, 'GOOG', 10)
+        self.order_builder.add_option_leg(
+            OptionInstruction.BUY_TO_OPEN, 'GOOG31433C1342', 1)
+        legs = self.order_builder.build()['orderLegCollection']
+        # Both legs are there, so the loop below cannot pass over an empty or
+        # truncated list.
+        self.assertEqual(2, len(legs))
+        for leg in legs:
+            self.assertNotIn('quantityType', leg)
+
+    @no_duplicates
+    def test_add_equity_leg_quantity_type_wrong_type(self):
+        with self.assertRaisesRegex(
+                ValueError, 'schwaby.orders.common.QuantityType.DOLLARS'):
+            self.order_builder.add_equity_leg(
+                EquityInstruction.BUY, 'GOOG', 250, quantity_type='DOLLARS')
+
+    @no_duplicates
+    def test_add_option_leg_quantity_type_wrong_type(self):
+        with self.assertRaisesRegex(
+                ValueError, 'schwaby.orders.common.QuantityType.DOLLARS'):
+            self.order_builder.add_option_leg(
+                OptionInstruction.BUY_TO_OPEN, 'GOOG31433C1342', 1,
+                quantity_type='DOLLARS')
+
+    @no_duplicates
+    def test_quantity_type_wrong_type_no_check(self):
+        self.order_builder = OrderBuilder(enforce_enums=False)
+        self.order_builder.add_equity_leg(
+            'BUY', 'GOOG', 250, quantity_type='DOLLARS')
+        legs = self.order_builder.build()['orderLegCollection']
+        self.assertEqual('DOLLARS', legs[0]['quantityType'])
+
+    @no_duplicates
+    def test_quantity_is_still_required_whatever_the_quantity_type(self):
+        # The builder's quantity validation does not know about quantityType,
+        # so ALL_SHARES still needs a positive quantity, which is sent. What
+        # Schwab does with it is not established; this pins that the builder
+        # neither drops nor relaxes it, which the docs say. Every member, so a
+        # relaxation for one of them alone cannot pass.
+        for quantity_type in QuantityType:
+            with self.subTest(quantity_type):
+                builder = OrderBuilder()
+                with self.assertRaisesRegex(
+                        ValueError, 'quantity must be positive'):
+                    builder.add_equity_leg(
+                        EquityInstruction.SELL, 'GOOG', 0,
+                        quantity_type=quantity_type)
+                builder.add_equity_leg(
+                    EquityInstruction.SELL, 'GOOG', 1,
+                    quantity_type=quantity_type)
+                leg = builder.build()['orderLegCollection'][0]
+                self.assertEqual(
+                    (1, quantity_type.value),
+                    (leg['quantity'], leg['quantityType']))
+
+    @no_duplicates
+    def test_every_quantity_type_schwab_lists_is_available(self):
+        # Schwab's order schema enumerates these three on each
+        # orderLegCollection entry.
+        self.assertEqual(
+                ['ALL_SHARES', 'DOLLARS', 'SHARES'],
+                sorted(m.value for m in QuantityType))
+
 
 class QuantityValidationTest(unittest.TestCase):
     """Two tests that were dead, and wrong, for at least a release.
