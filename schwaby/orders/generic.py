@@ -841,9 +841,9 @@ class OrderBuilder(EnumEnforcer):
                             valid options.
         :param symbol: Equity symbol
         :param quantity: Number of shares for the order. Required and positive
-                         whatever ``quantity_type`` is, and always sent. What
-                         it means alongside a ``quantity_type`` is not
-                         established.
+                         whatever ``quantity_type`` is, and always sent --- a
+                         leg asking for 500 dollars asks for 500 shares too,
+                         and which one Schwab fills is not established.
         :param quantity_type: Sent as the leg's ``quantityType``. See
                               :class:`~schwaby.orders.common.QuantityType`.
                               If unset, the leg carries no ``quantityType``.
@@ -865,8 +865,9 @@ class OrderBuilder(EnumEnforcer):
         :param symbol: Option symbol
         :param quantity: Number of contracts for the order. Required and
                          positive whatever ``quantity_type`` is, and always
-                         sent. What it means alongside a ``quantity_type`` is
-                         not established.
+                         sent --- a leg asking for 500 dollars asks for 500
+                         contracts too, and which one Schwab fills is not
+                         established.
         :param quantity_type: Sent as the leg's ``quantityType``. See
                               :class:`~schwaby.orders.common.QuantityType`.
                               If unset, the leg carries no ``quantityType``.

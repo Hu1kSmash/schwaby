@@ -530,22 +530,25 @@ Either kind of leg takes a ``quantity_type``, sent as the leg's
   :members:
   :undoc-members:
 
-.. note::
+.. danger::
 
-  **Schwab lists these values and says nothing about them.** Its order schema
-  gives ``quantityType`` on each ``orderLegCollection`` entry as
-  ``ALL_SHARES``, ``DOLLARS`` or ``SHARES``, with no description, and none has
-  been tried against a live order here. Which asset types and instructions
-  accept each is not established.
+  **If Schwab ignores this field, the leg is sized in shares.** A leg always
+  carries a positive ``quantity``, whatever its ``quantity_type``, because
+  the builder requires one and sends both. So a leg asking for 500 dollars of
+  a stock is also a leg asking for 500 shares of it, and which one Schwab
+  fills has not been established here. At a share price of 200 those differ
+  by a factor of 200, and the order comes back filled either way.
 
-  **The leg's quantity is still required, and still sent.** The builder asks
-  for a positive ``quantity`` on every leg whatever ``quantity_type`` is, and
-  sends both. So an ``ALL_SHARES`` leg carries a number you had to choose, and
-  whether Schwab reads that number, ignores it, or needs something else for
-  ``DOLLARS`` or ``ALL_SHARES`` is not established.
+  Schwab's order schema lists ``quantityType`` on each
+  ``orderLegCollection`` entry as ``ALL_SHARES``, ``DOLLARS`` or ``SHARES``,
+  with no description of any of them, and the field appears in none of its
+  order examples. Which asset types and instructions accept each is not
+  established either. ``ALL_SHARES`` has the same shape: the number you had
+  to pass is a real share count if the field is dropped.
 
-  A leg built without a ``quantity_type`` carries no ``quantityType`` at all,
-  as before.
+  Until you have placed one and seen what came back, place it small enough
+  that both readings are acceptable. A leg built without a ``quantity_type``
+  carries no ``quantityType`` at all, as before.
 
 
 
