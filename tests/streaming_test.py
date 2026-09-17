@@ -1551,7 +1551,8 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 'keys': 'GOOG,MSFT',
                 'fields': ('0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,' +
                            '20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,' +
-                           '36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51')
+                           '36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,' +
+                           '52,53,54,55,56')
             }
         })
 
@@ -1574,7 +1575,8 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 'keys': 'INTC',
                 'fields': ('0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,' +
                            '20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,' +
-                           '36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51')
+                           '36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,' +
+                           '52,53,54,55,56')
             }
         })
 
@@ -1616,7 +1618,8 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                         "fields": 
                         "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,"+
                         "20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,"+
-                        "37,38,39,40,41,42,43,44,45,46,47,48,49,50,51"
+                        "37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,"+
+                        "54,55,56"
                     }
                 }]
             })),
@@ -2050,6 +2053,42 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         self.assert_handler_called_once_with(handler, expected_item)
         self.assert_handler_called_once_with(async_handler, expected_item)
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_level_one_equity_handler_names_the_fields_past_51(
+            self, ws_connect):
+        # Values from one live item: a print of under one share, which
+        # LAST_SIZE reports as 0 and only field 52 carries. Keys are written
+        # with double quotes so a failure's repr cannot be read off this
+        # source.
+        socket = await self.login_and_get_socket(ws_connect)
+        stream_item = self.streaming_entry('LEVELONE_EQUITIES', 'SUBS', [{
+            "key": "NVDA", "4": 100, "5": 600, "8": 1349842, "9": 0,
+            "52": 0.004634, "53": 13466518, "54": 1349842.996459,
+            "55": 100, "56": 600}])
+        socket.recv.side_effect = [
+            json.dumps(self.success_response(1, 'LEVELONE_EQUITIES', 'SUBS')),
+            json.dumps(stream_item)]
+
+        handler = Mock()
+        self.client.add_level_one_equity_handler(handler)
+        await self.client.level_one_equity_subs(['NVDA'])
+        await self.client.handle_message()
+
+        handler.assert_called_once()
+        self.assertEqual(handler.call_args[0][0]['content'], [{
+            'key': 'NVDA',
+            'BID_SIZE': 100,
+            'ASK_SIZE': 600,
+            'TOTAL_VOLUME': 1349842,
+            'LAST_SIZE': 0,
+            'LAST_SIZE_FRACTIONAL': 0.004634,
+            'UNKNOWN_53': 13466518,
+            'TOTAL_VOLUME_FRACTIONAL': 1349842.996459,
+            'BID_SIZE_FRACTIONAL': 100,
+            'ASK_SIZE_FRACTIONAL': 600,
+        }])
 
     ##########################################################################
     # LEVELONE_OPTIONS

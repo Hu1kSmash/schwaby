@@ -643,6 +643,31 @@ Equities Quotes
 
 Level one quotes for equities traded on NYSE, AMEX, and PACIFIC.
 
+.. _level_one_equity_fractional:
+
+.. warning::
+
+  **A print of less than one share has a LAST_SIZE of 0.** ``LAST_SIZE`` and
+  ``TOTAL_VOLUME`` carry whole shares, and the fraction is dropped rather than
+  rounded, silently. Schwab's field table stops at field ``51``; asked for
+  more, it delivers fields ``52`` to ``56``, and two of those carry the
+  fractions. Measured against a live account before the open: the whole part
+  of ``LAST_SIZE_FRACTIONAL`` equalled ``LAST_SIZE`` on 299 of 299 items, 81
+  of them a print under one share that read ``0``, and the whole part of
+  ``TOTAL_VOLUME_FRACTIONAL`` equalled ``TOTAL_VOLUME`` on 435 of 435.
+
+  **Read the fractional fields, not the whole-share ones.** An update carries
+  only the fields that changed, so when only the fraction moves the
+  whole-share field is left out: ``LAST_SIZE_FRACTIONAL`` arrived without
+  ``LAST_SIZE`` on 56 of 355 items, and ``TOTAL_VOLUME_FRACTIONAL`` without
+  ``TOTAL_VOLUME`` on 251 of 686. A handler that takes the presence of
+  ``LAST_SIZE`` to mean a trade printed misses those trades.
+
+  A subscription that does not name its fields asks for all of them, and gets
+  these. One that names its fields gets them only by naming them. None of the
+  five is documented by Schwab, so they can change or stop without notice;
+  what each carried is on its member below.
+
 .. automethod:: schwaby.streaming::StreamClient.level_one_equity_subs
 .. automethod:: schwaby.streaming::StreamClient.level_one_equity_unsubs
 .. automethod:: schwaby.streaming::StreamClient.level_one_equity_add

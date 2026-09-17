@@ -2555,10 +2555,12 @@ class StreamClient(EnumEnforcer):
         #: Exchange ID of the highest bid
         BID_ID = 7
 
-        #: Total volume trade to date
+        #: Total volume trade to date, in whole shares: a fraction is dropped.
+        #: See ``TOTAL_VOLUME_FRACTIONAL``.
         TOTAL_VOLUME = 8
 
-        #: Size of the last trade
+        #: Size of the last trade, in whole shares: a fraction is dropped, so
+        #: a print under one share reads ``0``. See ``LAST_SIZE_FRACTIONAL``.
         LAST_SIZE = 9
 
         #: Daily high price
@@ -2686,6 +2688,36 @@ class StreamClient(EnumEnforcer):
 
         #: Post market net change percent
         POST_MARKET_NET_CHANGE_PERCENT = 51
+
+        # Schwab's field table stops at 51. The fields below were delivered
+        # to a live account asked for more, and are named from what they
+        # carried; see :ref:`level_one_equity_fractional`.
+
+        #: Size of the last trade, with any fraction of a share. Its whole
+        #: part equalled ``LAST_SIZE`` on every item carrying both, and a
+        #: print of less than one share is ``0`` in ``LAST_SIZE`` and the
+        #: fraction here.
+        LAST_SIZE_FRACTIONAL = 52
+
+        #: Meaning not established. Seen only in the items sent on
+        #: subscribing, never in an update, as an integer roughly two to
+        #: forty-five times that item's ``TOTAL_VOLUME``.
+        UNKNOWN_53 = 53
+
+        #: Total volume traded to date, with any fraction of a share. Its
+        #: whole part equalled ``TOTAL_VOLUME`` on every item carrying both.
+        TOTAL_VOLUME_FRACTIONAL = 54
+
+        #: Equalled ``BID_SIZE`` on every item carrying both, and was always a
+        #: whole number. That it carries a fraction is
+        #: :ref:`Unconfirmed <confidence_tags>`: the name follows fields
+        #: ``52`` and ``54``.
+        BID_SIZE_FRACTIONAL = 55
+
+        #: Equalled ``ASK_SIZE`` on every item carrying both, and was always a
+        #: whole number. :ref:`Unconfirmed <confidence_tags>`, for the reason
+        #: given on ``BID_SIZE_FRACTIONAL``.
+        ASK_SIZE_FRACTIONAL = 56
 
     async def level_one_equity_subs(self, symbols, *, fields=None):
         '''
