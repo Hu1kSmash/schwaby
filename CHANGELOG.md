@@ -22,6 +22,113 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 4.8.0
+
+*2026-09-17*
+
+New public surface, and measurements that replace things the documentation
+called unknown. Nothing is removed or renamed. Two existing calls send
+something different: a level one equity subscription that names no fields now
+asks for five more, and a client date parameter given a `tzinfo` that returns
+no UTC offset now sends the wall clock it was written with rather than that
+clock converted from whichever zone the machine is in.
+
+- **`NEWS_HEADLINE` is supported.** Schwab's streamer documentation lists
+  thirteen services and none of them is news, but subscribing to a fourteenth
+  returns `code: 0` and delivers headlines from Reuters, MT Newswire,
+  GlobeNewswire and others. Every one was discarded before: the service was
+  absent from the known set, so each frame logged "a service this version of
+  schwaby does not know" and reached no handler. `news_headline_subs`,
+  `news_headline_unsubs`, `news_headline_add` and `add_news_headline_handler`
+  are the methods; `StreamClient.NewsHeadlineFields` names the fields, built
+  from captured items rather than from the TD Ameritrade enum this project
+  carried until 1.2.1, which is off by one and would mislabel every field
+  while looking right. Two fields whose meaning is not established are
+  `UNKNOWN_3` and `UNKNOWN_8`; naming them later would be a breaking change,
+  and inventing a name now is worse. The service is undocumented, so it can
+  change or stop without notice.
+- **A `VIEW` command for the five level one services.**
+  `level_one_equity_view` and its four siblings change which fields a live
+  subscription delivers. Without it the only way to change fields was to
+  subscribe again, which Schwab says replaces that service's entire symbol
+  list. `VIEW` was accepted on all twelve services Schwab lists it for,
+  answering `code 0` rather than the documented `29`; it is offered only where
+  it was seen to do something. On the books, both screeners and `CHART_EQUITY`
+  it was accepted and ignored. What was measured is a `VIEW` naming a symbol,
+  which changed the fields for every symbol of the service; these methods name
+  none, as Schwab's own description says to, and that form was seen on four
+  frames, so the documentation calls its effect expected rather than
+  established.
+- **Response codes 26 to 29 are successes.** Schwab documents them as the
+  success codes for `SUBS`, `UNSUBS`, `ADD` and `VIEW`, and every nonzero code
+  raised. If Schwab ever answers a subscribe with `26`, a successful
+  subscription raised `UnexpectedResponseCode`. Only `0` has ever been
+  observed, so this is defensive: the tests are synthetic and say so.
+- **`OrderBuilder.set_cancel_time`.** `GOOD_TILL_CANCEL` documented a cancel
+  date that no method could set, under a `TODO` left there in 2024. It takes a
+  timezone-aware `datetime` and refuses a string, a plain `date` and a naive
+  `datetime`: on the order path an expiry meaning a different instant on
+  different machines should stop the order rather than warn. Documented by
+  Schwab, untested against a live order here.
+- **`quantityType` on order legs.** `add_equity_leg` and `add_option_leg` take
+  a keyword-only `quantity_type`, so dollar-denominated and whole-position
+  orders are reachable. The key is emitted only when set, so orders built as
+  before are byte-identical. **Schwab describes none of the three values and
+  shows the field in none of its order examples, and a leg always carries a
+  positive `quantity`** --- so a leg asking for 500 dollars is also a leg
+  asking for 500 shares, and if Schwab ignores the field, that is what it
+  buys. Untested against a live order here; the documentation carries this as
+  a danger rather than a note.
+- **The level one equity fields past Schwab's table.**
+  `LevelOneEquityFields` gains `LAST_SIZE_FRACTIONAL` (52), `UNKNOWN_53`,
+  `TOTAL_VOLUME_FRACTIONAL` (54), `BID_SIZE_FRACTIONAL` (55) and
+  `ASK_SIZE_FRACTIONAL` (56). Schwab's field table stops at 51 and its own
+  example request asks for 0-54; asked for more, a live account delivered
+  these. **`LAST_SIZE` and `TOTAL_VOLUME` carry whole shares and drop the
+  fraction**, so a print of less than one share reads `0` --- 81 of them in
+  one morning --- and because an update carries only the fields that changed,
+  the whole-share field is absent whenever only the fraction moved, on 56 of
+  355 and 251 of 686 items. A handler reading `LAST_SIZE` to decide that a
+  trade printed misses those. 55 and 56 always equalled `BID_SIZE` and
+  `ASK_SIZE` and never carried a fraction, so their names follow 52 and 54 and
+  are marked Unconfirmed. **A subscription that names no fields now asks for
+  all of these**, so handlers receive five more keys per item.
+- **What the screener documentation called unknown, measured with frames
+  arriving.** A refused twelve-key `SUBS` still delivered the first ten keys
+  sent, so the exception does not mean nothing is subscribed. `ADD` spends the
+  same ten. `SCREENER_OPTION` caps at ten as well, with its own name in the
+  refusal. The late `code: 0` that follows a refusal was seen on nine of nine
+  refusals across both screeners, one of them an `ADD` answered `ADD command
+  succeeded` --- 4.7.3 recorded this as happening on one of three, which was
+  all the evidence then available.
+- **A `tzinfo` that returns no offset is naive**, which is Python's own
+  definition, and the client now treats it as one. It warned only when
+  `tzinfo` was unset, so such a value passed in silence and was then converted
+  from the host's local zone --- the same code sending a different instant
+  from each machine, which is exactly what the warning exists to prevent.
+  `set_cancel_time` already refused on the right definition; the two now agree,
+  and the conversion they share does too.
+- **The `VIEW` methods refuse what cannot be a field number.** A `str`,
+  `bytes`, `bytearray` or `memoryview` is refused rather than iterated ---
+  `b'12'` would otherwise ask for fields 49 and 50, which exist --- and a
+  value that is not iterable at all raises this library's `ValueError` rather
+  than escaping as a `TypeError`. A `TypeError` raised inside a caller's own
+  generator is passed through untouched, because it says nothing about
+  `fields`.
+- **What each setter accepts**, the table in the order builder documentation,
+  has a `set_cancel_time` row. The test that holds the table to the code found
+  its setters by looking for two validator names, so a setter validating
+  through a third was invisible to it and missing from the table while the test
+  asserted nothing was missing.
+- **What the news documentation now records**, all measured against a live
+  account: `TEXT` was never longer than 100 characters in 449 items, so it is
+  not the story; two identifiers were re-sent with changed content, so
+  deduplicating on the identifier alone can drop a change; a story arrives
+  under each subscribed symbol it names, 184 of 191 of them under all of
+  theirs; translations carry their own
+  identifiers; and `SUBS` and `ADD` each deliver one item per symbol
+  immediately, some of it up to a day old.
+
 ## 4.7.3
 
 *2026-09-12*
