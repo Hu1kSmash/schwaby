@@ -2394,33 +2394,51 @@ class StreamClient(EnumEnforcer):
         Data fields for equity OHLCV data. Primarily an implementation detail
         and not used in client code. Provided here as documentation for key
         values stored returned in the stream messages.
+
+        Schwab's published table for this service puts the sequence number
+        last and the prices one place earlier. The wire order is the one
+        here, measured against a live account: the sequence arrives at ``1``
+        and the bar's prices and volume at ``2`` to ``6``. Fields ``7`` and
+        ``8`` agree with the table.
         '''
 
         #: Ticker symbol
         SYMBOL = 0
 
-        #: Sequence number
+        #: Sequence number, and really one: across five consecutive bars for
+        #: two symbols on a live account it rose by exactly one per minute
+        #: bar and carried the same value for every symbol in a frame, so a
+        #: value missing for one symbol is a bar that symbol did not get.
+        #: Where it starts, and whether it resets, was not measured. Unlike
+        #: the book's
+        #: :attr:`StreamClient.PerExchangeBidFields.QUOTE_TIME`, which was
+        #: misread as a sequence number, this one is what its name says.
         SEQUENCE = 1
 
-        #: Today's open price
+        #: Opening price for the minute
         OPEN_PRICE = 2
 
-        #: Today's high price
+        #: Highest price for the minute
         HIGH_PRICE = 3
 
-        #: Today's low price
+        #: Lowest price for the minute
         LOW_PRICE = 4
 
-        #: Previous day's close price
+        #: Closing price for the minute. Not the previous day's close:
+        #: measured, it changed from one bar to the next within a session.
         CLOSE_PRICE = 5
 
-        #: Today's trading volume
+        #: Volume for the minute. Not the day's: measured, consecutive bars
+        #: carried 933, 636 and 140 rather than a rising total.
         VOLUME = 6
 
-        #: Chart timestamp
+        #: When the bar starts, in milliseconds since the epoch. Measured:
+        #: consecutive values were sixty thousand apart, on the minute.
         CHART_TIME_MILLIS = 7
 
-        #: Chart day
+        #: The bar's date, in days since the epoch --- not a day of the year
+        #: or a weekday. Measured: ``20713`` on a frame from the day that
+        #: many days after 1 January 1970.
         CHART_DAY = 8
 
     async def chart_equity_subs(self, symbols):
