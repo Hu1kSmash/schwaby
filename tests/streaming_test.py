@@ -4460,6 +4460,46 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             ws_connect, 'OPTIONS_BOOK', subs, register_handler)
 
     @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_book_names_each_per_exchange_field(self, ws_connect):
+        # The handler test above compares whole messages through a diff
+        # helper, whose failure says only that they differed -- so a label
+        # moving is invisible in it. The bid and ask breakdowns are separate
+        # enums, and a rename of one leaves the other relabeling as it was,
+        # so each is asserted here.
+        socket = await self.login_and_get_socket(ws_connect)
+        socket.recv.side_effect = [
+            json.dumps(self.success_response(1, 'NYSE_BOOK', 'SUBS')),
+            json.dumps({'data': [{
+                'service': 'NYSE_BOOK',
+                'timestamp': 1590532470149,
+                'command': 'SUBS',
+                'content': [{
+                    'key': 'MSFT',
+                    '1': 1590532442608,
+                    '2': [{'0': 181.77, '1': 100, '2': 1,
+                           '3': [{'0': 'edgx', '1': 100, '2': 63150257}]}],
+                    '3': [{'0': 181.78, '1': 200, '2': 1,
+                           '3': [{'0': 'arcx', '1': 200, '2': 62767878}]}],
+                }]}]})]
+
+        handler = Mock()
+        self.client.add_nyse_book_handler(handler)
+        await self.client.nyse_book_subs(['MSFT'])
+        await self.client.handle_message()
+
+        handler.assert_called_once()
+        content = handler.call_args[0][0]['content'][0]
+        self.assertEqual(
+                {'EXCHANGE': 'edgx', 'BID_VOLUME': 100,
+                 'QUOTE_TIME': 63150257},
+                content['BIDS'][0]['BIDS'][0])
+        self.assertEqual(
+                {'EXCHANGE': 'arcx', 'ASK_VOLUME': 200,
+                 'QUOTE_TIME': 62767878},
+                content['ASKS'][0]['ASKS'][0])
+
+    @no_duplicates
     async def __test_book_handler(
             self, ws_connect, service, subs, register_handler):
         socket = await self.login_and_get_socket(ws_connect)
@@ -4683,7 +4723,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'edgx',
                                             'BID_VOLUME': 100,
-                                            'SEQUENCE': 63150257
+                                            'QUOTE_TIME': 63150257
                                         }
                                     ]
                                 },
@@ -4695,12 +4735,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'NSDQ',
                                             'BID_VOLUME': 345,
-                                            'SEQUENCE': 62685730
+                                            'QUOTE_TIME': 62685730
                                         },
                                         {
                                             'EXCHANGE': 'arcx',
                                             'BID_VOLUME': 200,
-                                            'SEQUENCE': 63242588
+                                            'QUOTE_TIME': 63242588
                                         }
                                     ]
                                 },
@@ -4712,7 +4752,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'batx',
                                             'BID_VOLUME': 100,
-                                            'SEQUENCE': 63082708
+                                            'QUOTE_TIME': 63082708
                                         }
                                     ]
                                 }
@@ -4726,7 +4766,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'arcx',
                                             'ASK_VOLUME': 100,
-                                            'SEQUENCE': 63006734
+                                            'QUOTE_TIME': 63006734
                                         }
                                     ]
                                 },
@@ -4738,7 +4778,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'NSDQ',
                                             'ASK_VOLUME': 48,
-                                            'SEQUENCE': 62327464
+                                            'QUOTE_TIME': 62327464
                                         }
                                     ]
                                 },
@@ -4750,7 +4790,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'edgx',
                                             'ASK_VOLUME': 100,
-                                            'SEQUENCE': 63192542
+                                            'QUOTE_TIME': 63192542
                                         }
                                     ]
                                 },
@@ -4762,7 +4802,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'batx',
                                             'ASK_VOLUME': 700,
-                                            'SEQUENCE': 60412822
+                                            'QUOTE_TIME': 60412822
                                         }
                                     ]
                                 }
@@ -4780,7 +4820,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'NSDQ',
                                             'BID_VOLUME': 1,
-                                            'SEQUENCE': 54335011
+                                            'QUOTE_TIME': 54335011
                                         }
                                     ]
                                 },
@@ -4792,7 +4832,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'batx',
                                             'BID_VOLUME': 100,
-                                            'SEQUENCE': 62782324
+                                            'QUOTE_TIME': 62782324
                                         }
                                     ]
                                 },
@@ -4804,7 +4844,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'arcx',
                                             'BID_VOLUME': 100,
-                                            'SEQUENCE': 62767878
+                                            'QUOTE_TIME': 62767878
                                         }
                                     ]
                                 },
@@ -4816,7 +4856,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'edgx',
                                             'BID_VOLUME': 100,
-                                            'SEQUENCE': 54000952
+                                            'QUOTE_TIME': 54000952
                                         }
                                     ]
                                 }
@@ -4830,12 +4870,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'edgx',
                                             'ASK_VOLUME': 200,
-                                            'SEQUENCE': 56723908
+                                            'QUOTE_TIME': 56723908
                                         },
                                         {
                                             'EXCHANGE': 'arcx',
                                             'ASK_VOLUME': 100,
-                                            'SEQUENCE': 62709059
+                                            'QUOTE_TIME': 62709059
                                         }
                                     ]
                                 },
@@ -4847,7 +4887,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                                         {
                                             'EXCHANGE': 'NSDQ',
                                             'ASK_VOLUME': 10,
-                                            'SEQUENCE': 62737731
+                                            'QUOTE_TIME': 62737731
                                         }
                                     ]
                                 }

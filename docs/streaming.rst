@@ -868,14 +868,50 @@ down by exchange:
               'TOTAL_VOLUME': 900,
               'NUM_BIDS': 3,
               'BIDS': [
-                  {'EXCHANGE': 'NSDQ', 'BID_VOLUME': 500, 'SEQUENCE': 12},
-                  {'EXCHANGE': 'ARCA', 'BID_VOLUME': 400, 'SEQUENCE': 15},
+                  {'EXCHANGE': 'NSDQ', 'BID_VOLUME': 500,
+                   'QUOTE_TIME': 43082150},
+                  {'EXCHANGE': 'ARCA', 'BID_VOLUME': 400,
+                   'QUOTE_TIME': 43104660},
               ],
           },
           ...
       ],
       'ASKS': [...],   # the same, with ASK_PRICE, NUM_ASKS and ASK_VOLUME
   }
+
+.. warning::
+
+  **The per-exchange quote time is milliseconds since midnight Eastern, not
+  epoch milliseconds.** Every other time in a book frame is epoch
+  milliseconds, ``BOOK_TIME`` in the same frame included, so the natural
+  reading is the wrong one and it fails silently: passed to a function
+  expecting epoch milliseconds, a quote from this morning becomes a moment in
+  January 1970, and nothing raises.
+
+  To get an instant, add it to midnight Eastern of the frame's own day, and if
+  that lands after the frame's ``BOOK_TIME``, use the day before instead. The
+  day belongs to the value rather than to the arrival: in one overnight session
+  a quote made at 23:55 and delivered at 00:02 needs the previous day, while
+  one made at 00:29 and delivered a minute later needs the current one, so no
+  rule keyed on when the frame arrived is right for both. Measured during
+  daylight saving, so whether the value follows it or a fixed offset is not
+  established: the two agree all summer and differ by an hour in winter.
+
+  Measured on ``NASDAQ_BOOK`` and ``NYSE_BOOK`` against a live account, before
+  the open: all 8,904 per-exchange entries carried a value from inside the hour
+  before the frame arrived, with a median of one to two minutes. **It is not a
+  freshness signal.** One participant's quote was still being re-sent half an
+  hour after it was made, and was still arriving in the last frame before the
+  subscription was dropped, so nothing here bounds how stale one can be. A
+  quote sitting untouched that long is likelier before the open, which is when
+  this was measured, than inside the session. ``OPTIONS_BOOK`` shares these two
+  field tables and delivered no per-exchange entries when tried, so none of
+  this was measured there.
+
+  It answers to ``QUOTE_TIME``. This library called it ``SEQUENCE`` until the
+  rename, which is what Schwab's field *number* had been read as; the venue's
+  own table calls index 2 the quote time for this market maker's quote, and
+  the measurement agrees with the table.
 
 Note that ``BIDS`` names two different things one level apart: the list of price
 levels, and the per-exchange breakdown inside each level. That is Schwab's

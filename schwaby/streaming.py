@@ -3603,9 +3603,23 @@ class StreamClient(EnumEnforcer):
         BIDS = 3
 
     class PerExchangeBidFields(_BaseFieldEnum):
+        #: The market participant quoting this size.
         EXCHANGE = 0
+
+        #: Size quoted by this participant at this price.
         BID_VOLUME = 1
-        SEQUENCE = 2
+
+        #: When this participant's quote was made, in **milliseconds since
+        #: midnight Eastern** --- not epoch milliseconds, which is what every
+        #: other time in a book frame carries. Read as epoch it lands in
+        #: January 1970. Measured on the two equity books before the open:
+        #: all 8,904 per-exchange entries carried a value from inside the hour
+        #: before their frame, a median of one to two minutes, and one quote
+        #: was still being re-sent half an hour on --- so it is not a
+        #: freshness signal. Schwab's table calls index 2 the quote time for
+        #: this market maker's quote. See
+        #: :ref:`the book payload <book_fields>`.
+        QUOTE_TIME = 2
 
     class AskFields(_BaseFieldEnum):
         ASK_PRICE = 0
@@ -3614,9 +3628,17 @@ class StreamClient(EnumEnforcer):
         ASKS = 3
 
     class PerExchangeAskFields(_BaseFieldEnum):
+        #: The market participant quoting this size.
         EXCHANGE = 0
+
+        #: Size quoted by this participant at this price.
         ASK_VOLUME = 1
-        SEQUENCE = 2
+
+        #: When this participant's quote was made. See
+        #: :attr:`StreamClient.PerExchangeBidFields.QUOTE_TIME`: the same
+        #: encoding, and the same warning about reading it as epoch
+        #: milliseconds.
+        QUOTE_TIME = 2
 
     class _BookHandler(_Handler):
         def label_message(self, msg):
