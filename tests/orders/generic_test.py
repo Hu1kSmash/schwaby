@@ -1921,6 +1921,12 @@ class AcceptedTypesTableTest(unittest.TestCase):
     The builder has two rules that are close to opposites -- a price field
     takes a string or a Decimal, a numeric field takes an int or a float --
     which is exactly the shape a single sentence gets wrong.
+
+    The validator names the walk below matches are themselves sized against
+    what existed when it was written. `set_cancel_time` validates through
+    `_cancel_time_string`, so it was invisible here and absent from the table
+    while this test asserted the table omits nothing. A fourth validator will
+    need adding to that set too.
     """
 
     @staticmethod
@@ -1950,7 +1956,8 @@ class AcceptedTypesTableTest(unittest.TestCase):
                 continue
             called = {n.func.id for n in ast.walk(item)
                       if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
-            if called & {'_assert_finite', '_require_price_string'}:
+            if called & {'_assert_finite', '_require_price_string',
+                         '_cancel_time_string'}:
                 found.append(item.name)
         return tuple(sorted(found))
 

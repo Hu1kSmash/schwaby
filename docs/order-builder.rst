@@ -370,10 +370,15 @@ price field takes a string or a ``decimal.Decimal``. A numeric field takes an
    ``set_quantity``          no      yes     yes       no          no       no
    ``set_price_offset``      no      yes     yes       no          no       no
    ``set_stop_price_offset`` no      yes     yes       no          no       no
+   ``set_cancel_time``       no      no      no        no          no       no
    ========================= ======= ======= ========= =========== ======== ========
 
 That table is checked against the validators by the test suite, so it cannot
 quietly stop being true.
+
+``set_cancel_time`` is the row that takes neither kind: it accepts only a
+timezone-aware ``datetime``, and refuses everything above. See
+:ref:`setting a cancel time <cancel_time>`.
 
 .. warning::
 
