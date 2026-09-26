@@ -114,6 +114,10 @@ setuptools.setup(
             # package's dependency.
             'docutils',
             'pytest',
+            # packaging_test builds a small project with the API index
+            # extension, so it needs sphinx itself rather than the copy
+            # sphinx_rtd_theme happens to bring.
+            'sphinx',
             'requests',
             'pytz',
             'setuptools',

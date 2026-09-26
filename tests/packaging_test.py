@@ -12,10 +12,12 @@ contents, so adding a package does not require editing a test.
 import ast
 import collections
 import contextlib
+import enum
 import importlib
 import inspect
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -647,6 +649,7 @@ class DocsConfigTest(unittest.TestCase):
                 exec(compile(f.read(), 'conf.py', 'exec'), namespace)
 
         self.assertIs(True, namespace['nitpicky'])
+        self.assertIn('api_index', namespace['extensions'])
         # Only the standard library may be excused, since there is no
         # intersphinx to resolve it; a name of ours in this list would be a
         # broken link let through.
@@ -922,6 +925,547 @@ class DocReferenceTest(unittest.TestCase):
                 ['schwaby.client.Client.search_instruments',
                  'schwaby.streaming.StreamClient.NoSuchEnum'],
                 sorted(name for name, _ in broken))
+
+
+class DocCoverageTest(unittest.TestCase):
+    """Every public class and callable the package exports has an entry.
+
+    The API index page is generated from the entries, so a name with none is
+    missing from the index as well as from the reference, and nothing said so.
+    That is how `StreamClient.handle_message` -- the call every streaming
+    program makes in its loop -- `OrderBuilder.build`, the child-order and
+    tax-lot setters, `Client.Quote.Fields` and all five streaming exceptions
+    came to have no entry, while the pages referred to several of them by name.
+
+    Three rules decide what counts, and each is a way a check like this goes
+    wrong:
+
+    * By identity, not by path. `Client` and `AsyncClient` share `get_quote`
+      through `BaseClient`, and `StreamJsonDecoder` is documented at its
+      `contrib.util` re-export, so an object is covered if it has an entry
+      anywhere. A classmethod reached by `getattr` is a new bound method on
+      every access, so the function is what gets compared; comparing the
+      method reported `OptionSymbol.parse_symbol` as missing while its entry
+      sat on the page.
+    * Where it is defined, not wherever it is inherited, or every field enum
+      would need its own `relabel_message`. An override of a documented method
+      is covered by the method it overrides.
+    * The walk starts from the exported modules, not the defining ones.
+      `Client` is defined in `schwaby.client.synchronous` and exported as
+      `schwaby.client.Client`; a walk keyed on `__module__` skipped both
+      clients entirely.
+
+    Class-level data, enum members and namespace classes that only hold other
+    classes (`Client.Quote`) are not required. `INTERNAL` lists public-looking
+    names that are deliberately undocumented, each with the reason.
+    """
+
+    MODULES = ('schwaby.auth', 'schwaby.client', 'schwaby.streaming',
+               'schwaby.orders.generic', 'schwaby.orders.common',
+               'schwaby.orders.equities', 'schwaby.orders.options',
+               'schwaby.utils', 'schwaby.debug', 'schwaby.contrib.util')
+
+    # Every other module in the package, and why it is not walked. A module
+    # in neither list fails the suite, so a new one has to be classified.
+    NOT_WALKED = {
+        'schwaby': 're-exports its submodules',
+        'schwaby.client.asynchronous': 'exported through schwaby.client',
+        'schwaby.client.base':
+            'its methods are reached through schwaby.client.Client',
+        'schwaby.client.synchronous': 'exported through schwaby.client',
+        'schwaby.contrib': 'a package with no contents of its own',
+        'schwaby.orders': 'a package with no contents of its own',
+        'schwaby.version': 'holds the version string',
+    }
+
+    INTERNAL = {
+        'schwaby.auth.TokenMetadata':
+            'wraps the token file; its age reaches callers as '
+            'Client.token_age',
+        'schwaby.auth.TokenMetadata.from_loaded_token':
+            'rebuilds the metadata from a token already loaded',
+        'schwaby.auth.TokenMetadata.token_age':
+            'reaches callers as Client.token_age',
+        'schwaby.auth.TokenMetadata.wrap_token_in_metadata':
+            'writes the creation timestamp beside the token',
+        'schwaby.auth.TokenMetadata.wrapped_token_write_func':
+            'the write callback the OAuth session is handed',
+        'schwaby.auth.get_logger': 'module logger accessor',
+        'schwaby.client.base.get_logger': 'module logger accessor',
+        'schwaby.client.base.BaseClient':
+            'the shared base; its methods are documented on Client',
+        'schwaby.contrib.util.get_logger': 'module logger accessor',
+        'schwaby.debug.get_logger': 'module logger accessor',
+        'schwaby.streaming.get_logger': 'module logger accessor',
+        'schwaby.utils.get_logger': 'module logger accessor',
+        'schwaby.debug.LogRedactor':
+            'redaction behind enable_bug_report_logging',
+        'schwaby.debug.LogRedactor.redact':
+            'strips registered secrets from the bug-report log',
+        'schwaby.debug.LogRedactor.register':
+            'records a secret for redact; the client and responses call it',
+        'schwaby.streaming._BaseFieldEnum.key_mapping':
+            'builds the table relabeling uses',
+        # The handlers call it; nobody else needs to. The account-activity
+        # enum overrides it, and that override shows on the enum's own page
+        # through :undoc-members: -- it is documented, not exempt.
+        'schwaby.streaming._BaseFieldEnum.relabel_message':
+            'what the handlers call to relabel',
+        'schwaby.debug.register_redactions':
+            'redaction behind enable_bug_report_logging',
+        'schwaby.debug.register_redactions_from_response':
+            'redaction behind enable_bug_report_logging',
+        'schwaby.orders.common.EquityInstrument':
+            'built by add_equity_leg; not constructed by callers',
+        'schwaby.orders.common.OptionInstrument':
+            'built by add_option_leg; not constructed by callers',
+        'schwaby.streaming.StreamClient.req_num':
+            'numbers the debug log lines for sends and receives',
+        # Listed member by member rather than as a class, because
+        # set_enforce_enums is also defined there and is not internal:
+        # exempting the class hid it, while the docs told readers to call it.
+        'schwaby.utils.EnumEnforcer':
+            'base class of the enum checking',
+        'schwaby.utils.EnumEnforcer.convert_enum':
+            'the enum checking itself',
+        'schwaby.utils.EnumEnforcer.convert_enum_iterable':
+            'the enum checking itself',
+        'schwaby.utils.EnumEnforcer.type_error':
+            'the enum checking itself',
+        'schwaby.utils.LazyLog': 'defers formatting a log argument',
+        'schwaby.utils.class_fullname': 'formats a type name for messages',
+    }
+
+    DIRECTIVE = re.compile(
+            r'^(?P<indent>[ \t]*)\.\.\s+(?:auto|py:)(?P<kind>function|class|'
+            r'method|attribute|data|exception)::\s+(?P<target>[\w.:]+)[^\n]*\n'
+            r'(?P<options>(?:[ \t]+:[\w-]+:[^\n]*\n)*)', re.M)
+
+    @staticmethod
+    def resolve(dotted):
+        parts = dotted.replace('::', '.').split('.')
+        for i in range(len(parts), 0, -1):
+            try:
+                obj = importlib.import_module('.'.join(parts[:i]))
+            except ImportError:
+                continue
+            try:
+                for part in parts[i:]:
+                    obj = getattr(obj, part)
+            except AttributeError:
+                return None
+            return obj.__func__ if inspect.ismethod(obj) else obj
+        return None
+
+    @staticmethod
+    def own_members(cls):
+        for name, value in vars(cls).items():
+            if name.startswith('_'):
+                continue
+            if isinstance(value, (staticmethod, classmethod)):
+                value = value.__func__
+            yield name, value
+
+    @staticmethod
+    def is_ours(obj):
+        # With the separator: `startswith('schwaby')` alone also matches a
+        # sibling package called schwabytools, the shape CLAUDE.md's
+        # sibling-package entry records.
+        home = getattr(obj, '__module__', '') or ''
+        return home == 'schwaby' or home.startswith('schwaby.')
+
+    @staticmethod
+    def defined_as(obj):
+        return '{}.{}'.format(getattr(obj, '__module__', ''),
+                              getattr(obj, '__qualname__', ''))
+
+    @classmethod
+    def documented_ids(cls, texts):
+        ids = set()
+        for text in texts:
+            enclosing = None
+            for m in cls.DIRECTIVE.finditer(text):
+                target, kind = m.group('target'), m.group('kind')
+                if not m.group('indent') and kind in ('class', 'exception'):
+                    enclosing = target
+                # `.. automethod:: set_account_hash` indented under an
+                # autoclass is relative to it.
+                if m.group('indent') and enclosing and not re.search(
+                        r'[.:]', target):
+                    target = enclosing.replace('::', '.') + '.' + target
+                obj = cls.resolve(target)
+                if obj is None:
+                    continue
+                ids.add(id(obj))
+                options = m.group('options')
+                if inspect.isclass(obj) and ':members:' in options:
+                    every = ':undoc-members:' in options
+                    for _, value in cls.own_members(obj):
+                        if every or getattr(value, '__doc__', None):
+                            ids.add(id(value))
+        return ids
+
+    @classmethod
+    def public_api(cls):
+        """(dotted path, object) for every class and callable required."""
+        required, seen = [], set()
+
+        def visit_class(path, klass):
+            if id(klass) in seen or not cls.is_ours(klass):
+                return
+            seen.add(id(klass))
+            members = [v for _, v in cls.own_members(klass)
+                       if not isinstance(v, enum.Enum)]
+            namespace = members and all(inspect.isclass(v) for v in members)
+            if not namespace:
+                required.append((path, klass))
+            # Private bases are walked too: a public method defined on one is
+            # public on every class that inherits it. Skipping them hid
+            # all_fields on all fourteen field enums.
+            for base in klass.__mro__:
+                if not cls.is_ours(base):
+                    continue
+                for name, value in cls.own_members(base):
+                    if isinstance(value, enum.Enum):
+                        continue
+                    if isinstance(value, property):
+                        value = value.fget
+                    if inspect.isclass(value):
+                        visit_class(path + '.' + name, value)
+                    elif inspect.isfunction(value) and id(value) not in seen:
+                        seen.add(id(value))
+                        required.append((path + '.' + name, value))
+
+        # Where an object is defined names it better than a package that
+        # re-exports it from a submodule, which names it better than a
+        # module that merely imported it.
+        best = {}
+        for modname in cls.MODULES:
+            for name, obj in vars(importlib.import_module(modname)).items():
+                if name.startswith('_') or not cls.is_ours(obj):
+                    continue
+                if not (inspect.isclass(obj) or inspect.isfunction(obj)):
+                    continue
+                home = obj.__module__
+                score = (2 if home == modname else
+                         1 if home.startswith(modname + '.') else 0)
+                if id(obj) not in best or score > best[id(obj)][0]:
+                    best[id(obj)] = (score, modname + '.' + name, obj)
+        # Shorter first, so a member shared through a base is reported under
+        # Client rather than AsyncClient.
+        for _, path, obj in sorted(best.values(),
+                                   key=lambda t: (len(t[1]), t[1])):
+            if inspect.isclass(obj):
+                visit_class(path, obj)
+            elif id(obj) not in seen:
+                seen.add(id(obj))
+                required.append((path, obj))
+        return required
+
+    @classmethod
+    def missing(cls, texts):
+        ids = cls.documented_ids(texts)
+
+        def overrides_documented(path, obj):
+            owner = cls.resolve(path.rsplit('.', 1)[0])
+            name = path.rsplit('.', 1)[1]
+            return (inspect.isclass(owner) and inspect.isfunction(obj)
+                    and any(id(vars(b).get(name)) in ids
+                            for b in owner.__mro__[1:] if name in vars(b)))
+
+        def internal(path, obj):
+            # Exactly, by the path it was reached through or by where it is
+            # defined -- never by prefix. A prefix let an internal class
+            # take its public members with it, and which member got hidden
+            # depended on the order of the walk.
+            return path in cls.INTERNAL or cls.defined_as(obj) in cls.INTERNAL
+
+        return sorted(p for p, o in cls.public_api()
+                      if id(o) not in ids and not internal(p, o)
+                      and not overrides_documented(p, o))
+
+    @staticmethod
+    def doc_texts():
+        docs = os.path.join(REPO_ROOT, 'docs')
+        texts = []
+        for name in sorted(os.listdir(docs)):
+            if name.endswith('.rst'):
+                with open(os.path.join(docs, name), encoding='utf-8') as f:
+                    texts.append(f.read())
+        return texts
+
+    @no_duplicates
+    def test_every_public_name_has_a_documentation_entry(self):
+        texts = self.doc_texts()
+        required = dict(self.public_api())
+
+        # Positive control: the walk has to reach the names this test was
+        # written for, or an empty result means nothing.
+        self.assertGreater(len(required), 250)
+        for name in ('schwaby.client.Client.get_quote',
+                     'schwaby.streaming.StreamClient.handle_message',
+                     'schwaby.orders.generic.OrderBuilder.build',
+                     'schwaby.orders.options.OptionSymbol.parse_symbol',
+                     'schwaby.streaming.UnexpectedResponseCode'):
+            self.assertIn(name, required)
+
+        self.assertEqual([], self.missing(texts))
+
+    @no_duplicates
+    def test_a_deleted_entry_is_reported(self):
+        # The other half of the control: removing real entries, including a
+        # classmethod and an exception, must surface exactly those names.
+        cut = ('.. automethod:: schwaby.streaming.StreamClient'
+               '.handle_message\n',
+               '.. automethod:: schwaby.orders.options.OptionSymbol'
+               '.parse_symbol\n',
+               '.. autoexception:: schwaby.streaming.UnexpectedResponseCode\n',
+               # Defined on an internal base class, which must not take it
+               # along: exempting that class hid it while the docs said to
+               # call it.
+               '.. automethod:: schwaby.client.Client.set_enforce_enums',
+               # Defined on a private base, _BaseFieldEnum, and public on
+               # every field enum; skipping private bases hid it.
+               '.. automethod:: schwaby.streaming::StreamClient'
+               '.LevelOneEquityFields.all_fields')
+        texts = self.doc_texts()
+        for line in cut:
+            self.assertTrue(any(line in t for t in texts), line)
+        mutated = []
+        for text in texts:
+            for line in cut:
+                text = text.replace(line, '')
+            mutated.append(text)
+
+        missing = self.missing(mutated)
+        # set_enforce_enums is reached through several classes that inherit
+        # it, and which one names it depends on the walk; the method is what
+        # matters, not the route to it.
+        inherited = [p for p in missing
+                     if p.endswith(('.set_enforce_enums', '.all_fields'))]
+        self.assertEqual(2, len(inherited), missing)
+        self.assertEqual(
+                ['schwaby.orders.options.OptionSymbol.parse_symbol',
+                 'schwaby.streaming.StreamClient.handle_message',
+                 'schwaby.streaming.UnexpectedResponseCode'],
+                [p for p in missing if p not in inherited])
+
+    @no_duplicates
+    def test_listing_a_class_does_not_exempt_its_members(self):
+        # The shape the exact rule exists for, since no documented public
+        # member of an internal class exists today: with OptionSymbol listed,
+        # its undocumented parse_symbol must still be reported.
+        cut = ('.. automethod:: schwaby.orders.options.OptionSymbol'
+               '.parse_symbol\n')
+        texts = [t.replace(cut, '') for t in self.doc_texts()]
+        with patch.dict(self.INTERNAL,
+                        {'schwaby.orders.options.OptionSymbol': 'test'}):
+            missing = self.missing(texts)
+        self.assertIn('schwaby.orders.options.OptionSymbol.parse_symbol',
+                      missing)
+
+    @no_duplicates
+    def test_a_sibling_package_is_not_ours(self):
+        sibling = type('Tool', (), {'__module__': 'schwabytools.x'})
+        own = type('Tool', (), {'__module__': 'schwaby.x'})
+        self.assertFalse(self.is_ours(sibling))
+        self.assertTrue(self.is_ours(own))
+
+    @no_duplicates
+    def test_every_module_is_walked_or_says_why_not(self):
+        import pkgutil
+        import schwaby
+        found = {'schwaby'} | {m.name for m in pkgutil.walk_packages(
+                schwaby.__path__, 'schwaby.')}
+        self.assertEqual(sorted(found),
+                         sorted(set(self.MODULES) | set(self.NOT_WALKED)))
+        # And the unwalked ones really do define nothing of their own, or
+        # "exported through" is a claim nothing checks.
+        for modname in self.NOT_WALKED:
+            mod = importlib.import_module(modname)
+            own = [name for name, obj in vars(mod).items()
+                   if not name.startswith('_')
+                   and (inspect.isclass(obj) or inspect.isfunction(obj))
+                   and obj.__module__ == modname]
+            exported = modname.rsplit('.', 1)[0]
+            if exported in self.MODULES:
+                reached = vars(importlib.import_module(exported)).values()
+                own = [n for n in own if getattr(mod, n) not in reached]
+            own = [n for n in own
+                   if '{}.{}'.format(modname, n) not in self.INTERNAL]
+            self.assertEqual([], own, modname)
+
+    @no_duplicates
+    def test_the_internal_list_is_current(self):
+        # An allowlist entry that has since been documented, or no longer
+        # exists, is a blind spot waiting for the next name to fall into it.
+        ids = self.documented_ids(self.doc_texts())
+        for name in self.INTERNAL:
+            obj = self.resolve(name)
+            self.assertIsNotNone(obj, '{} no longer exists'.format(name))
+            self.assertNotIn(id(obj), ids,
+                             '{} is documented now; drop it from INTERNAL'
+                             .format(name))
+
+
+class ApiIndexExtensionTest(unittest.TestCase):
+    """The `api-index` directive, built for real on a small project.
+
+    It generates a page nobody writes, so nothing else would notice it
+    listing the wrong thing: enum members one by one (the streaming field
+    enums would bury everything else), a method outside its class, a module
+    heading missing, or a link to an anchor on the wrong page. Every check
+    reads the index's own entries -- the internal links wrapping a literal --
+    because autodoc's signature lines on the same page contain the same
+    names, and a check against the whole page passed with the index broken.
+    """
+
+    @staticmethod
+    def build(pages):
+        # In a subprocess, not in-process. Sphinx registers its roles into
+        # docutils' global registry, and after that the plain-docutils parse
+        # DocBoldLiteralTest runs fails with "'Values' object has no
+        # attribute 'env'" -- only when this test happens to run first.
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, 'src')
+            os.mkdir(src)
+            with open(os.path.join(src, 'conf.py'), 'w') as f:
+                f.write(
+                    'import sys\n'
+                    'sys.path.insert(0, {!r})\n'
+                    'sys.path.insert(0, {!r})\n'
+                    "extensions = ['sphinx.ext.autodoc', 'api_index']\n"
+                    .format(REPO_ROOT,
+                            os.path.join(REPO_ROOT, 'docs', '_ext')))
+            for name, rst in pages.items():
+                with open(os.path.join(src, name + '.rst'), 'w') as f:
+                    f.write(rst)
+            out = os.path.join(tmp, 'out')
+            result = subprocess.run(
+                    [sys.executable, '-m', 'sphinx', '-q', '-b', 'html',
+                     src, out], capture_output=True, text=True)
+            if result.returncode != 0:
+                raise AssertionError('sphinx failed: ' + result.stderr[-2000:])
+            with open(os.path.join(out, 'index.html'), encoding='utf-8') as f:
+                return f.read()
+
+    PAGES = {
+        'index': (
+            'Page\n====\n\n'
+            '.. toctree::\n\n   other\n\n'
+            '.. autoclass:: schwaby.client.Client\n\n'
+            '.. automethod:: schwaby.client.Client.get_quote\n\n'
+            '.. autoclass:: schwaby.client.Client.Quote.Fields\n'
+            '  :members:\n  :undoc-members:\n\n'
+            '.. autoclass:: schwaby.client.Client.Account.Fields\n'
+            '  :members:\n  :undoc-members:\n\n'
+            '.. api-index::\n'),
+        'other': (
+            'Other\n=====\n\n'
+            '.. automethod:: schwaby.client.Client.get_quotes\n'),
+    }
+
+    @staticmethod
+    def index_region(page):
+        """The index's own list, which begins at its first module heading."""
+        start = page.index('<li><p><code class="docutils literal notranslate">'
+                           '<span class="pre">schwaby.client</span>')
+        return page[start:]
+
+    @staticmethod
+    def entries(region):
+        return {re.sub(r'<[^>]+>', '', m.group(2)): m.group(1)
+                for m in re.finditer(
+                    r'<a class="reference internal" href="([^"]+)">'
+                    r'(<code.*?</code>)</a>', region)}
+
+    @no_duplicates
+    def test_the_index_lists_classes_callables_and_enum_counts(self):
+        page = self.build(self.PAGES)
+        region = self.index_region(page)
+        entries = self.entries(region)
+        text = re.sub(r'<[^>]+>', '', region)
+
+        # Positive control: the method is listed, as a callable, linked to
+        # its own anchor on this page.
+        self.assertEqual('#schwaby.client.Client.get_quote',
+                         entries.get('Client.get_quote()'))
+        # One on another page links there, not here.
+        self.assertEqual('other.html#schwaby.client.Client.get_quotes',
+                         entries.get('Client.get_quotes()'))
+        # The enum is listed once, with its count, and none of its members;
+        # a count of one is singular.
+        self.assertIn('Client.Quote.Fields', entries)
+        self.assertIn('Client.Quote.Fields (5 members)', text)
+        self.assertIn('Client.Account.Fields (1 member)', text)
+        self.assertEqual([], [e for e in entries if '.QUOTE' in e])
+
+    @no_duplicates
+    def test_an_incremental_build_updates_the_index(self):
+        # The index depends on every page, which Sphinx does not know, so
+        # without a re-read it keeps the list from the first build. The index
+        # sits on a page of its own, as docs/api.rst does: a page holding the
+        # toctree is rewritten whenever a child changes anyway, so putting it
+        # there tests nothing.
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = os.path.join(tmp, 'src'), os.path.join(tmp, 'out')
+            os.mkdir(src)
+            with open(os.path.join(src, 'conf.py'), 'w') as f:
+                f.write('import sys\nsys.path.insert(0, {!r})\n'
+                        'sys.path.insert(0, {!r})\n'
+                        "extensions = ['sphinx.ext.autodoc', 'api_index']\n"
+                        .format(REPO_ROOT,
+                                os.path.join(REPO_ROOT, 'docs', '_ext')))
+            pages = {'index': 'I\n=\n\n.. toctree::\n\n   api\n   other\n',
+                     'api': 'A\n=\n\n.. api-index::\n',
+                     'other': 'O\n=\n\n.. automethod:: '
+                              'schwaby.client.Client.get_quote\n'}
+
+            written = {}
+
+            def build():
+                # Only pages whose text changed are written. Rewriting all of
+                # them touched the index page too, so Sphinx re-read it anyway
+                # and the test passed with the fix removed. A changed page is
+                # dated forward, so this does not rest on the clock ticking
+                # between the two builds.
+                for name, rst in pages.items():
+                    if written.get(name) == rst:
+                        continue
+                    path = os.path.join(src, name + '.rst')
+                    with open(path, 'w') as f:
+                        f.write(rst)
+                    if name in written:
+                        later = os.path.getmtime(path) + 10
+                        os.utime(path, (later, later))
+                    written[name] = rst
+                done = subprocess.run(
+                        [sys.executable, '-m', 'sphinx', '-q', '-b', 'html',
+                         src, out], capture_output=True, text=True)
+                self.assertEqual(0, done.returncode, done.stderr[-2000:])
+                with open(os.path.join(out, 'api.html'),
+                          encoding='utf-8') as f:
+                    return f.read()
+
+            first = build()
+            # Positive control: the first build lists what is there.
+            self.assertIn('Client.get_quote()', first)
+            self.assertNotIn('Client.get_quotes()', first)
+            pages['other'] += ('\n.. automethod:: '
+                               'schwaby.client.Client.get_quotes\n')
+            self.assertIn('Client.get_quotes()', build())
+
+    @no_duplicates
+    def test_members_are_nested_under_their_class(self):
+        region = self.index_region(self.build(self.PAGES))
+        # The list directly under the Client entry.
+        m = re.search(r'<span class="pre">Client</span></code></a></p>\s*'
+                      r'<ul[^>]*>(.*?)</ul>', region, re.S)
+        self.assertIsNotNone(m, 'Client has no nested list')
+        nested = self.entries(m.group(1))
+        self.assertIn('Client.get_quote()', nested)
+        # Client.Quote is not documented, so its Fields hangs off Client.
+        self.assertIn('Client.Quote.Fields', nested)
 
 
 class DocBoldLiteralTest(unittest.TestCase):
