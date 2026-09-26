@@ -209,6 +209,9 @@ learn more, courtesy of the Securites and Exchange Commission:
  * `Investor Bulletin: An Introduction to Options
    <https://www.sec.gov/oiea/investor-alerts-bulletins/ib_introductionoptions.html>`__
 
+.. autoclass:: schwaby.orders.generic.OrderBuilder
+.. automethod:: schwaby.orders.generic.OrderBuilder.build
+
 
 +++++++++++
 Order Types
@@ -592,6 +595,21 @@ Trades can contain special instructions which handle some edge cases:
 .. automethod:: schwaby.orders.generic.OrderBuilder.clear_special_instruction
 
 
++++++++++++++++
+Tax Lot Method
++++++++++++++++
+
+A closing order can say which lots it sells, which decides the gain it
+realises. Leave it unset and the order carries no ``taxLotMethod``; what Schwab
+then applies has not been measured here.
+
+.. autoclass:: schwaby.orders.common::TaxLotMethod
+  :members:
+  :undoc-members:
+.. automethod:: schwaby.orders.generic.OrderBuilder.set_tax_lot_method
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_tax_lot_method
+
+
 ++++++++++++++++++++++++++
 Complex Options Strategies
 ++++++++++++++++++++++++++
@@ -645,6 +663,8 @@ create them yourself, you can specify these composite order strategies like so:
   :undoc-members:
 .. automethod:: schwaby.orders.generic.OrderBuilder.set_order_strategy_type
 .. automethod:: schwaby.orders.generic.OrderBuilder.clear_order_strategy_type
+.. automethod:: schwaby.orders.generic.OrderBuilder.add_child_order_strategy
+.. automethod:: schwaby.orders.generic.OrderBuilder.clear_child_order_strategies
 
 
 +++++++++++++++++++

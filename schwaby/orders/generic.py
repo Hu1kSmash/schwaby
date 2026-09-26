@@ -743,7 +743,8 @@ class OrderBuilder(EnumEnforcer):
 
     def clear_tax_lot_method(self):
         '''
-        Clear the tax lot selection method, leaving the account default.
+        Clear the tax lot selection method. The order then carries no
+        ``taxLotMethod``, and what Schwab applies then has not been measured.
         '''
         self._taxLotMethod = None
         return self
@@ -786,6 +787,23 @@ class OrderBuilder(EnumEnforcer):
 
     # ChildOrderStrategies
     def add_child_order_strategy(self, child_order_strategy):
+        '''
+        Attach an order that Schwab handles relative to this one.
+
+        What "relative" means is this order's strategy type, set with
+        :meth:`set_order_strategy_type`: under ``TRIGGER`` this order's
+        execution places the child, and under ``OCO`` the execution of one
+        child cancels the others --- the wording of
+        :class:`~schwaby.orders.common.OrderStrategyType`, which says nothing
+        about partial fills, and neither is measured here.
+        :func:`~schwaby.orders.common.first_triggers_second` and
+        :func:`~schwaby.orders.common.one_cancels_other` build both halves,
+        and are usually what you want.
+
+        :param child_order_strategy: an :class:`OrderBuilder` or an order
+                                     dict. The response from placing an order
+                                     is refused, since it is not an order.
+        '''
         if _is_instance(child_order_strategy, httpx2.Response):
             raise ValueError(
                     'Child order cannot be a response. See here for '
@@ -803,6 +821,10 @@ class OrderBuilder(EnumEnforcer):
         return self
 
     def clear_child_order_strategies(self):
+        '''
+        Remove every child order attached with
+        :meth:`add_child_order_strategy`.
+        '''
         self._childOrderStrategies = None
         return self
 
@@ -888,4 +910,10 @@ class OrderBuilder(EnumEnforcer):
     # Build
 
     def build(self):
+        '''
+        The order as the dict Schwab's API takes, which is what
+        :meth:`~schwaby.client.Client.place_order` sends when given a
+        builder. A field that was never set, or was cleared, is absent rather
+        than null, and child orders are built recursively.
+        '''
         return _build_object(self)

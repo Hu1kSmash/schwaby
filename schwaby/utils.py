@@ -86,6 +86,12 @@ class EnumEnforcer:
         return values
 
     def set_enforce_enums(self, enforce_enums):
+        '''
+        Turn enum checking on or off after construction. With it off, a raw
+        value is passed through where a member of the matching enum is
+        expected, so a value the enum does not list reaches Schwab rather
+        than raising here.
+        '''
         self.enforce_enums = enforce_enums
 
 
@@ -189,7 +195,8 @@ class SchwabError(Exception):
 class UnsuccessfulOrderException(SchwabError, ValueError):
     '''
     Raised by :meth:`Utils.extract_order_id` when attempting to extract an
-    order ID from a :meth:`Client.place_order` response that was not successful.
+    order ID from a :meth:`Client.place_order()
+    <schwaby.client.Client.place_order>` response that was not successful.
 
     The rejected response is on the exception as ``.response``, and Schwab's own
     explanation is in the message when there was one. Schwab types an error body
@@ -211,7 +218,8 @@ class OrderIdNotFoundError(SchwabError):
     **The order may be live.** Schwab returned a success status, so the order
     was very likely placed; what is missing is the handle you would use to
     watch or cancel it. Treat this as "go and look", not as "nothing
-    happened" --- :meth:`Client.get_orders_for_account` over a recent time
+    happened" --- :meth:`Client.get_orders_for_account()
+    <schwaby.client.Client.get_orders_for_account>` over a recent time
     window will find it.
 
     ``.response`` is the ``place_order`` response. ``.location`` is the raw

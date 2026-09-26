@@ -24,7 +24,9 @@ class OptionInstrument(__BaseInstrument):
 
 
 class InvalidOrderException(SchwabError):
-    '''Raised when attempting to build an incomplete order'''
+    '''Nothing in this library raises this. It is kept because code written
+    against it would break on its removal; an incomplete order is not
+    refused when built, so check the order before placing it.'''
     pass
 
 
@@ -296,6 +298,13 @@ class PriceLinkType(Enum):
 
 
 class TaxLotMethod(Enum):
+    '''
+    Which lots a closing order sells, and so which gains it realises: FIFO
+    and LIFO close the same position at different cost bases. Set with
+    :meth:`~schwaby.orders.generic.OrderBuilder.set_tax_lot_method`. These are
+    the seven values Schwab's order schema lists for ``taxLotMethod``, which
+    describes none of them; none has been tried against a live order here.
+    '''
     FIFO = 'FIFO'
     LIFO = 'LIFO'
     HIGH_COST = 'HIGH_COST'

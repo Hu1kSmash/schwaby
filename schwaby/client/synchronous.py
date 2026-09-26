@@ -6,6 +6,12 @@ import json
 
 
 class Client(BaseClient):
+    '''
+    The HTTP client: one method per endpoint Schwab publishes, each returning
+    the raw ``httpx2`` response. Make one with :ref:`the auth functions
+    <auth>` rather than directly, since they manage the token.
+    :class:`AsyncClient` is the same client for ``asyncio``.
+    '''
 
     def close_session(self):
         '''Closes the underlying HTTP session and the connections it is
@@ -16,8 +22,9 @@ class Client(BaseClient):
         are released whenever the session is garbage collected, which is not a
         moment anything guarantees.
 
-        The client cannot be used after this. :meth:`AsyncClient
-        .close_async_session` is the equivalent for the asyncio client.
+        The client cannot be used after this.
+        :meth:`AsyncClient.close_async_session` is the equivalent for the
+        asyncio client.
         '''
         self.session.close()
 

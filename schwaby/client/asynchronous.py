@@ -6,8 +6,16 @@ import json
 
 
 class AsyncClient(BaseClient):
+    '''
+    :class:`Client` for ``asyncio``: the same methods, each a coroutine to be
+    awaited. Made by the auth functions when given ``asyncio=True``.
+    '''
 
     async def close_async_session(self):
+        '''Closes the underlying HTTP session and the connections it is
+        holding. The ``asyncio`` counterpart of
+        :meth:`Client.close_session`; the client cannot be used after it.
+        '''
         await self.session.aclose()
 
     async def _get_request(self, path, params):

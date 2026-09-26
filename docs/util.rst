@@ -240,13 +240,14 @@ handle the failed call could not give you.
 Exceptions
 ++++++++++
 
-The exceptions this library raises that a caller might reasonably catch.
+The exceptions this library defines that a caller might reasonably meet.
+Most are raised; the two that are not are noted where each is described.
 :class:`~schwaby.streaming.ResponseTimeoutError`,
 :class:`~schwaby.streaming.UnexpectedResponse`,
 :class:`~schwaby.streaming.UnexpectedResponseCode`,
 :class:`~schwaby.streaming.UnparsableMessage` and
 :class:`~schwaby.streaming.UnusableMessage` are streaming-specific and are
-covered in :ref:`the streaming documentation <error_handlers>`.
+described with :ref:`the streaming exceptions <streaming_exceptions>`.
 
 Every exception class this library *defines* inherits
 :class:`~schwaby.utils.SchwabError`, so ``except SchwabError`` is one name for

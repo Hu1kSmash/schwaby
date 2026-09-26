@@ -38,6 +38,8 @@ this will likely cause issues with the underlying OAuth2 session management**
 Note that we create a new client using the ``auth`` package as described in
 :ref:`auth`. Creating a client directly is possible, but not recommended.
 
+.. autoclass:: schwaby.client.Client
+
 +++++++++++++++++++
 Asyncio Support
 +++++++++++++++++++
@@ -82,6 +84,10 @@ created repeatedly, where the connections would otherwise be released only
 whenever the session happens to be garbage collected. A client cannot be used
 after being closed.
 
+.. autoclass:: schwaby.client.AsyncClient
+.. automethod:: schwaby.client.Client.close_session
+.. automethod:: schwaby.client.AsyncClient.close_async_session
+
 +++++++++++++++++++
 Calling Conventions
 +++++++++++++++++++
@@ -98,9 +104,12 @@ caused by accidentally passing an unrecognized value.
 
 By default, passing values other than the required enums will raise a
 ``ValueError``. If you believe the API accepts a value that isn't supported
-here, you can use ``set_enforce_enums`` to disable this behavior at your own
+here, you can use :meth:`set_enforce_enums
+<schwaby.client.Client.set_enforce_enums>` to disable this behavior at your own
 risk. If you *do* find a supported value that isn't listed here, please open an
 issue describing it or submit a PR adding the new functionality.
+
+.. automethod:: schwaby.client.Client.set_enforce_enums
 
 
 ++++++++++++++++++++++
@@ -378,6 +387,9 @@ Current Quotes
    account requests were not seen to return one does not mean they, or any
    other call, cannot.
 
+.. autoclass:: schwaby.client.Client.Quote.Fields
+  :members:
+  :undoc-members:
 .. automethod:: schwaby.client.Client.get_quote
 .. automethod:: schwaby.client.Client.get_quotes
 

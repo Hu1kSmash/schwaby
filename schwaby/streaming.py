@@ -26,6 +26,9 @@ class StreamJsonDecoder(ABC):
 
 
 class NaiveJsonStreamDecoder(StreamJsonDecoder):
+    '''The decoder a :class:`StreamClient` uses unless given another:
+    ``json.loads``, and nothing more. See
+    :meth:`StreamClient.set_json_decoder`.'''
     def decode_json_string(self, raw):
         return json.loads(raw)
 
@@ -37,6 +40,13 @@ def get_logger():
 class _BaseFieldEnum(Enum):
     @classmethod
     def all_fields(cls):
+        '''
+        Every member of this field enum, in order: what a subscribe sends
+        when no ``fields`` are given. Passed to one of the level one
+        ``*_view`` methods it asks for every field again; whether that
+        restores them is not established for the form those methods send.
+        See :ref:`the note on VIEW <level_one_view>`.
+        '''
         return list(cls)
 
     @classmethod
@@ -365,12 +375,34 @@ def _report_unknown_message_type(name):
 
 
 class UnexpectedResponse(SchwabError):
+    '''A response that does not answer the request it arrived for.
+
+    Raised by a request -- a login, subscribe or logout -- when its answer
+    names a service or command other than the one sent, carries a request id
+    higher than any this client has issued, or has a request id but cannot
+    otherwise be read.
+    ``response`` holds the frame, and the message says which. An answer to an
+    *earlier* request is not this: it is set aside as a late answer, and one
+    with no readable request id at all leaves the request to time out. Compare
+    :class:`UnexpectedResponseCode`, which is a well-formed answer that
+    refused.
+    '''
     def __init__(self, response, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.response = response
 
 
 class UnexpectedResponseCode(SchwabError):
+    '''Schwab refused a request.
+
+    Raised when the answer to a request carries a code outside the ones Schwab
+    documents as success, and passed to
+    :meth:`StreamClient.add_error_handler` instead when the refusal answers a
+    request that had already been abandoned, since nothing is left waiting to
+    raise it to. ``response`` holds the frame, and the message carries
+    Schwab's code and its own text, which is usually the part worth reading
+    -- a screener subscription past its key limit, for one, says so there.
+    '''
     def __init__(self, response, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.response = response
@@ -589,6 +621,28 @@ def _is_sequence(obj):
 
 
 class StreamClient(EnumEnforcer):
+    '''
+    A connection to Schwab's streaming API. Log in with :meth:`login`,
+    subscribe, register handlers, then call :meth:`handle_message` in a loop.
+
+    Schwab allows one streaming connection per user, so logging in here
+    disconnects any other stream on the same login, wherever it is running.
+    Streaming for a different brokerage account does not avoid it. See
+    :ref:`the warning on this <one_stream_per_user>`.
+
+    :param client: an authenticated :class:`~schwaby.client.Client` or
+                   :class:`~schwaby.client.AsyncClient`. The stream uses it at
+                   login, to fetch the streamer's address and credentials, and
+                   authenticates with its access token.
+    :param enforce_enums: refuse field arguments that are not members of the
+                          matching field enum. On by default.
+    :param ssl_context: an :class:`ssl.SSLContext` for the websocket
+                        connection, if the default will not do.
+    :param response_timeout: seconds to wait for the server to answer a
+                             request before raising
+                             :class:`ResponseTimeoutError`. ``None`` waits
+                             indefinitely.
+    '''
 
     #: Seconds to wait for the streaming server to respond to a request before
     #: giving up. A request which is never answered would otherwise wait
@@ -1962,6 +2016,23 @@ class StreamClient(EnumEnforcer):
                 task.add_done_callback(self._on_handler_task_done)
 
     async def handle_message(self):
+        '''
+        Read one message and dispatch it to the handlers registered for it.
+
+        Call it in a loop once logged in and subscribed. A response to a
+        request that is in flight goes to the request waiting for it rather
+        than being dispatched, so this keeps reading until it has a message to
+        dispatch. A message no handler is registered for is ignored.
+
+        A handler that raises an ``Exception`` does not stop the others or
+        escape from here; see :ref:`error_handlers` for how to hear about it.
+        What does escape: a failure of the connection itself;
+        :class:`UnparsableMessage` for a frame that is not JSON; a
+        ``ValueError`` if called before :meth:`login`; whatever a custom
+        decoder raises other than ``ValueError`` or ``RecursionError``, which
+        become :class:`UnparsableMessage`; and a ``BaseException``, such as a
+        cancellation, from a synchronous handler or an error handler.
+        '''
         # Read until something arrives which is actually ours. A response to a
         # request that is in flight is routed to whoever is waiting for it and
         # is not a message to be handled, so keep reading in that case rather

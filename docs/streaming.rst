@@ -109,6 +109,7 @@ to
 perform operations that require login before this function is called raises an
 exception.
 
+.. autoclass:: schwaby.streaming.StreamClient
 .. automethod:: schwaby.streaming.StreamClient.login
 
 Requests to the streaming server -- logging in, subscribing, logging out -- give
@@ -136,8 +137,9 @@ This sends a logout request and then closes the connection.
 .. automethod:: schwaby.streaming.StreamClient.logout
 
 If the connection has already failed, or you are tearing a client down without
-ceremony, :meth:`close` skips the logout and just closes the socket. It is safe
-to call more than once, and safe on a client which was never logged in.
+ceremony, :meth:`close <schwaby.streaming.StreamClient.close>` skips the logout
+and just closes the socket. It is safe to call more than once, and safe on a
+client which was never logged in.
 
 .. automethod:: schwaby.streaming.StreamClient.close
 
@@ -250,11 +252,14 @@ message and dispatches it to the appropriate handler or handlers.
 If a message is received for which no handler is registered, that message is
 ignored.
 
-A handler which raises does not stop the others from seeing the message, and
-does not propagate out of ``handle_message()`` into your receive loop, where it
-would be indistinguishable from the connection failing. The failure is reported
-on the ``schwaby.streaming`` logger instead, with the service name attached. This
-applies equally to synchronous and coroutine handlers.
+.. automethod:: schwaby.streaming.StreamClient.handle_message
+
+A handler which raises an ``Exception`` does not stop the others from seeing
+the message, and does not propagate out of ``handle_message()`` into your
+receive loop, where it would be indistinguishable from the connection failing.
+The failure is reported on the ``schwaby.streaming`` logger instead, with the
+service name attached. This applies equally to synchronous and coroutine
+handlers.
 
 That is worth knowing when debugging: **a handler which is quietly failing shows
 up in the logs and nowhere else** -- unless you ask for it. See
@@ -435,6 +440,30 @@ knowing:
 
 .. automethod:: schwaby.streaming.StreamClient.add_error_handler
 
+.. _streaming_exceptions:
+
+~~~~~~~~~~~~~~~~~~~~
+Streaming exceptions
+~~~~~~~~~~~~~~~~~~~~
+
+The exceptions a stream raises, and the ones it hands to
+:meth:`~schwaby.streaming.StreamClient.add_error_handler` instead. The first
+three are raised by a request --- a login, a subscribe, a logout ---
+and :class:`~schwaby.streaming.UnexpectedResponseCode` also reaches the error
+handler when Schwab refuses a request that had already been abandoned.
+:class:`~schwaby.streaming.UnparsableMessage` is raised by
+:meth:`~schwaby.streaming.StreamClient.handle_message`, or by the request
+waiting when the frame arrived, *and* reported.
+:class:`~schwaby.streaming.UnusableMessage` is never raised: it is only
+reported, so an ``except`` clause for it never runs. Every one inherits
+:class:`~schwaby.utils.SchwabError`.
+
+.. autoexception:: schwaby.streaming.ResponseTimeoutError
+.. autoexception:: schwaby.streaming.UnexpectedResponse
+.. autoexception:: schwaby.streaming.UnexpectedResponseCode
+.. autoexception:: schwaby.streaming.UnparsableMessage
+.. autoexception:: schwaby.streaming.UnusableMessage
+
 .. _data_field_relabeling:
 
 ---------------------
@@ -521,7 +550,10 @@ Some streams let you ask for a subset of the fields. The five
 enums as an extra ``fields`` argument; omit it and every supported field is
 requested. No other service accepts one. To change the fields of a
 subscription that is already running, rather than at subscribe time, see
-:ref:`the note on VIEW <level_one_view>`.
+:ref:`the note on VIEW <level_one_view>`. Every field enum has an
+``all_fields()``:
+
+.. automethod:: schwaby.streaming::StreamClient.LevelOneEquityFields.all_fields
 
 
 ---------------
@@ -2039,6 +2071,8 @@ handlers are given the frame afterwards. A generator will not serve.
 
 .. autoclass:: schwaby.contrib.util.StreamJsonDecoder
   :members:
+
+.. autoclass:: schwaby.streaming.NaiveJsonStreamDecoder
 
 .. autoclass:: schwaby.contrib.util.HeuristicJsonDecoder
   :members:

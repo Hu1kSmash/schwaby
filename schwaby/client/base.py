@@ -774,7 +774,9 @@ class BaseClient(EnumEnforcer):
 
         :param symbol: Single symbol to fetch
         :param fields: Fields to request. If unset, return all available data. 
-                       i.e. all fields. See :class:`GetQuote.Field` for options.
+                       i.e. all fields. See
+                       :class:`Client.Quote.Fields
+                       <schwaby.client.Client.Quote.Fields>` for options.
         '''
         fields = self.convert_enum_iterable(fields, self.Quote.Fields)
         if fields:
@@ -791,7 +793,9 @@ class BaseClient(EnumEnforcer):
 
         :param symbols: Iterable of symbols to fetch.
         :param fields: Fields to request. If unset, return all available data. 
-                       i.e. all fields. See :class:`GetQuote.Field` for options.
+                       i.e. all fields. See
+                       :class:`Client.Quote.Fields
+                       <schwaby.client.Client.Quote.Fields>` for options.
         '''
         if _is_instance(symbols, str):
             symbols = [symbols]
