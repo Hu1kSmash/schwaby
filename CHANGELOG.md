@@ -22,6 +22,57 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 5.0.1
+
+*2026-09-26*
+
+Documentation, the documentation build, and tests. With docstrings stripped,
+the library's parsed trees are identical to 5.0.0's, `version.py` aside;
+nothing public is added, removed or renamed. The one packaging change is to the
+`dev` extra, which now lists `sphinx` itself.
+
+- **An API index page.** Every class, function and method the documentation
+  covers, on one page, grouped by module and class and linked to where each is
+  described. It is generated when the documentation is built rather than
+  written, so it cannot fall behind the pages. Enum members are counted rather
+  than listed, since the streaming field enums alone hold hundreds.
+- **Public names that had no documentation entry now have one**, several of
+  which the pages already referred to by name: `StreamClient` itself, and so
+  its constructor arguments; `StreamClient.handle_message`; all five streaming
+  exceptions; `Client` and `AsyncClient`; `Client.Quote.Fields`;
+  `set_enforce_enums`, which the client page told readers to call;
+  `all_fields()`; and `OrderBuilder` itself, `build()`, the child-order methods
+  that OCO and trigger orders are made of, and the tax-lot setters with
+  `TaxLotMethod`. A test now fails on any public class or callable with no
+  entry, unless it is listed as internal with the reason.
+- **Cross-references that resolved to nothing are fixed, and the build now
+  fails on the next one.** An unresolved reference renders as plain text and
+  Sphinx says nothing, so 71 had accumulated --- 50 of them to `OrderBuilder`,
+  and two to `GetQuote.Field`, a class that does not exist.
+- **The streaming warning said one session per account. It is one per Schwab
+  user.** Schwab's response code 12 says so, and streams for two different
+  brokerage accounts were measured bumping each other off, which a limit per
+  account cannot produce. So a second brokerage account is not a way around
+  it, and by Schwab's wording neither is a second app registration --- that
+  part rests on the text rather than a measurement.
+- **The streaming exceptions section says which are raised and which only
+  reach `add_error_handler`.** `UnusableMessage` is never raised, so an
+  `except UnusableMessage` around `handle_message` never runs.
+  `InvalidOrderException` said it was raised when building an incomplete order;
+  nothing raises it.
+- **Nothing here says more than was measured.** The docstrings are read from
+  the code, and where the behaviour at Schwab is unknown they say so: what
+  applies when no tax lot method is set, whether passing `all_fields()` to a
+  view restores every field, and what a child order does on a partial fill.
+
+### Corrections to earlier entries
+
+The 5.0.0 and 3.0.3 entries are corrected in place, and each correction says
+so. 5.0.0 called its book measurement "during market hours" when every frame
+arrived before the open, and said a stale quote was still arriving "when the
+capture ended" when the capture ran an hour longer. 3.0.3 said one streaming
+session per account.
+
 ## 5.0.0
 
 *2026-09-17*
@@ -29,10 +80,12 @@ untrue when it was written, it gets corrected and the correction says so.
 One rename, and it is breaking. One documentation fix rides along.
 
 - **The level two book's per-exchange `SEQUENCE` is now `QUOTE_TIME`.** It
-  never held a sequence number. Measured against a live account during market
-  hours: all 8,904 per-exchange entries on `NASDAQ_BOOK` and `NYSE_BOOK`
+  never held a sequence number. Measured against a live account before the
+  open: all 8,904 per-exchange entries on `NASDAQ_BOOK` and `NYSE_BOOK`
   carried a value from inside the hour before their frame arrived, a median of
-  one to two minutes. Schwab's own field table agrees, calling index 2 the
+  one to two minutes. *(corrected in 5.0.1: this said "during market hours".
+  Every book frame in the capture arrived between 07:20 and 07:29 Eastern,
+  before the open.)* Schwab's own field table agrees, calling index 2 the
   quote time for this market maker's quote; only this library's reading of the
   number was wrong.
 
@@ -58,8 +111,10 @@ One rename, and it is breaking. One documentation fix rides along.
   the streaming page say what it is, how to turn it into an instant, that it
   was measured in September so daylight saving is unestablished, and that it
   is **not a freshness signal**: one participant's quote was still being
-  re-sent half an hour after it was made, and was still arriving when the
-  capture ended, so nothing bounds how stale one can be. `OPTIONS_BOOK` shares
+  re-sent half an hour after it was made, and was still arriving in the last
+  frame before the subscription was dropped, so nothing bounds how stale one
+  can be. *(corrected in 5.0.1: this said "when the capture ended"; the
+  capture ran an hour longer, on other services.)* `OPTIONS_BOOK` shares
   the same two field tables and delivered no per-exchange entries when tried,
   so none of that was measured there.
 
@@ -1633,8 +1688,12 @@ means "not in this snapshot" rather than "removed".
 
 **One streaming session per account, and a second does not fail cleanly.** It
 takes the connection from the first, and if both reconnect they bump each other
-indefinitely. Nothing in the protocol names the intruder. A bumped stream still
-delivers some messages, so it has to be treated as a stop rather than a warning.
+indefinitely. *(corrected in 5.0.1: the limit is per Schwab user, not per
+account. Schwab's response code 12 says so, and streams for two different
+brokerage accounts were measured bumping each other off, which a limit per
+account cannot produce --- so a second account is not a way around it.)*
+Nothing in the protocol names the intruder. A bumped stream still delivers some
+messages, so it has to be treated as a stop rather than a warning.
 
 Push cadence, the immediate frame on subscribe, and the equivalence between
 stream frequency 0 and the REST endpoint are recorded with their sample size —
