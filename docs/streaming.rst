@@ -50,14 +50,24 @@ run this outside regular trading hours you may not see anything):
 
   asyncio.run(read_stream())
 
+.. _one_stream_per_user:
+
 .. warning::
 
-  **One streaming session per account, and a second one does not fail
-  cleanly.** Schwab permits a single stream per set of credentials. Logging in
-  a second time does not raise and does not queue --- it takes the connection
-  away from the first. If both sides then reconnect, which any sensible
-  supervisor will, the two sessions bump each other indefinitely and each sees
-  a feed that keeps dying for no local reason.
+  **One streaming session per Schwab user, and a second one does not fail
+  cleanly.** Schwab's response code 12 reads "A limit of 1 Streamer connection
+  at any given time from a given user is available". Logging in a second time
+  does not raise and does not queue --- it takes the connection away from the
+  first. If both sides then reconnect, which any sensible supervisor will, the
+  two sessions bump each other indefinitely and each sees a feed that keeps
+  dying for no local reason.
+
+  **A second brokerage account is not a way around it.** Streams for two
+  different brokerage accounts were measured bumping each other off, each drop
+  a clean ``ConnectionClosedOK: 1000`` every few seconds, which a limit per
+  account cannot produce. A second app registration is not one either, by the
+  wording above, which names the user rather than the credentials; that part
+  rests on Schwab's text rather than a measurement.
 
   This is easy to hit by accident: a research script, a notebook left open, a
   second machine, or a supervised process that restarted while an older one
