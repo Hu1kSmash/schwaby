@@ -62,3 +62,17 @@ add_module_names = True
 master_doc = 'index'
 
 autodoc_member_order = 'bysource'
+
+# Every cross-reference must resolve. Without this an unresolved one renders as
+# plain text and sphinx says nothing, which is how 71 of them accumulated
+# unnoticed -- among them every link to the streaming exceptions and to
+# OrderBuilder itself, neither of which had an entry, and a link to a class
+# that does not exist. -W turns each into a build failure. The standard library
+# is not linked (there is no intersphinx), so those names are listed rather
+# than resolved.
+nitpicky = True
+nitpick_ignore = [
+    ('py:class', 'collections.namedtuple'),
+    ('py:class', 'decimal.Decimal'),
+    ('py:class', 'ssl.SSLContext'),
+]

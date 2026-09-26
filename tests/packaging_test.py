@@ -16,6 +16,7 @@ import importlib
 import inspect
 import os
 import re
+import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -633,6 +634,54 @@ class DocsConfigTest(unittest.TestCase):
 
         self.assertIn('Alex Golec', namespace['author'])
         self.assertIn('Alex Golec', namespace['copyright'])
+
+    @no_duplicates
+    def test_an_unresolved_cross_reference_fails_the_build(self):
+        # Without nitpicky an unresolved reference renders as plain text and
+        # sphinx says nothing, which is how 71 accumulated. CI builds with -W,
+        # so this setting is what turns each into a failure; nothing else in
+        # the suite reads it.
+        namespace = {'__file__': os.path.join(REPO_ROOT, 'docs', 'conf.py')}
+        with in_repo_root():
+            with open(namespace['__file__']) as f:
+                exec(compile(f.read(), 'conf.py', 'exec'), namespace)
+
+        self.assertIs(True, namespace['nitpicky'])
+        # Only the standard library may be excused, since there is no
+        # intersphinx to resolve it; a name of ours in this list would be a
+        # broken link let through.
+        self.assertEqual([], self.not_standard_library(
+                namespace['nitpick_ignore']))
+        # A regex form would bypass the check above entirely.
+        self.assertEqual([], namespace.get('nitpick_ignore_regex', []))
+
+    @staticmethod
+    def not_standard_library(ignored):
+        # Enumerated by what is allowed rather than what was seen: an
+        # unqualified `StreamClient` would pass a check for a `schwaby.`
+        # prefix, and hide a broken link just the same.
+        bad = []
+        for kind, target in ignored:
+            module, _, name = target.rpartition('.')
+            try:
+                ok = (module.split('.')[0] in sys.stdlib_module_names
+                      and hasattr(importlib.import_module(module), name))
+            except ImportError:
+                ok = False
+            if not ok:
+                bad.append(target)
+        return bad
+
+    @no_duplicates
+    def test_the_ignore_check_refuses_names_of_ours(self):
+        # The shapes the check exists for, since the real list holds none.
+        self.assertEqual(
+                ['StreamClient', 'schwaby.client.Client', 'decimal.NoSuch'],
+                self.not_standard_library([
+                    ('py:class', 'StreamClient'),
+                    ('py:class', 'schwaby.client.Client'),
+                    ('py:class', 'decimal.NoSuch'),
+                    ('py:class', 'decimal.Decimal')]))
 
 
 class ScreenerVocabularyTest(unittest.TestCase):
