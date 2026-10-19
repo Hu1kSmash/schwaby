@@ -1,15 +1,16 @@
 import collections.abc
 import decimal
 import json
-import logging
 import re
 import unicodedata
+from schwaby import _redact
 from schwaby.streaming import StreamJsonDecoder
 from schwaby.utils import SchwabError
 
 
 def get_logger():
-    return logging.getLogger(__name__)
+    return _redact.get_logger(__name__)
+
 
 
 class HeuristicJsonDecoder(StreamJsonDecoder):
@@ -228,7 +229,7 @@ def _safe_key(key):
         text = '<{} that cannot be named>'.format(_type_name(key))
     # A plain `str`: `str()` hands back a subclass untouched when `__str__`
     # returns one, and its own `len`, `hash` and slicing would run next.
-    text = str.__str__(text)
+    text = _redact.before_cut(str.__str__(text), 64)
     return text if len(text) <= 64 else text[:61] + '...'
 
 
@@ -255,7 +256,9 @@ def _safe_repr(value):
     # `__repr__` nor a class name need -- a mapping type or a str subclass
     # from a custom decoder supplies both -- and every refusal ends with this
     # text, so either could forge a line. Cut, escaped, and cut again, since
-    # escaping one character can take ten.
+    # escaping one character can take ten. Redacted before any cut, so a
+    # secret across the cut leaves nothing.
+    text = _redact.before_cut(text, 200)
     if len(text) > 200:
         text = text[:197] + '...'
     if not text.isprintable():

@@ -23,6 +23,7 @@ import urllib.parse
 import warnings
 import webbrowser
 
+from schwaby import _redact
 from schwaby.client import AsyncClient, Client
 from schwaby.utils import (LoginExchangeError, SchwabError,
         _expiry_authlib_acts_on, _is_instance, _refusal_text, _venue_text)
@@ -33,7 +34,8 @@ TOKEN_ENDPOINT = 'https://api.schwabapi.com/v1/oauth/token'
 
 
 def get_logger():
-    return logging.getLogger(__name__)
+    return _redact.get_logger(__name__)
+
 
 
 # The token grants full access to the account it was issued for, so it is
@@ -440,6 +442,14 @@ def __normalize_credential(value, name):
     if not _is_instance(value, str):
         return value
 
+    # Never logged, from here on. Every flow that makes a client passes the
+    # app key and secret through here; client_from_received_url, which takes
+    # them as they are, registers them itself.
+    label = {'api_key': 'APP_KEY', 'app_secret': 'APP_SECRET'}.get(
+            name, name.upper())
+    _redact.register(value, label)
+    _redact.register(value.strip(), label)
+
     stripped = value.strip()
     if stripped != value:
         warnings.warn(
@@ -478,6 +488,17 @@ def __token_loader(token_path, level=logging.INFO):
     return load_token
 
 
+def _register_token(token):
+    '''Never log this token's secrets. Called wherever a token enters.'''
+    if issubclass(type(token), collections.abc.Mapping):
+        for key, label in (('access_token', 'ACCESS_TOKEN'),
+                           ('refresh_token', 'REFRESH_TOKEN'),
+                           ('id_token', 'ID_TOKEN')):
+            value = token.get(key)
+            if _is_instance(value, str):
+                _redact.register(value, label)
+
+
 class TokenMetadata:
     '''
     Provides the functionality required to maintain and update our view of the
@@ -504,6 +525,7 @@ class TokenMetadata:
 
         # The current token. Updated whenever the wrapped token update function 
         # is called.
+        _register_token(token)
         self.token = token
 
     @classmethod
@@ -571,6 +593,10 @@ class TokenMetadata:
         in metadata and updates our view on the most recent token.
         '''
         def wrapped_token_write_func(token, *args, **kwargs):
+            # Registered before the write, so nothing the write logs -- or the
+            # traceback of a write that fails -- can carry it.
+            _register_token(token)
+
             # If the write function is going to raise an exception, let it do so 
             # here before we update our reference to the current token.
             ret = self.unwrapped_token_write_func(
@@ -677,7 +703,9 @@ def __run_client_from_login_flow_server(
     # Wrap this call in some hackery to suppress the flask startup messages
     with open(os.devnull, 'w') as devnull:
         import logging
-        log = logging.getLogger('werkzeug')
+        # Its request lines carry the authorization code. ERROR keeps them out
+        # today; the filter keeps a code out of anything it logs regardless.
+        log = _redact.get_logger('werkzeug')
         log.setLevel(logging.ERROR)
 
         old_stdout = sys.stdout
@@ -1272,6 +1300,18 @@ def client_from_received_url(
     # XXX: The AuthContext must be serializable, which means the original 
     #      OAuth2Client created in get_auth_context cannot be passed around. 
     #      Instead, we reconstruct it here.
+    # The received URL carries the authorization code, and is as sensitive as
+    # the token it becomes. Registered before anything can log it.
+    # This entry point takes the app key and secret as they are, without the
+    # normalization the others apply, so it registers them itself.
+    _redact.register(api_key, 'APP_KEY')
+    _redact.register(app_secret, 'APP_SECRET')
+    if _is_instance(received_url, str):
+        _redact.register(received_url, 'REDIRECT_URL')
+        for code in urllib.parse.parse_qs(
+                urllib.parse.urlparse(received_url).query).get('code', []):
+            _redact.register(code, 'AUTHORIZATION_CODE')
+
     oauth = OAuth2Client(api_key, redirect_uri=auth_context.callback_url)
     # The token a login exchanges its code for is written just below, so it
     # gets the check a refresh does. Measured: {"message": "Unauthorized"} was
@@ -1320,6 +1360,7 @@ def client_from_received_url(
         raise LoginExchangeError(error, description, e.uri) from None
 
     # Don't emit token details in debug logs
+    _register_token(token)
     register_redactions(token)
 
     # Set up token writing and perform the initial token write

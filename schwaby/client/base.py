@@ -11,7 +11,6 @@ import contextlib
 import datetime
 import inspect
 import json
-import logging
 import os
 import schwaby
 import warnings
@@ -21,11 +20,13 @@ from schwaby.orders.generic import OrderBuilder
 from ..utils import (EnumEnforcer, TokenRefreshError, _expiry_authlib_acts_on,
                      _format_iso_instant, _is_instance, _qualified_type_name,
                      _refusal_text)
+from .. import _redact
 from .. import utils as _utils
 
 
 def get_logger():
-    return logging.getLogger(__name__)
+    return _redact.get_logger(__name__)
+
 
 
 ##########################################################################
@@ -53,6 +54,8 @@ class BaseClient(EnumEnforcer):
         self.request_number = 0
 
         schwaby.LOG_REDACTOR.register(api_key, 'API_KEY')
+        _redact.register(api_key, 'APP_KEY')
+        _redact.protect_dependencies()
 
         self.token_metadata = token_metadata
 
@@ -67,6 +70,16 @@ class BaseClient(EnumEnforcer):
     _DATE = _utils._DATE
 
     def _log_response(self, resp, req_num):
+        # Full account numbers are registered before the body is logged, at
+        # every level, so this line and any later one -- a stream frame, an
+        # error -- carries them masked. Only a body that names one is parsed,
+        # spelled as Schwab spells it in every response that carries one; a
+        # case-insensitive test would copy every body, option chains included.
+        try:
+            if b'ccountNumber' in resp.content:
+                _redact.register_account_numbers(resp.json())
+        except Exception:
+            pass
         self.logger.debug('Req %s: GET response: %s, content=%s',
             req_num, resp.status_code, resp.text)
 

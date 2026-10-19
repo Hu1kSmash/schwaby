@@ -975,6 +975,7 @@ class DocCoverageTest(unittest.TestCase):
         'schwaby.client.synchronous': 'exported through schwaby.client',
         'schwaby.contrib': 'a package with no contents of its own',
         'schwaby.orders': 'a package with no contents of its own',
+        'schwaby._redact': 'private: the redaction every logger carries',
         'schwaby.version': 'holds the version string',
     }
 
@@ -1282,6 +1283,10 @@ class DocCoverageTest(unittest.TestCase):
         # And the unwalked ones really do define nothing of their own, or
         # "exported through" is a claim nothing checks.
         for modname in self.NOT_WALKED:
+            # A private module is internal throughout, so what it defines is
+            # not public surface to account for.
+            if modname.rsplit('.', 1)[-1].startswith('_'):
+                continue
             mod = importlib.import_module(modname)
             own = [name for name, obj in vars(mod).items()
                    if not name.startswith('_')

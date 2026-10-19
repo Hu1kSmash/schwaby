@@ -76,6 +76,68 @@ Note the streaming client reports handler failures on the ``schwaby.streaming``
 logger rather than raising them, so a handler which is quietly failing shows up
 there and nowhere else.
 
+.. _never_logged:
+
+**Secrets are never logged, at any level.** There is no mode to turn on: every
+logger this library owns replaces them however the record is rendered --
+by a handler, or by anything else that reads records -- in the message, in a
+traceback and in a stack. Text this library cuts short for a message, such as
+a frame quoted in an exception, is redacted before it is cut. Never logged:
+
+- the app key and the app secret;
+- every access, refresh and ID token, including each new one a refresh brings;
+- the authorization code, and the whole URL a login is redirected to;
+- full account numbers, from the first response or stream frame that names
+  each one. Account hashes, which every request names an account by, and
+  other identifiers are left alone, so a log can still say which account a
+  line is about.
+
+Each is replaced with ``<REDACTED ACCESS_TOKEN>`` or the like. A secret this
+library has not seen yet is still masked where its *name* says what it is: the
+``Authorization`` of a streamer request, an ``access_token`` field, a
+``code=`` in a URL. An account number has no such name to find it by, so one
+your own code puts in a request before any response has named it is logged as
+it is.
+
+The libraries this one drives are covered too. ``websockets`` logs every frame
+at ``DEBUG``, the streamer's LOGIN request among them, and is handed a wrapper
+around the logger it would have used anyway, ``websockets.client``, which
+redacts each frame before anything sees it -- so its elision of a long frame's
+middle only ever cuts redacted text. Its records still come from
+``websockets.client``, so a level, handler, filter or ``disabled`` you set
+there applies as it always did. If you pass ``websockets`` a ``logger`` of your
+own through ``websocket_connect_args``, it is wrapped the same way rather than
+replaced: no filter or handler of yours can see a frame unredacted, and
+everything else passes through as it was logged. A fragment of a message is
+not logged at all, since a value split across two fragments matches neither.
+``httpx2``, ``httpcore2`` and ``authlib`` were measured logging
+none of these at ``DEBUG``, and carry the redaction anyway: ``httpx2`` logs
+every request's URL at ``INFO``, and a URL naming an account by its number
+rather than its hash carries the number. A test runs a whole session with
+every logger at ``DEBUG`` to keep all of this so.
+
+.. note::
+
+   A logged exception reaches your handlers as text. Its traceback is
+   rendered and redacted before any handler sees the record, and the record's
+   ``exc_info`` is then cleared, as the standard library's ``QueueHandler``
+   does, because a formatter that renders the exception object again would
+   print it unredacted. Every standard formatter prints the redacted text. A
+   handler that reads ``exc_info`` directly, as an error tracker's logging
+   integration does, gets the message and the text but not the exception
+   object, and a handler's own ``formatException`` is not consulted. Such a
+   record also pickles as its redacted text, so one sent to another process
+   carries nothing to redact there. This holds for the records of every logger
+   this library protects,
+   ``httpx2``'s, ``httpcore2``'s and ``authlib``'s included, from the moment it
+   is imported, and so for any other code in the process using those
+   libraries; their messages also reach handlers already formatted, with no
+   arguments left. Records of your own are not touched.
+
+The one place the app key is shown is the terminal: both login flows print the
+URL you have to open, and that URL carries it as ``client_id``. It is printed,
+never logged.
+
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Gather Logs For Your Bug Report

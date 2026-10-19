@@ -7,7 +7,9 @@ import schwaby
 
 
 def get_logger():
-    return logging.getLogger(__name__)
+    from schwaby import _redact
+    return _redact.get_logger(__name__)
+
 
 
 class LogRedactor:

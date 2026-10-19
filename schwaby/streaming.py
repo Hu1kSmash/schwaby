@@ -7,10 +7,10 @@ import copy
 import httpx2
 import inspect
 import json
-import logging
 
 import websockets.asyncio.client as ws_client
 
+from . import _redact
 from .utils import (EnumEnforcer, LazyLog, SchwabError, _is_instance,
                     _printable)
 
@@ -34,7 +34,8 @@ class NaiveJsonStreamDecoder(StreamJsonDecoder):
 
 
 def get_logger():
-    return logging.getLogger(__name__)
+    return _redact.get_logger(__name__)
+
 
 
 class _BaseFieldEnum(Enum):
@@ -208,6 +209,8 @@ def _safe_str(value):
         text = '<unprintable>'
     text = str.__str__(text)   # a plain str; `_safe_value` says why
     # An exception's own message can quote venue text, line breaks and all.
+    # Redacted before it is cut, so a secret across the cut leaves nothing.
+    text = _redact.before_cut(text, 200)
     return _printable(text if len(text) <= 200 else text[:197] + '...', 200)
 
 
@@ -245,6 +248,8 @@ def _safe_value(value):
     # raising `__len__` ended the receive loop with nothing logged, and one
     # returning 0 logged the whole frame.
     text = str.__str__(text)
+    # Redacted before it is cut, so a secret across the cut leaves nothing.
+    text = _redact.before_cut(text, 200)
     return _printable(text if len(text) <= 200 else text[:197] + '...', 200)
 
 
@@ -264,7 +269,7 @@ def _safe_name(value):
     # returns one. Measured on a `MESSAGE_TYPE`: one returning itself kept its
     # own `casefold`, which raised and absorbed the whole element, and its own
     # `__len__`, which reported 0 and kept a megabyte in the report set.
-    text = str.__str__(text)
+    text = _redact.before_cut(str.__str__(text), 64)
     return text if len(text) <= 64 else text[:61] + '...'
 
 
@@ -533,6 +538,14 @@ def _prepare_connect_args(websocket_connect_args):
 
     The copy matters -- ``login`` adds ``ssl`` to what it gets back, and the
     dict belongs to the caller.
+
+    It also adds ``logger``. websockets logs every frame at DEBUG, the LOGIN
+    request and its access token included, and only its default elision of a
+    long frame's middle hides the token -- which its own
+    ``WEBSOCKETS_MAX_LOG_SIZE`` setting turns off. So it is handed a logger
+    carrying this library's redaction. A caller's own ``logger``, or adapter,
+    is wrapped in an adapter that redacts each frame before the logger
+    beneath sees it, and passes everything else through untouched.
     '''
     for old_name, new_name in _RENAMED_CONNECT_ARGS.items():
         if old_name not in websocket_connect_args:
@@ -559,7 +572,9 @@ def _prepare_connect_args(websocket_connect_args):
                 'and has no equivalent in the asyncio implementation. Please '
                 'remove it.'.format(removed))
 
-    return dict(websocket_connect_args)
+    args = dict(websocket_connect_args)
+    args['logger'] = _redact.websocket_logger(args.get('logger'))
+    return args
 
 
 class ResponseTimeoutError(SchwabError):
@@ -794,8 +809,11 @@ class StreamClient(EnumEnforcer):
             raise ValueError(
                 'Socket not open. Did you forget to call login()?')
 
+        # Masked by key as well as by registered value: the LOGIN request
+        # carries the access token, and this line is how it reached the logs.
         self.logger.debug('Send %s: Sending %s',
-                self.req_num(), LazyLog(lambda: self._pretty(obj)))
+                self.req_num(),
+                LazyLog(lambda: self._pretty(_redact.mask(obj))))
 
         await self._socket.send(json.dumps(obj))
 
@@ -820,9 +838,15 @@ class StreamClient(EnumEnforcer):
                    'cut: ' + _safe_value(raw))
             raise UnparsableMessage(raw, e, msg)
 
+        # An account activity frame carries the full account number, in the
+        # field this library labels ACCOUNT. Registered before the frame is
+        # logged, so this line carries it masked, and so does the copy inside
+        # the message data, which repeats it.
+        _redact.register_stream_accounts(ret)
+
         self.logger.debug(
             'Receive %s: Returning message from stream: %s',
-            self.req_num(), LazyLog(lambda: self._pretty(ret)))
+            self.req_num(), LazyLog(lambda: self._pretty(_redact.mask(ret))))
 
         return ret
 
@@ -2237,6 +2261,8 @@ class StreamClient(EnumEnforcer):
                 r, websocket_connect_args if websocket_connect_args else {})
 
         # Build and send the request object
+        _redact.register(self._client.token_metadata.token['access_token'],
+                         'ACCESS_TOKEN')
         request_parameters = {
                 'Authorization': self._client.token_metadata.token['access_token'],
                 'SchwabClientChannel': self._stream_channel,

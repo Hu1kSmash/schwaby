@@ -3,6 +3,7 @@ import re
 import urllib.parse
 import asyncio
 import contextlib
+import io
 import json
 import os
 import logging
@@ -14,7 +15,7 @@ from .utils import (
         TESTDATA)
 from unittest.mock import ANY, AsyncMock, call, MagicMock, Mock, patch
 from unittest import IsolatedAsyncioTestCase
-from schwaby import streaming
+from schwaby import _redact, streaming
 from schwaby.streaming import _MAX_REPORTED_SHAPES
 
 StreamClient = streaming.StreamClient
@@ -290,7 +291,8 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         await self.client.login()
 
-        ws_connect.assert_awaited_once_with(ANY, ssl='ssl_context')
+        ws_connect.assert_awaited_once_with(
+                ANY, ssl='ssl_context', logger=_redact.websocket_logger())
 
 
     @no_duplicates
@@ -308,7 +310,9 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         await self.client.login(websocket_connect_args={'args': 'yes'})
 
-        ws_connect.assert_awaited_once_with(ANY, ssl='ssl_context', args='yes')
+        ws_connect.assert_awaited_once_with(
+                ANY, ssl='ssl_context', args='yes',
+                logger=_redact.websocket_logger())
 
 
     @no_duplicates
@@ -359,7 +363,9 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         self.assertEqual({'args': 'yes'}, connect_args)
         # ...while websockets did receive the addition.
-        ws_connect.assert_awaited_once_with(ANY, ssl='ssl_context', args='yes')
+        ws_connect.assert_awaited_once_with(
+                ANY, ssl='ssl_context', args='yes',
+                logger=_redact.websocket_logger())
 
 
     @no_duplicates
@@ -425,7 +431,8 @@ class StreamClientTest(IsolatedAsyncioTestCase):
                 websocket_connect_args={'additional_headers': {'a': 'b'}})
 
         ws_connect.assert_awaited_once_with(
-            ANY, additional_headers={'a': 'b'})
+            ANY, additional_headers={'a': 'b'},
+            logger=_redact.websocket_logger())
 
 
     @no_duplicates
@@ -9719,14 +9726,24 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         logger = streaming.get_logger()
         previous = logger.level
         logger.setLevel(logging.DEBUG)
+        out = io.StringIO()
+        handler = logging.StreamHandler(out)
+        logger.addHandler(handler)
         try:
             await self.client.handle_message()
         finally:
+            logger.removeHandler(handler)
             logger.setLevel(previous)
 
         # Reported rather than escaping, and the data beside it delivered.
         self.assertEqual(1, len(delivered))
         self.assertEqual(1, self.client._absorbed)
+        # And the debug line says what arrived. The redaction filter catches
+        # a line that cannot be formatted, so a failure here no longer
+        # escapes either way; without the fallback, the line would name the
+        # lazy wrapper instead of the frame.
+        self.assertIn('Receive', out.getvalue())
+        self.assertNotIn('LazyLog object', out.getvalue())
 
     @no_duplicates
     def test_a_venue_name_reaches_the_log_quoted(self):

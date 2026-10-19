@@ -6,7 +6,6 @@ import collections
 # `datetime`, which is most often the class rather than the module.
 import datetime as _datetime
 import decimal
-import logging
 import re
 import time
 
@@ -21,6 +20,7 @@ import time
 # declared, `httpx` is not installed alongside it, and a 429 driven through the
 # real session stack raises this class. Re-exported rather than subclassed, so
 # `isinstance` against the original still holds.
+from . import _redact
 from httpx2 import HTTPStatusError
 
 from authlib.integrations.base_client.errors import OAuthError
@@ -121,7 +121,7 @@ def _describe_error(response):
                          if isinstance(e, str) and e.strip())
         if not parts:
             return ''
-        detail = '; '.join(parts)
+        detail = _redact.before_cut('; '.join(parts), _ERROR_DETAIL_LIMIT)
         if len(detail) > _ERROR_DETAIL_LIMIT:
             detail = detail[:_ERROR_DETAIL_LIMIT] + '... (truncated, see .response)'
         return ': ' + detail
@@ -388,6 +388,8 @@ def _venue_text(value):
         text = str.__str__(value)
     else:
         text = repr(value)
+    # Redacted before it is cut, so a secret across the cut leaves nothing.
+    text = _redact.before_cut(text, 200)
     return _printable(text if len(text) <= 200 else text[:197] + '...', 200)
 
 
@@ -450,7 +452,8 @@ class UnusableAccountNumbersError(SchwabError, ValueError):
 
 
 def get_logger():
-    return logging.getLogger(__name__)
+    return _redact.get_logger(__name__)
+
 
 
 #: The kinds of skipped account entry already reported, so a list that carries
