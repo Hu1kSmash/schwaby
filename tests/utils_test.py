@@ -326,20 +326,56 @@ class HTTPStatusErrorTest(unittest.TestCase):
         self.assertEqual('NEW', writes[-1]['token']['access_token'])
 
     @no_duplicates
-    def test_a_refresh_rejected_without_a_json_body_is_neither(self):
-        # Documented as a limit, so pinned: the token response is parsed as
-        # JSON, and an empty 4xx body is not JSON. If this ever becomes a
-        # TokenRefreshError, the docs should say so.
+    def test_a_refusal_without_a_json_body_is_a_token_refresh_error(self):
+        # authlib changed what this raised at 1.9 -- json.JSONDecodeError
+        # before, HTTPStatusError after -- so the class callers were told to
+        # catch depended on which authlib a fresh install resolved. Refused
+        # here instead, so it is TokenRefreshError under either; this test
+        # runs against whichever authlib is installed, and CI installs fresh.
         import httpx2
-        import json
+        from schwaby.utils import TokenRefreshError
+        for status, body in ((401, b''), (403, b'<html>denied</html>'),
+                             (302, b'')):
+            with self.subTest(status=status):
+                client, _ = self._refreshing_client(
+                        lambda request: httpx2.Response(
+                            status, content=body, request=request))
+                with self.assertRaises(Exception) as caught:
+                    client.get_quote('F')
+                self.assertIsInstance(caught.exception, TokenRefreshError)
+                self.assertIn('HTTP {}'.format(status),
+                              str(caught.exception))
+                # Not known to be terminal, so retryable: the conservative
+                # direction the class documents.
+                self.assertFalse(caught.exception.refresh_token_invalid)
+
+    @no_duplicates
+    def test_a_success_without_a_json_body_is_still_a_value_error(self):
+        # A 200 that is not JSON is not a refusal, and is left to authlib,
+        # which raises a ValueError for it under both 1.8 and 1.9.
+        import httpx2
         from schwaby.utils import TokenRefreshError
         client, _ = self._refreshing_client(
-                lambda request: httpx2.Response(401, request=request))
+                lambda request: httpx2.Response(
+                    200, content=b'not json', request=request))
         with self.assertRaises(Exception) as caught:
             client.get_quote('F')
-        self.assertIsInstance(caught.exception, json.JSONDecodeError)
+        self.assertIsInstance(caught.exception, ValueError)
         self.assertNotIsInstance(caught.exception, TokenRefreshError)
-        self.assertNotIsInstance(caught.exception, HTTPStatusError)
+
+    @no_duplicates
+    def test_a_server_error_without_a_json_body_is_still_an_http_error(self):
+        # Positive control for the refusal above: a 5xx is not refused by this
+        # library, and stays the HTTPStatusError it is documented as.
+        import httpx2
+        from schwaby.utils import TokenRefreshError
+        client, _ = self._refreshing_client(
+                lambda request: httpx2.Response(
+                    503, content=b'', request=request))
+        with self.assertRaises(Exception) as caught:
+            client.get_quote('F')
+        self.assertIsInstance(caught.exception, HTTPStatusError)
+        self.assertNotIsInstance(caught.exception, TokenRefreshError)
 
     @no_duplicates
     def test_it_is_the_class_the_http_package_defines(self):

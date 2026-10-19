@@ -829,11 +829,14 @@ class TokenRefreshError(SchwabError):
     again. Seen once: Schwab answered a refresh with ``unsupported_token_type``
     and no nested ``invalid_grant``, and it recovered without a new login.
 
+    It is also raised for a refusal whose body is not JSON, such as an empty
+    401, whichever version of ``authlib`` is installed: ``authlib`` raised
+    ``json.JSONDecodeError`` for one before 1.9 and ``HTTPStatusError`` after.
+
     Not every failed refresh is one of these. A server error from the token
     endpoint raises :class:`~schwaby.utils.HTTPStatusError`, a dropped
-    connection raises one of ``httpx2``'s transport errors, and a response
-    that is not JSON at all raises a ``ValueError``, usually
-    ``json.JSONDecodeError``.
+    connection raises one of ``httpx2``'s transport errors, and a success whose
+    body is not JSON at all raises a ``ValueError``.
     '''
 
     def __init__(self, message, *, token_age=None, refresh_token_invalid=False):
@@ -874,8 +877,9 @@ class LoginExchangeError(SchwabError, OAuthError):
     is good for one exchange, so every refusal means starting the login again.
     Nothing is written, so a token file already on disk is left as it was.
 
-    A server error from the token endpoint, or a response that is not JSON,
-    raises as it does during a call rather than as this.
+    So is a refusal whose body is not JSON. A server error from the token
+    endpoint, or a success whose body is not JSON, raises as it does during a
+    call rather than as this.
     '''
 
 

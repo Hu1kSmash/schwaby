@@ -291,9 +291,12 @@ deliberately does not.
     :class:`~schwaby.utils.TokenRefreshError`. Nothing is stored, and the next
     call tries the refresh again;
   - a body that is not JSON at all, such as an empty body or an HTML page,
-    raises a ``ValueError`` --- usually ``json.JSONDecodeError``, or
-    ``UnicodeDecodeError`` for a body that is not UTF-8 --- and nothing is
-    stored either.
+    raises :class:`~schwaby.utils.TokenRefreshError` when the status is a
+    refusal, 300 to 499, and a ``ValueError`` when it is a success. Nothing is
+    stored in either case. ``authlib`` changed what a refusal like this raised
+    at 1.9 --- ``json.JSONDecodeError`` before, ``HTTPStatusError`` after ---
+    so this library refuses it itself, and the answer does not depend on which
+    version a fresh install resolves.
 
   What Schwab's token endpoint sends in the last two cases has not been
   observed.

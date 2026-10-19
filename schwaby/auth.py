@@ -229,9 +229,17 @@ def _refuse_unusable_token_response(response):
 
     Registered as authlib's ``refresh_token_response`` compliance hook, which
     sees the response before it is parsed, so nothing unusable is stored. A
-    server error and a body that is not JSON are left to authlib, which raises
-    on both without storing anything, and so is a JSON object carrying
-    ``error``, which authlib reports as the rejection it is.
+    server error is left to authlib, which raises ``HTTPStatusError`` for it,
+    and so is a JSON object carrying ``error``, which authlib reports as the
+    rejection it is.
+
+    A refusal -- any status from 300 to 499 -- whose body is not JSON is
+    refused here, so it reaches the caller as a rejection like any other.
+    authlib changed what it raises for one at 1.9: ``json.JSONDecodeError``
+    before, ``HTTPStatusError`` after, measured against both, so a caller
+    catching what the documentation said stopped catching it on a fresh
+    install. A success whose body is not JSON is left to authlib, which
+    raises a ``ValueError`` for it under either version.
 
     Also registered as ``access_token_response`` on the client that exchanges
     a login's code, whose token was written the same way.
@@ -241,7 +249,15 @@ def _refuse_unusable_token_response(response):
     try:
         body = response.json()
     except ValueError:
-        return response
+        if response.status_code < 300:
+            return response
+        refusal = OAuthError(
+                error='http_{}'.format(response.status_code),
+                description='the token endpoint refused the request with HTTP '
+                            '{} and no JSON body to say why'.format(
+                                response.status_code))
+        refusal._described_by_this_library = True
+        raise refusal from None
     if isinstance(body, dict) and ('error' in body or _is_usable_token(body)):
         return response
     refusal = OAuthError(

@@ -327,11 +327,12 @@ token-shaped:
 
 Not every failure to refresh arrives as ``TokenRefreshError``. A server error
 from the token endpoint raises :class:`~schwaby.utils.HTTPStatusError`, a
-dropped connection raises one of ``httpx2``'s transport errors, and a response
-body that is not JSON at all raises a ``ValueError``, usually
-``json.JSONDecodeError`` --- :class:`~schwaby.utils.HTTPStatusError` sets out
-which is which. An unattended program that means to retry has to catch those
-as well.
+dropped connection raises one of ``httpx2``'s transport errors, and a success
+whose body is not JSON at all raises a ``ValueError`` ---
+:class:`~schwaby.utils.HTTPStatusError` sets out which is which. An unattended
+program that means to retry has to catch those as well. A *refusal* whose body
+is not JSON is a ``TokenRefreshError`` like any other refusal, whichever
+version of ``authlib`` is installed.
 
 .. autoclass:: schwaby.utils.TokenRefreshError
 
@@ -579,8 +580,8 @@ refusal, such as ``access_denied`` when the user declines, one with no code or
 an empty one, one with a fragment, and one whose ``state`` does not match the
 login's. It has no ``token_age`` or ``refresh_token_invalid``: no token exists
 yet, and a code is good for one exchange, so every refusal there means starting
-the login again. A server error or a response that is not JSON raises as it
-does during a call.
+the login again. So does a refusal whose body is not JSON. A server error, or a
+success whose body is not JSON, raises as it does during a call.
 
 .. autoclass:: schwaby.utils.LoginExchangeError
 

@@ -1516,6 +1516,29 @@ class LoginExchangeErrorTest(unittest.TestCase):
         self.assertEqual([], writes)
 
     @no_duplicates
+    def test_a_refusal_without_a_json_body_is_a_login_exchange_error(self):
+        # The hook that normalizes a refresh's bodyless refusal guards the
+        # code exchange too, so a login refused that way is this library's
+        # class under either authlib, not json.JSONDecodeError (1.8) or
+        # HTTPStatusError (1.9).
+        import httpx2
+        from schwaby.utils import LoginExchangeError
+        writes = []
+
+        def refuse(transport, request):
+            return httpx2.Response(401, content=b'', request=request)
+
+        with patch.object(httpx2.HTTPTransport, 'handle_request', refuse):
+            with self.assertRaises(Exception) as cm:
+                auth.client_from_received_url(
+                        API_KEY, APP_SECRET, self.CONTEXT, self.RECEIVED,
+                        lambda *args, **kwargs: writes.append(args))
+
+        self.assertIsInstance(cm.exception, LoginExchangeError)
+        self.assertEqual('http_401', cm.exception.error)
+        self.assertEqual([], writes)
+
+    @no_duplicates
     def test_a_redirect_that_is_refused_before_any_exchange_is_one_too(self):
         # authlib refuses a state that does not match before any request. A
         # redirect without "code=" it sends as another grant, and a fragment it
