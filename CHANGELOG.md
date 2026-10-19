@@ -22,6 +22,114 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 5.1.0
+
+*2026-10-19*
+
+A security fix, and one change to what a refused token refresh raises. Nothing
+public is removed or renamed.
+
+### Security: secrets are never logged
+
+**Upgrade if you log at `DEBUG`, or have ever shared, bundled or backed up a
+log written by an earlier version.** Earlier versions wrote the access token
+into logs in three places, measured against loopback stand-ins for Schwab:
+
+- the streamer logged every request it sent at `DEBUG` on
+  `schwaby.streaming`, and the LOGIN request carries the access token;
+- bug-report mode, the mode meant for sharing logs, wrote that token into its
+  "redacted" report. It registered a token only when one was loaded from a
+  file, never on refresh, so a process that had refreshed and carried on
+  leaked the current one;
+- `websockets` logs every frame at `DEBUG`. Only its default elision of a
+  long frame's middle hid the LOGIN token, and its documented
+  `WEBSOCKETS_MAX_LOG_SIZE` setting turns that off.
+
+Full account numbers reached `DEBUG` logs too, in REST response bodies and
+`ACCT_ACTIVITY` frames.
+
+**What an earlier version's `DEBUG` log can hold.** A scripted session through
+every path above -- a login, a refresh, REST calls, the streamer, bug-report
+mode -- found the access token and full account numbers, and no refresh token,
+app secret or authorization code. An access token lasts thirty minutes, so a
+line carrying one is dangerous for at most half an hour after it was written;
+the refresh token, which lasts seven days, did not appear. The account numbers
+do not expire.
+
+Now no log this library writes carries a secret, at any level, with no mode to
+enable. Every logger it owns replaces registered secrets in the message, a
+traceback and a stack, however the record is rendered: by a handler, or by
+anything else that reads records, such as an error tracker. Text this library
+cuts short for a message, such as a frame quoted in an exception, is redacted
+before it is cut.
+
+Never logged: the app key and secret; every access, refresh and ID token,
+including each one a refresh brings; the authorization code and the whole
+redirect URL; full account numbers, from the first response or stream frame
+that names each one. Account hashes and other identifiers are left alone, so a
+log can still say which account a line is about. A secret this library has not
+seen yet is still masked where its name says what it is: the `Authorization`
+of a streamer request, an `access_token` field, a `code=` in a URL. An account
+number has no such name, so one your own code puts in a request before any
+response has named it is logged as it is.
+
+`websockets`' frames are redacted before `websockets` renders them, so its
+elision of a long frame's middle only ever cuts redacted text. Its records
+still come from `websockets.client`, and a level, handler, filter or
+`disabled` set there applies as it always did. If you pass `websockets` a
+`logger` of your own through `websocket_connect_args`, it is wrapped rather
+than replaced: `websockets` receives an adapter that redacts each frame before
+your logger sees it and passes everything else through as it was logged. A
+fragment of a message is not logged at all.
+
+`httpx2`, `httpcore2` and `authlib` were measured logging none of these at
+`DEBUG`, under authlib 1.8.0 and 1.9.1, and their loggers carry the redaction
+anyway: `httpx2` logs every request's URL at `INFO`, and a URL naming an
+account by its number rather than its hash carries the number.
+
+A test runs a whole session -- login, refresh, REST, the streamer, their error
+paths, bug-report mode -- with every logger at `DEBUG`, and fails on any secret
+in any spelling, or on any ten-character piece of a token or key. Run
+unchanged against 5.0.0, it fails.
+
+A record is redacted when something renders it, so one nothing renders costs
+nearly nothing, and a logger left at `DEBUG` under handlers at `INFO` costs
+about what it did. A line that is written costs a few microseconds more.
+
+**Caller-facing: a logged exception reaches your handlers as text.** Its
+traceback is rendered and redacted before any handler sees the record, and the
+record's `exc_info` is then cleared, as the standard library's `QueueHandler`
+does: a formatter that renders the exception object again, as JSON formatters
+do, would print it unredacted. Every standard formatter prints the redacted
+text. A handler that reads `exc_info` directly, as an error tracker's logging
+integration does, gets the message and the traceback text but not the
+exception object, and a handler's own `formatException` is not consulted. Read
+`exc_text` instead. This applies to records this library and its dependencies
+log, not to your own. A record from them reaches your handlers with its
+message already formatted and no arguments, and pickles as its redacted text.
+
+The login flows still print the authorization URL to the terminal, because
+you have to open it, and it carries the app key as `client_id`. It is printed,
+never logged.
+
+### A refused refresh with no JSON body raises `TokenRefreshError`
+
+**Caller-facing.** When Schwab refuses a token refresh with a body that is not
+JSON, such as an empty 401, `authlib` raised `json.JSONDecodeError` before 1.9
+and `HTTPStatusError` from 1.9. `setup.py` sets only a floor, so which one you
+got depended on what a fresh install resolved, and the documentation promised
+the first. It is now `TokenRefreshError` under either version, like any other
+refusal, and retryable, since nothing says the refresh token itself is dead.
+If you caught `ValueError` or `json.JSONDecodeError` for this, catch
+`TokenRefreshError`; code that handles refusals with a JSON body already does.
+
+What did not change: a server error from the token endpoint is still
+`HTTPStatusError`, and a successful response whose body is not JSON is still a
+`ValueError`, under either version. A login's code exchange refused the same
+way now raises `LoginExchangeError`.
+
+---
+
 ## 5.0.1
 
 *2026-09-26*
