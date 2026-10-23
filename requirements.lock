@@ -1,0 +1,88 @@
+# The exact dependency set this project's suite is tested against. The
+# shared test queue applies it as PIP_CONSTRAINT, so every machine there
+# tests the same versions. It is not what schwaby requires: setup.py's
+# floors are that, and installing schwaby never reads this file.
+#
+# Resolved 2026-10-23 on Python 3.14.6 by `pip install '.[dev]'` in a
+# fresh virtualenv. The runtime packages are the set 5.1.0 was certified
+# against on 2026-10-22. httpx2 2.16 needs Python 3.11 or newer, so this
+# does not install on 3.10, which CI tests without it.
+#
+# To regenerate: pip install '.[dev]' in a fresh virtualenv, then
+# pip freeze --all, leaving out pip and schwaby itself.
+alabaster==1.0.0
+anyio==4.15.1
+Authlib==1.9.1
+autopep8==2.3.2
+babel==2.18.0
+blinker==1.9.0
+build==1.6.1
+callee==0.3.1
+certifi==2026.10.19
+cffi==2.1.1
+charset-normalizer==3.5.2
+click==8.5.0
+colorama==0.4.6
+comrak==0.0.16
+coverage==7.17.0
+cryptography==50.0.2
+dill==0.4.1
+docutils==0.22.4
+execnet==2.1.2
+Flask==3.1.3
+h11==0.16.0
+httpcore2==2.16.0
+httpx2==2.16.0
+id==1.6.1
+idna==3.20
+imagesize==2.0.1
+iniconfig==2.3.1
+itsdangerous==2.2.0
+jaraco.classes==3.4.0
+jaraco.context==6.1.2
+jaraco.functools==4.6.0
+jeepney==0.9.0
+Jinja2==3.1.6
+joserfc==1.7.7
+keyring==25.7.0
+markdown-it-py==4.2.0
+MarkupSafe==3.0.4
+mdurl==0.1.2
+more-itertools==11.2.1
+multiprocess==0.70.19
+nh3==0.3.7
+packaging==26.3
+pluggy==1.7.0
+psutil==7.2.2
+pycodestyle==2.15.0
+pycparser==3.12
+Pygments==2.21.0
+pyproject_hooks==1.3.3
+pytest==9.1.1
+pytest-xdist==3.8.0
+pytz==2026.5
+readme_renderer==46.0
+requests==2.34.2
+requests-toolbelt==1.0.0
+rfc3986==2.0.0
+rich==15.0.0
+roman-numerals==4.1.0
+SecretStorage==3.5.0
+setuptools==84.2.1
+snowballstemmer==3.1.1
+Sphinx==9.2.0
+sphinxcontrib-applehelp==2.0.0
+sphinxcontrib-devhelp==2.0.0
+sphinxcontrib-htmlhelp==2.1.0
+sphinxcontrib-jquery==4.1
+sphinxcontrib-jsmath==2.0.0
+sphinxcontrib-qthelp==2.0.0
+sphinxcontrib-serializinghtml==2.0.0
+sphinx_rtd_theme==3.1.0
+truststore==0.10.5
+twine==7.0.0
+typing_extensions==4.16.0
+urllib3==2.8.0
+websockets==17.3
+Werkzeug==3.1.9
+wheel==0.48.0
