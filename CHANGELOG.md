@@ -22,6 +22,42 @@ untrue when it was written, it gets corrected and the correction says so.
 
 ---
 
+## 5.1.1
+
+*2026-10-23*
+
+A fix to the login flow, and changes to how this project's own tests run.
+Nothing public is added, removed or renamed.
+
+### The login flow waits for its callback server to exit
+
+`client_from_login_flow` stopped its callback server by signalling it and
+returned without waiting for it to exit, and the port stays taken until it
+has. So a second login flow started straight after the first could find the
+port still in use: its own server died on "Address already in use", and the
+flow raised `RedirectServerExitedError`. The flow now waits up to ten seconds
+for the server to exit before it returns.
+
+Measured with every core busy: without the wait, the port was still taken at
+38 of 720 server starts; with it, at none. On an idle machine it did not occur
+in 60 runs. A program that runs one login flow is unlikely to have met it; one
+that starts another login straight after a first could have.
+
+### For contributors
+
+- `pytest tests/ -n auto` runs the suite on every core. `pytest-xdist` is in
+  the `dev` extra, and `setup.cfg` passes `--dist loadgroup`, which keeps
+  every test that runs the login flow on one worker so that no two of them
+  use the callback port at once. Without `-n` the suite runs in one process,
+  as before.
+- `requirements.lock` is the exact set of packages the suite is tested
+  against, resolved on Python 3.14. Installing `schwaby` never reads it;
+  `setup.py`'s minimum versions are still what it requires.
+- A test that passed only because of the order the suite ran in no longer
+  depends on it.
+
+---
+
 ## 5.1.0
 
 *2026-10-19*
