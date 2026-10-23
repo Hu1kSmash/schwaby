@@ -10,6 +10,46 @@ from .utils import MockResponse, no_duplicates
 from unittest.mock import Mock, patch
 
 
+def isolate_bug_report_state(test):
+    '''Give ``test`` a fresh redactor and collection flag, restored after it.
+
+    Both are process-wide. Every test that builds a client from a token
+    registers that token, and the auth tests' tokens are ``'a'`` and ``'r'``, so a test after them asserting
+    on logged text found ``'a line worth reporting'`` redacted letter by
+    letter. This file's own order hid that: ``RegisterRedactionsTest`` swapped
+    in a new redactor and never put the old one back, so whatever ran next
+    started clean, and ``pytest -n auto``, which does not keep that order,
+    failed it.
+    '''
+    for patcher in (patch.object(schwaby, 'LOG_REDACTOR',
+                                 schwaby.debug.LogRedactor()),
+                    patch.object(schwaby.debug, '_COLLECT_RESPONSE_REDACTIONS',
+                                 schwaby.debug._COLLECT_RESPONSE_REDACTIONS)):
+        patcher.start()
+        test.addCleanup(patcher.stop)
+
+
+class IsolateBugReportStateTest(unittest.TestCase):
+
+    @no_duplicates
+    def test_both_globals_are_put_back(self):
+        redactor = schwaby.LOG_REDACTOR
+        collecting = schwaby.debug._COLLECT_RESPONSE_REDACTIONS
+        inner = unittest.TestCase()
+        self.addCleanup(inner.doCleanups)
+
+        isolate_bug_report_state(inner)
+        # Positive control: without a swap, "put back" holds trivially.
+        self.assertIsNot(redactor, schwaby.LOG_REDACTOR)
+        schwaby.debug._COLLECT_RESPONSE_REDACTIONS = not collecting
+
+        inner.doCleanups()
+        self.assertIs(redactor, schwaby.LOG_REDACTOR,
+                      'the redactor was not put back')
+        self.assertEqual(collecting, schwaby.debug._COLLECT_RESPONSE_REDACTIONS,
+                         'the collection flag was not put back')
+
+
 class RedactorTest(unittest.TestCase):
 
     def setUp(self):
@@ -49,11 +89,11 @@ class RedactorTest(unittest.TestCase):
 class RegisterRedactionsTest(unittest.TestCase):
 
     def setUp(self):
+        isolate_bug_report_state(self)
         self.captured = io.StringIO()
         self.logger = logging.getLogger('test')
         self.dump_logs = schwaby.debug._enable_bug_report_logging(
             output=self.captured, loggers=[self.logger])
-        schwaby.LOG_REDACTOR = schwaby.debug.LogRedactor()
 
     @no_duplicates
     def test_empty_string(self):
@@ -199,6 +239,9 @@ class RegisterRedactionsTest(unittest.TestCase):
         register_redactions.assert_not_called()
 
 class EnableDebugLoggingTest(unittest.TestCase):
+
+    def setUp(self):
+        isolate_bug_report_state(self)
 
     @patch('atexit.register')
     @patch('logging.Logger.addHandler')
