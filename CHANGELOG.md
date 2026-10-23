@@ -20,6 +20,10 @@ record of anything.
 Getting a fact wrong is the exception. Where an entry says something that was
 untrue when it was written, it gets corrected and the correction says so.
 
+One other kind of edit, made once: on 2026-10-23 two phrases saying where a
+measurement came from were reworded to name no particular deployment. What
+was measured, and every number, is unchanged.
+
 ---
 
 ## 5.1.1
