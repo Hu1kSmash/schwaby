@@ -168,6 +168,15 @@ class SetupPyTest(unittest.TestCase):
         # extra as a warning rather than an error.
         self.assertEqual(['dev'], sorted(self.kwargs['extras_require']))
 
+    @no_duplicates
+    def test_dev_has_the_plugins_setup_cfg_needs(self):
+        # setup.cfg passes `--dist loadgroup` and sets `timeout`. Without
+        # pytest-xdist the first is an unknown argument; without
+        # pytest-timeout the second is a warning and no test has a limit.
+        dev = [package_name(r) for r in self.kwargs['extras_require']['dev']]
+        for plugin in ('pytest-xdist', 'pytest-timeout'):
+            self.assertIn(plugin, dev, '%s is missing from [dev]' % plugin)
+
     # The two checks below are vacuous against setup.py as it stands, because
     # `dev` is the only extra and both loops skip it: a subset test and a
     # disjointness test over nothing hold whatever the other side contains.

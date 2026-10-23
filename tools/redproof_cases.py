@@ -5969,3 +5969,57 @@ HARNESS_CASES = [
 ]
 
 CASES += HARNESS_CASES
+
+
+# The suite's configuration. `-n auto` and the per-test limit are both
+# settings nothing else checks: get one wrong and the suite still passes,
+# slower or able to hang.
+SUITE_CASES = [
+    # xdist's own answer is psutil's physical core count: half the machine
+    # where there are two threads per core.
+    Case('suite/auto-workers-come-from-the-hook',
+         'tests/conftest.py',
+         '    return usable_cpus()',
+         '    return None',
+         'tests/suite_config_test.py::AutoWorkersTest'
+         '::test_auto_is_the_usable_core_count_not_the_machines',
+         'did not start one worker per usable core'),
+    Case('suite/auto-workers-are-the-process-cpu-count',
+         'tests/conftest.py',
+         '        return os.process_cpu_count() or 1',
+         '        return os.cpu_count() or 1',
+         'tests/suite_config_test.py::AutoWorkersTest'
+         '::test_auto_is_the_usable_core_count_not_the_machines',
+         'did not start one worker per usable core'),
+    Case('suite/auto-workers-honour-the-affinity-mask',
+         'tests/conftest.py',
+         '        return len(os.sched_getaffinity(0))',
+         '        return os.cpu_count() or 1',
+         'tests/suite_config_test.py::AutoWorkersTest'
+         '::test_before_3_13_the_affinity_mask_decides',
+         'ignored the affinity mask'),
+    Case('suite/the-worker-override-still-wins',
+         'tests/conftest.py',
+         "    if os.environ.get('PYTEST_XDIST_AUTO_NUM_WORKERS'):\n"
+         "        return None\n",
+         '',
+         'tests/suite_config_test.py::AutoWorkersTest'
+         '::test_the_environment_override_still_wins',
+         'answered over PYTEST_XDIST_AUTO_NUM_WORKERS'),
+    # pytest-timeout reads 0 as "no limit".
+    Case('suite/every-test-has-a-limit',
+         'setup.cfg',
+         'timeout = 60\n',
+         'timeout = 0\n',
+         'tests/suite_config_test.py::test_every_test_runs_under_a_time_limit',
+         'the per-test time limit is 0.0'),
+    Case('suite/the-limit-plugin-is-in-dev',
+         'setup.py',
+         "            'pytest-timeout',\n",
+         '',
+         'tests/packaging_test.py::SetupPyTest'
+         '::test_dev_has_the_plugins_setup_cfg_needs',
+         'pytest-timeout is missing from [dev]'),
+]
+
+CASES += SUITE_CASES

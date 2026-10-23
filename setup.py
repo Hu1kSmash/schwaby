@@ -118,6 +118,10 @@ setuptools.setup(
             # refuses as an unknown argument without it. That is what keeps
             # `pytest -n auto` from running two login flows on one port.
             'pytest-xdist',
+            # Not optional either: setup.cfg sets `timeout`, which pytest
+            # warns about as an unknown option without it, and the limit is
+            # what turns a hung test into a failure that names it.
+            'pytest-timeout',
             # packaging_test builds a small project with the API index
             # extension, so it needs sphinx itself rather than the copy
             # sphinx_rtd_theme happens to bring.
