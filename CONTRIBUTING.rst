@@ -15,14 +15,16 @@ Setting up the dev environment
 ------------------------------
 
 Everything, including the development tooling, is declared in ``setup.py``.
-There is no separate requirements file.
+``requirements.lock`` pins the exact versions the suite is tested against, on
+every supported Python, and CI installs with it; install with it too, so a
+failure you see is one CI would see:
 
 .. code-block:: shell
 
   python -m venv venv
   source venv/bin/activate       # Windows: venv\Scripts\activate
 
-  pip install -e ".[dev]"
+  pip install -c requirements.lock -e ".[dev]"
 
 The ``-e`` matters: without it you edit the source tree and test the copy in
 ``site-packages``, and the two drift the moment you change anything.

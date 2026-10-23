@@ -369,12 +369,19 @@ def run_tests(workdir, copy, nodes, audit_script, record=None,
 # ------------------------------------------------------------- kept verdicts
 
 def lock_pins(snapshot):
+    '''The pins that apply to this interpreter. The lock covers every Python
+    the project supports, with a marker where a version differs; a line whose
+    marker does not hold here belongs to another interpreter's set.'''
+    from packaging.markers import Marker
     pins = {}
     for line in snapshot.content.get(LOCK, b'').decode('utf-8').splitlines():
-        line = line.split('#')[0].strip()
-        if '==' in line:
-            name, version = line.split('==', 1)
-            pins[normalize(name)] = version.strip()
+        requirement, _, marker = line.split('#')[0].strip().partition(';')
+        if '==' not in requirement:
+            continue
+        if marker.strip() and not Marker(marker.strip()).evaluate():
+            continue
+        name, version = requirement.split('==', 1)
+        pins[normalize(name)] = version.strip()
     return pins
 
 
@@ -391,7 +398,10 @@ def environment_matches_lock(snapshot):
         # audit see its checks; earlier versions were not checked.
         return ('Python %d.%d: not checked that pathlib looks os.stat up at '
                 'each call' % sys.version_info[:2])
-    pins = lock_pins(snapshot)
+    try:
+        pins = lock_pins(snapshot)
+    except ImportError:
+        return 'packaging is not installed, so the lock cannot be read'
     if not pins:
         return 'no %s' % LOCK
     from importlib import metadata

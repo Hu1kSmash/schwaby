@@ -181,6 +181,19 @@ class ReadsTest(unittest.TestCase):
         self.assertFalse(redproof.holds(keyed, grown, self.mutated))
 
 
+class LockTest(unittest.TestCase):
+
+    def test_only_the_pins_whose_marker_holds_here_count(self):
+        s = snapshot({'requirements.lock': (
+            "# a comment\n"
+            "a==2 ; python_version >= '3.0'\n"
+            "a==1 ; python_version < '3.0'\n"
+            "B_c==3\n"
+            "    # via a\n").encode()})
+        self.assertEqual({'a': '2', 'b-c': '3'}, redproof.lock_pins(s),
+                         'a pin for another Python was counted')
+
+
 class StoreTest(unittest.TestCase):
 
     def setUp(self):

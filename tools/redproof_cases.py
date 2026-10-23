@@ -6131,3 +6131,20 @@ LIGHT_CHECK_CASES = [
 ]
 
 CASES += LIGHT_CHECK_CASES
+
+
+# The lock covers every supported Python. Read without its markers, the pins
+# for another interpreter count, the installed set never matches, and no
+# verdict is ever kept or reused.
+LOCK_CASES = [
+    Case('harness/lock-markers-are-evaluated',
+         'tools/redproof.py',
+         '        if marker.strip() and not Marker(marker.strip()).evaluate():\n'
+         '            continue\n',
+         '',
+         'tests/redproof_tool_test.py::LockTest'
+         '::test_only_the_pins_whose_marker_holds_here_count',
+         'a pin for another Python was counted'),
+]
+
+CASES += LOCK_CASES

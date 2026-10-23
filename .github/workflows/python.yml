@@ -45,10 +45,13 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
 
+    # With requirements.lock as a constraint, so every job tests the versions
+    # every other machine tests. Without it each run resolved afresh, and a
+    # release appearing between two runs changed what was under test.
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install ".[dev]"
+        pip install -c requirements.lock ".[dev]"
 
     # Was `tox`, which is gone. It built an sdist, installed it into an
     # isolated env, and then ran `coverage` as an external command under a
@@ -96,7 +99,7 @@ jobs:
         # `setup.py sdist bdist_wheel` is deprecated -- setuptools calls the
         # deprecation "overdue". `python -m build` is what publish.yml uses, so
         # this checks the artifact that actually ships.
-        pip install build "readme_renderer[md]"
+        pip install -c requirements.lock build "readme_renderer[md]"
         python -m build
         # --strict, and readme_renderer[md] above: without that extra, twine
         # reports PASSED on a markdown long_description having rendered
@@ -118,9 +121,12 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
 
+    # The lock as a constraint pins whatever docs/requirements.txt installs
+    # without adding anything to it, so that file still checks the imports
+    # sphinx needs.
     - name: Install dependencies
       run: |
-        python -m pip install -r docs/requirements.txt
+        python -m pip install -c requirements.lock -r docs/requirements.txt
 
     - name: Verify that documentation builds
       run: |

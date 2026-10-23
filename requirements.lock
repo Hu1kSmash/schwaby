@@ -1,90 +1,288 @@
-# The exact dependency set this project's suite is tested against. The
-# shared test queue applies it as PIP_CONSTRAINT, so every machine there
-# tests the same versions. It is not what schwaby requires: setup.py's
-# floors are that, and installing schwaby never reads this file.
+# The exact dependency set this project's suite is tested against, on every
+# Python it supports: one file, with markers where a version differs by
+# Python (httpx2 2.16 needs 3.11, so 3.10 gets 2.14). CI installs with it as
+# a constraint (`pip install -c requirements.lock ".[dev]"`), and so does the
+# shared test queue (as PIP_CONSTRAINT), so every machine tests the same
+# versions. It is not what schwaby requires: setup.py's floors are that, and
+# installing schwaby never reads this file.
 #
-# Resolved 2026-10-23 on Python 3.14.6 by `pip install '.[dev]'` in a
-# fresh virtualenv. The runtime packages are the set 5.1.0 was certified
-# against on 2026-10-22. httpx2 2.16 needs Python 3.11 or newer, so this
-# does not install on 3.10, which CI tests without it.
+# Resolved 2026-10-23 by uv for Python 3.10 and newer. On 3.14 it is exactly
+# the set 5.1.1 was tested against, whose runtime packages are the set 5.1.0
+# was certified against on 2026-10-22.
 #
-# To regenerate: pip install '.[dev]' in a fresh virtualenv, then
-# pip freeze --all, leaving out pip and schwaby itself.
+# To regenerate, keeping every pin that still resolves:
+#   uv pip compile setup.py --extra dev --universal --python-version 3.10 \
+#       --no-header -o requirements.lock
+# and add --upgrade to move everything to the newest. Then put this header
+# back.
 alabaster==1.0.0
-anyio==4.15.1
-Authlib==1.9.1
+    # via sphinx
+anyio==4.15.1 ; sys_platform != 'emscripten'
+    # via httpx2
+authlib==1.9.1
+    # via schwaby (setup.py)
 autopep8==2.3.2
+    # via schwaby (setup.py)
 babel==2.18.0
+    # via sphinx
+backports-tarfile==1.2.0 ; python_full_version < '3.12' and platform_machine != 'ppc64le' and platform_machine != 's390x'
+    # via jaraco-context
 blinker==1.9.0
+    # via flask
 build==1.6.1
+    # via schwaby (setup.py)
 callee==0.3.1
+    # via schwaby (setup.py)
 certifi==2026.10.19
-cffi==2.1.1
+    # via requests
+cffi==2.1.1 ; platform_python_implementation != 'PyPy'
+    # via cryptography
 charset-normalizer==3.5.2
+    # via requests
 click==8.5.0
+    # via flask
 colorama==0.4.6
+    # via
+    #   schwaby (setup.py)
+    #   build
+    #   pytest
+    #   sphinx
 comrak==0.0.16
-coverage==7.17.0
+    # via readme-renderer
+coverage==7.16.2 ; python_full_version < '3.11'
+    # via schwaby (setup.py)
+coverage==7.17.0 ; python_full_version >= '3.11'
+    # via schwaby (setup.py)
 cryptography==50.0.2
+    # via
+    #   schwaby (setup.py)
+    #   authlib
+    #   joserfc
+    #   secretstorage
 dill==0.4.1
-docutils==0.22.4
+    # via multiprocess
+docutils==0.21.2 ; python_full_version < '3.11'
+    # via
+    #   schwaby (setup.py)
+    #   readme-renderer
+    #   sphinx
+    #   sphinx-rtd-theme
+docutils==0.22.4 ; python_full_version >= '3.11'
+    # via
+    #   schwaby (setup.py)
+    #   readme-renderer
+    #   sphinx
+    #   sphinx-rtd-theme
+exceptiongroup==1.3.1 ; python_full_version < '3.11'
+    # via
+    #   anyio
+    #   pytest
 execnet==2.1.2
-Flask==3.1.3
-h11==0.16.0
-httpcore2==2.16.0
-httpx2==2.16.0
+    # via pytest-xdist
+flask==3.1.3
+    # via schwaby (setup.py)
+h11==0.16.0 ; sys_platform != 'emscripten'
+    # via httpcore2
+httpcore2==2.14.0 ; python_full_version < '3.11' and sys_platform != 'emscripten'
+    # via httpx2
+httpcore2==2.16.0 ; python_full_version >= '3.11' and sys_platform != 'emscripten'
+    # via httpx2
+httpx2==2.14.0 ; python_full_version < '3.11'
+    # via schwaby (setup.py)
+httpx2==2.16.0 ; python_full_version >= '3.11'
+    # via schwaby (setup.py)
+httpx2-jsfetch==1.0 ; python_full_version >= '3.12' and sys_platform == 'emscripten'
+    # via httpx2
 id==1.6.1
+    # via twine
 idna==3.20
+    # via
+    #   anyio
+    #   httpx2
+    #   requests
 imagesize==2.0.1
+    # via sphinx
+importlib-metadata==9.0.1 ; python_full_version < '3.10.2' or (python_full_version >= '3.10.2' and python_full_version < '3.11' and platform_machine != 'ppc64le' and platform_machine != 's390x')
+    # via
+    #   build
+    #   keyring
+importlib-metadata==10.0.0 ; python_full_version == '3.11.*' and platform_machine != 'ppc64le' and platform_machine != 's390x'
+    # via
+    #   build
+    #   keyring
 iniconfig==2.3.1
+    # via pytest
 itsdangerous==2.2.0
-jaraco.classes==3.4.0
-jaraco.context==6.1.2
-jaraco.functools==4.6.0
-jeepney==0.9.0
-Jinja2==3.1.6
+    # via flask
+jaraco-classes==3.4.0 ; platform_machine != 'ppc64le' and platform_machine != 's390x'
+    # via keyring
+jaraco-context==6.1.2 ; platform_machine != 'ppc64le' and platform_machine != 's390x'
+    # via keyring
+jaraco-functools==4.6.0 ; platform_machine != 'ppc64le' and platform_machine != 's390x'
+    # via keyring
+jeepney==0.9.0 ; platform_machine != 'ppc64le' and platform_machine != 's390x' and sys_platform == 'linux'
+    # via
+    #   keyring
+    #   secretstorage
+jinja2==3.1.6
+    # via
+    #   flask
+    #   sphinx
 joserfc==1.7.7
-keyring==25.7.0
+    # via authlib
+keyring==25.7.0 ; platform_machine != 'ppc64le' and platform_machine != 's390x'
+    # via twine
 markdown-it-py==4.2.0
-MarkupSafe==3.0.4
+    # via rich
+markupsafe==3.0.4
+    # via
+    #   flask
+    #   jinja2
+    #   werkzeug
 mdurl==0.1.2
-more-itertools==11.2.1
+    # via markdown-it-py
+more-itertools==11.1.0 ; python_full_version < '3.11' and platform_machine != 'ppc64le' and platform_machine != 's390x'
+    # via
+    #   jaraco-classes
+    #   jaraco-functools
+more-itertools==11.2.1 ; python_full_version >= '3.11' and platform_machine != 'ppc64le' and platform_machine != 's390x'
+    # via
+    #   jaraco-classes
+    #   jaraco-functools
 multiprocess==0.70.19
+    # via schwaby (setup.py)
 nh3==0.3.7
+    # via readme-renderer
 packaging==26.3
+    # via
+    #   build
+    #   pytest
+    #   sphinx
+    #   twine
+    #   wheel
 pluggy==1.7.0
+    # via pytest
 psutil==7.2.2
+    # via schwaby (setup.py)
 pycodestyle==2.15.0
-pycparser==3.12
+    # via autopep8
+pycparser==3.11 ; python_full_version < '3.11' and implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+    # via cffi
+pycparser==3.12 ; python_full_version >= '3.11' and implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
+    # via cffi
 pyflakes==4.0.3
-Pygments==2.21.0
-pyproject_hooks==1.3.3
+    # via schwaby (setup.py)
+pygments==2.21.0
+    # via
+    #   pytest
+    #   readme-renderer
+    #   rich
+    #   sphinx
+pyproject-hooks==1.3.3
+    # via build
 pytest==9.1.1
+    # via
+    #   schwaby (setup.py)
+    #   pytest-timeout
+    #   pytest-xdist
 pytest-timeout==2.4.0
+    # via schwaby (setup.py)
 pytest-xdist==3.8.0
+    # via schwaby (setup.py)
 pytz==2026.5
-readme_renderer==46.0
+    # via schwaby (setup.py)
+pywin32-ctypes==0.2.3 ; platform_machine != 'ppc64le' and platform_machine != 's390x' and sys_platform == 'win32'
+    # via keyring
+readme-renderer==46.0
+    # via
+    #   schwaby (setup.py)
+    #   twine
 requests==2.34.2
+    # via
+    #   schwaby (setup.py)
+    #   requests-toolbelt
+    #   sphinx
+    #   twine
 requests-toolbelt==1.0.0
+    # via twine
 rfc3986==2.0.0
+    # via twine
 rich==15.0.0
-roman-numerals==4.1.0
-SecretStorage==3.5.0
+    # via twine
+roman-numerals==4.1.0 ; python_full_version >= '3.11'
+    # via sphinx
+secretstorage==3.5.0 ; platform_machine != 'ppc64le' and platform_machine != 's390x' and sys_platform == 'linux'
+    # via keyring
 setuptools==84.2.1
+    # via schwaby (setup.py)
 snowballstemmer==3.1.1
-Sphinx==9.2.0
+    # via sphinx
+sphinx==8.1.3 ; python_full_version < '3.11'
+    # via
+    #   schwaby (setup.py)
+    #   sphinx-rtd-theme
+    #   sphinxcontrib-jquery
+sphinx==9.0.4 ; python_full_version == '3.11.*'
+    # via
+    #   schwaby (setup.py)
+    #   sphinx-rtd-theme
+    #   sphinxcontrib-jquery
+sphinx==9.1.1 ; python_full_version == '3.12.*'
+    # via
+    #   schwaby (setup.py)
+    #   sphinx-rtd-theme
+    #   sphinxcontrib-jquery
+sphinx==9.2.0 ; python_full_version >= '3.13'
+    # via
+    #   schwaby (setup.py)
+    #   sphinx-rtd-theme
+    #   sphinxcontrib-jquery
+sphinx-rtd-theme==3.1.0
+    # via schwaby (setup.py)
 sphinxcontrib-applehelp==2.0.0
+    # via sphinx
 sphinxcontrib-devhelp==2.0.0
+    # via sphinx
 sphinxcontrib-htmlhelp==2.1.0
+    # via sphinx
 sphinxcontrib-jquery==4.1
+    # via sphinx-rtd-theme
 sphinxcontrib-jsmath==2.0.0
+    # via sphinx
 sphinxcontrib-qthelp==2.0.0
+    # via sphinx
 sphinxcontrib-serializinghtml==2.0.0
-sphinx_rtd_theme==3.1.0
-truststore==0.10.5
+    # via sphinx
+tomli==2.5.0 ; python_full_version < '3.11'
+    # via
+    #   autopep8
+    #   build
+    #   pytest
+    #   sphinx
+truststore==0.10.5 ; sys_platform != 'emscripten'
+    # via
+    #   httpcore2
+    #   httpx2
 twine==7.0.0
-typing_extensions==4.16.0
+    # via schwaby (setup.py)
+typing-extensions==4.16.0 ; python_full_version < '3.13' or (python_full_version >= '3.13' and python_full_version < '3.15' and sys_platform != 'emscripten')
+    # via
+    #   anyio
+    #   cryptography
+    #   exceptiongroup
+    #   httpx2
 urllib3==2.8.0
-websockets==17.3
-Werkzeug==3.1.9
+    # via
+    #   id
+    #   requests
+    #   twine
+websockets==16.1.1 ; python_full_version < '3.11'
+    # via schwaby (setup.py)
+websockets==17.3 ; python_full_version >= '3.11'
+    # via schwaby (setup.py)
+werkzeug==3.1.9
+    # via flask
 wheel==0.48.0
+    # via schwaby (setup.py)
+zipp==4.1.2 ; python_full_version < '3.10.2' or (python_full_version >= '3.10.2' and python_full_version < '3.12' and platform_machine != 'ppc64le' and platform_machine != 's390x')
+    # via importlib-metadata
