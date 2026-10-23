@@ -1,0 +1,7 @@
+#!/bin/sh
+# The light check, on what is about to be committed (tools/light_check.py).
+# Turned on with: git config core.hooksPath tools/hooks
+root=$(git rev-parse --show-toplevel) || exit 1
+python=python3
+[ -x "$root/.venv/bin/python" ] && python="$root/.venv/bin/python"
+exec "$python" "$root/tools/light_check.py"

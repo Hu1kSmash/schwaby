@@ -6080,3 +6080,54 @@ TIMING_CASES = [
 ]
 
 CASES += TIMING_CASES
+
+
+# The commit hooks' light check. A check that lets everything through looks
+# exactly like one that has nothing to complain about.
+LIGHT_CHECK_CASES = [
+    Case('light-check/only-new-warnings-fail',
+         'tools/light_check.py',
+         '    return sorted((now - before).elements())',
+         '    return sorted(now.elements())',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_warning_moved_or_kept_is_not_new',
+         'an old warning was blamed on this commit'),
+    Case('light-check/new-warnings-fail',
+         'tools/light_check.py',
+         '    return sorted((now - before).elements())',
+         '    return []',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_new_warning_is_refused_and_named',
+         'a new warning was let through'),
+    Case('light-check/a-new-file-has-no-baseline',
+         'tools/light_check.py',
+         '              else collections.Counter())',
+         '              else now)',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_new_file_is_checked_whole',
+         'a new file was not checked'),
+    Case('light-check/a-syntax-error-is-a-warning',
+         'tools/light_check.py',
+         "        self.messages.append('syntax error: %s' % msg)",
+         '        pass',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_file_that_does_not_parse_is_refused',
+         'does not parse was let through'),
+    Case('light-check/whitespace-errors-fail',
+         'tools/light_check.py',
+         '    if check.returncode != 0:',
+         '    if False:',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_whitespace_errors_are_refused',
+         'a whitespace error was let through'),
+    # The index is what the commit will contain; the working tree may differ.
+    Case('light-check/the-index-is-checked',
+         'tools/light_check.py',
+         "    now = warnings_in(blob(':' + path) or '', path)",
+         '    now = warnings_in(open(path).read(), path)',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_the_index_is_checked_not_the_working_tree',
+         'the working tree was checked instead of the index'),
+]
+
+CASES += LIGHT_CHECK_CASES

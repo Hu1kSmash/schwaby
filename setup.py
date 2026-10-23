@@ -113,6 +113,8 @@ setuptools.setup(
             # brings it in too, but a test should not rest on another
             # package's dependency.
             'docutils',
+            # The commit hooks' light check (tools/light_check.py) runs it.
+            'pyflakes',
             'pytest',
             # Not optional: setup.cfg passes `--dist loadgroup`, which pytest
             # refuses as an unknown argument without it. That is what keeps

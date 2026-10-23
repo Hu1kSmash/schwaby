@@ -27,6 +27,17 @@ There is no separate requirements file.
 The ``-e`` matters: without it you edit the source tree and test the copy in
 ``site-packages``, and the two drift the moment you change anything.
 
+Then turn on the commit hooks:
+
+.. code-block:: shell
+
+  git config core.hooksPath tools/hooks
+
+They run ``tools/light_check.py`` on what you are about to commit (measured at
+under a tenth of a second for an eight-file commit): every staged Python file must parse and gain no pyflakes
+warning it did not already have, and the diff must have no whitespace errors.
+The full suite is not part of it; that runs below, and on every pull request.
+
 Then check the environment before you change anything, so a later failure is
 yours:
 
