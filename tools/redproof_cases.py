@@ -6023,3 +6023,60 @@ SUITE_CASES = [
 ]
 
 CASES += SUITE_CASES
+
+
+# Report-delivery guards whose tests used to measure durations. Each test
+# now waits on a state or an order, and each entry breaks the guard to prove
+# the rewritten test still sees it.
+TIMING_CASES = [
+    Case('streaming/logout-report-lets-a-cancel-through',
+         'schwaby/streaming.py',
+         '                except asyncio.CancelledError:\n'
+         '                    # Not swallowed with the rest. Discarding a '
+         'cancellation\n'
+         '                    # makes logout() refuse to die -- a supervisor',
+         '                except ():\n'
+         '                    # Not swallowed with the rest. Discarding a '
+         'cancellation\n'
+         '                    # makes logout() refuse to die -- a supervisor',
+         'tests/streaming_test.py::StreamClientTest'
+         '::test_logout_can_still_be_cancelled_while_reporting',
+         'CancelledError not raised'),
+    Case('streaming/a-report-is-awaited-not-scheduled',
+         'schwaby/streaming.py',
+         '                if inspect.isawaitable(result):\n'
+         '                    await result\n',
+         '                if inspect.isawaitable(result):\n'
+         '                    asyncio.ensure_future(result)\n',
+         'tests/streaming_test.py::StreamClientTest'
+         '::test_a_slow_error_handler_holds_up_handle_message',
+         'the report is no longer awaited inline'),
+    # The design this replaced: delivering the batched rejection where it is
+    # read, inside the response deadline with the read lock held.
+    Case('streaming/a-batched-rejection-is-not-reported-inside-the-deadline',
+         'schwaby/streaming.py',
+         '                                self._read_and_route('
+         'use_overflow=False),',
+         '                                self._read_route_and_drain(),',
+         'tests/streaming_test.py::StreamClientTest'
+         '::test_a_slow_handler_cannot_fail_a_successful_subscribe',
+         'timed out after 0.2s',
+         also=('    async def _await_response(self, request_id, service, '
+               'command):\n',
+               '    async def _read_route_and_drain(self):\n'
+               '        frame = await self._read_and_route('
+               'use_overflow=False)\n'
+               '        await self._drain_pending_reports()\n'
+               '        return frame\n\n'
+               '    async def _await_response(self, request_id, service, '
+               'command):\n')),
+    Case('streaming/a-cancelled-request-does-not-drain',
+         'schwaby/streaming.py',
+         '            if not cancelled:\n',
+         '            if True:\n',
+         'tests/streaming_test.py::StreamClientTest'
+         '::test_a_slow_handler_does_not_delay_a_cancellation',
+         'unwinding the cancel waited on the error handler'),
+]
+
+CASES += TIMING_CASES

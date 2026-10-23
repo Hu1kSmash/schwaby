@@ -6687,12 +6687,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         async def recv():
             if frames:
                 return frames.pop(0)
-            # Nothing further is coming. Sleeping rather than exhausting the
+            # Nothing further is coming. Parking rather than exhausting the
             # mock matters for the mutation: with `<=` the frame is set aside
             # as an orphan, and an exhausted AsyncMock would then fail this
             # test on StopAsyncIteration -- a red arriving from the harness
             # rather than from the timeout the mutation actually causes.
-            await asyncio.sleep(10)
+            await self.park()
 
         socket.recv.side_effect = recv
 
@@ -7078,6 +7078,23 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await self.client.level_one_equity_subs(['GOOG'])
         await self.client.handle_message()
 
+    async def until(self, condition, what):
+        # Waits on the event loop, not the clock: each pass lets every other
+        # ready task take a step, so the bound is the amount of work there is
+        # rather than how fast the machine is, and a loaded machine cannot
+        # make it fail.
+        for _ in range(10000):
+            if condition():
+                return
+            await asyncio.sleep(0)
+        self.fail('never happened: %s' % what)
+
+    @staticmethod
+    async def park():
+        # Never returns. Stands in for a handler slower than anything the test
+        # waits for: the test cancels it, or it goes with the loop.
+        await asyncio.Event().wait()
+
     @no_duplicates
     @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_a_synchronous_handler_failure_is_reported(self, ws_connect):
@@ -7257,7 +7274,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
         async def slow_handler(msg):
             running.set()
-            await asyncio.sleep(30)
+            await self.park()
 
         await self.subscribe_and_deliver(ws_connect, slow_handler)
         await running.wait()
@@ -7277,8 +7294,17 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         # swallow cancellation. Discarding it makes logout() refuse to die, so
         # a supervisor calling cancel() during shutdown finds the task running
         # to completion regardless.
+        #
+        # The cancel lands once the handler is running, which is the only
+        # moment the guard is in play. It used to land after 50ms, which on a
+        # loaded machine could be before logout reached the report at all:
+        # the cancellation then came from somewhere else and the test passed
+        # without exercising the guard.
+        reporting = asyncio.Event()
+
         async def slow_error_handler(service, exc, msg):
-            await asyncio.sleep(30)
+            reporting.set()
+            await self.park()
 
         socket = await self.login_and_get_socket(ws_connect)
         self.client.add_error_handler(slow_error_handler)
@@ -7287,7 +7313,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
             json.dumps(self.success_response(1, 'ADMIN', 'LOGOUT'))]
 
         task = asyncio.ensure_future(self.client.logout())
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(reporting.wait(), timeout=5)
         task.cancel()
 
         with self.assertRaises(asyncio.CancelledError):
@@ -7303,20 +7329,30 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         # task -- and a stall presents as a dead feed, not as a slow handler,
         # so someone will eventually debug it from the wrong end. If this ever
         # stops being true it should be a decision, not a surprise.
-        delay = 0.2
+        #
+        # Asserted as an order rather than a duration: the handler is held
+        # until handle_message has had every chance to return without it.
+        started, release = asyncio.Event(), asyncio.Event()
+        order = []
 
         async def slow(service, exc, msg):
-            await asyncio.sleep(delay)
+            started.set()
+            await release.wait()
+            order.append('handler finished')
 
         self.client.add_error_handler(slow)
 
-        start = asyncio.get_event_loop().time()
-        await self.subscribe_and_deliver(
-                ws_connect, Mock(side_effect=ValueError('handler blew up')))
-        elapsed = asyncio.get_event_loop().time() - start
+        delivery = asyncio.create_task(self.subscribe_and_deliver(
+                ws_connect, Mock(side_effect=ValueError('handler blew up'))))
+        delivery.add_done_callback(
+                lambda _: order.append('handle_message returned'))
+        await asyncio.wait_for(started.wait(), timeout=5)
+        release.set()
+        await asyncio.wait_for(delivery, timeout=5)
+        await self.until(lambda: len(order) == 2, 'the handler finished')
 
-        self.assertGreaterEqual(
-                elapsed, delay,
+        self.assertEqual(
+                ['handler finished', 'handle_message returned'], order,
                 'handle_message returned before the error handler finished, so '
                 'the report is no longer awaited inline')
 
@@ -7408,11 +7444,19 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         # the wait -- and the subscription came back as ResponseTimeoutError
         # even though element 0 was code 0 and the future had already been
         # resolved.
+        #
+        # The handler is slow only where the hazard is: called with a lock
+        # held, it never returns, so the response deadline is what ends it.
+        # Called where it belongs, with neither lock held, it returns at once.
+        # The test's outcome rests on where the handler runs, not on which of
+        # two durations is longer.
         socket = await self.login_and_get_socket(ws_connect)
         self.client._response_timeout = 0.2
 
         async def slow(service, exc, msg):
-            await asyncio.sleep(1.0)
+            if (self.client._read_lock.locked()
+                    or self.client._request_lock.locked()):
+                await self.park()
 
         self.client.add_error_handler(slow)
 
@@ -8165,7 +8209,7 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket = await self.login_and_get_socket(ws_connect)
 
         async def slow(service, exc, msg):
-            await asyncio.sleep(5)
+            await self.park()
 
         self.client.add_error_handler(slow)
 
@@ -8195,13 +8239,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await asyncio.wait_for(started.wait(), timeout=5)
 
         task.cancel()
-        began = asyncio.get_running_loop().time()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-        elapsed = asyncio.get_running_loop().time() - began
-
-        # Would be ~5s if the finally awaited the handler.
-        self.assertLess(elapsed, 1.0)
+        # The handler never returns, so a finally that awaited it would never
+        # finish. The bound only names that; nothing here waits on a duration.
+        done, _ = await asyncio.wait({task}, timeout=5)
+        self.assertIn(task, done,
+                      'unwinding the cancel waited on the error handler')
+        self.assertTrue(task.cancelled())
         release.set()
 
     @no_duplicates
@@ -9295,11 +9338,12 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         socket.recv = recv
 
         handling = asyncio.create_task(self.client.handle_message())
-        await asyncio.sleep(0)
-        await asyncio.sleep(0.02)
+        await self.until(self.client._read_lock.locked,
+                         'handle_message became the reader')
         subscribing = asyncio.create_task(
                 self.client.level_one_equity_subs(['GOOG']))
-        await asyncio.sleep(0.02)
+        await self.until(lambda: self.client._pending_request is not None,
+                         'the subscribe registered its request')
         release.set()
 
         for task in (handling, subscribing):
