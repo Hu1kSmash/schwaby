@@ -158,3 +158,6 @@ tags
 virtualenv
 
 docs-build/
+
+# tools/redproof.py's kept verdicts: a verdict is never shipped
+cache/
