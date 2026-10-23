@@ -32,10 +32,12 @@ yours:
 
 .. code-block:: shell
 
-  pytest tests/ -q
+  pytest tests/ -q -n auto
 
-Around 950 tests, about six seconds. If your virtualenv is not active in a new
-terminal, run the ``activate`` line again; ``deactivate`` turns it off.
+Around 1,350 tests, a few seconds on every core. ``-n auto`` is
+`pytest-xdist <https://pypi.org/project/pytest-xdist/>`__, which ``[dev]``
+installs; drop it to run in one process. If your virtualenv is not active in
+a new terminal, run the ``activate`` line again; ``deactivate`` turns it off.
 
 -------------------------
 Running what CI will run
@@ -46,7 +48,7 @@ so a green run here is a green run there:
 
 .. code-block:: shell
 
-  pytest tests/ -q                          # the suite
+  pytest tests/ -q -n auto                  # the suite
   python -m sphinx -W docs/ /tmp/docs-build # docs, warnings are errors
   python -m build                           # the artifacts
   python -m twine check --strict dist/*     # what PyPI will accept

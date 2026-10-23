@@ -7,6 +7,16 @@ import inspect
 import httpx2
 import json
 import os
+import pytest
+
+
+#: Put on every test class which runs ``client_from_login_flow``. The flow
+#: starts its callback server on the port its URL names, in a child process, so
+#: no test can hold that port, and two of them running at once on different
+#: workers take each other's server for their own. This keeps them on one
+#: worker under ``pytest -n auto``; setup.cfg's ``--dist loadgroup`` is what
+#: makes xdist honour it. packaging_test checks no such class goes without it.
+callback_port_group = pytest.mark.xdist_group('callback-port')
 
 
 # Resolved from this file rather than the working directory. Every test that

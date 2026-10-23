@@ -233,7 +233,7 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    runs, and `asyncio` semantics differ below 3.12 as well as above it:
 
    ```shell
-   pytest tests/ -q
+   pytest tests/ -q -n auto
    python -m build
    python -m twine check --strict dist/*
    python -m sphinx -W docs/ /tmp/docs-build

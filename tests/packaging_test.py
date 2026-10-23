@@ -2077,6 +2077,52 @@ class DocExampleTest(unittest.TestCase):
         # class disappears quietly.
         self.assertGreater(len(classes), 20)
 
+    @no_duplicates
+    def test_every_login_flow_test_is_in_the_callback_port_group(self):
+        """`pytest -n auto` must never run two login flows at once.
+
+        Each starts a real callback server on its URL's port, so two on
+        different workers collide, and the loser waits out a five-minute
+        timeout against the other's server. Keyed on the call rather than on
+        a port number, so a test that moves to another port is still caught.
+        """
+        from . import utils
+        self.assertEqual('xdist_group', utils.callback_port_group.mark.name)
+
+        import configparser
+        cfg = configparser.ConfigParser()
+        cfg.read(os.path.join(REPO_ROOT, 'setup.cfg'))
+        self.assertIn('--dist loadgroup', cfg['tool:pytest']['addopts'])
+
+        def runs_the_flow(cls):
+            return any(isinstance(n, ast.Call) and
+                       getattr(n.func, 'attr', getattr(n.func, 'id', None))
+                       == 'client_from_login_flow'
+                       for n in ast.walk(cls))
+
+        def grouped(cls):
+            return any(getattr(d, 'id', getattr(d, 'attr', None))
+                       == 'callback_port_group' for d in cls.decorator_list)
+
+        offenders, found = [], []
+        for path in self.python_files_under_tests():
+            with open(path, encoding='utf-8') as f:
+                tree = ast.parse(f.read())
+            for cls in ast.walk(tree):
+                if isinstance(cls, ast.ClassDef) and runs_the_flow(cls):
+                    found.append(cls.name)
+                    if not grouped(cls):
+                        offenders.append('%s: %s runs the login flow outside '
+                                         'callback_port_group'
+                                         % (display_path(path), cls.name))
+        self.assertEqual([], offenders)
+
+        # Named, not counted: a scan that stopped seeing calls would pass the
+        # assertion above, and these are the classes known to make them.
+        self.assertLessEqual(
+                {'ClientFromLoginFlowTest', 'ParentSideImportTest',
+                 'ConnectErrorSiblingsAreAbsorbedTest'}, set(found))
+
     @staticmethod
     def python_files_under_tests():
         # Not `test_files`. pytest collects anything named `test_*`, so a

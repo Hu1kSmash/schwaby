@@ -3,6 +3,7 @@ from .utils import (
         AnyStringWith,
         MockAsyncOAuthClient,
         MockOAuthClient,
+        callback_port_group,
         no_duplicates
 )
 from unittest.mock import patch, ANY, MagicMock
@@ -63,6 +64,7 @@ _skip_on_macos_runner = unittest.skipIf(
         'see the comment above this class')
 
 
+@callback_port_group
 class ClientFromLoginFlowTest(unittest.TestCase):
 
     def setUp(self):
@@ -2367,6 +2369,7 @@ class NormalizeCredentialTest(unittest.TestCase):
         self.assertEqual(API_KEY, sync_session.call_args[0][0])
 
 
+@callback_port_group
 class ParentSideImportTest(unittest.TestCase):
     """flask is imported in the parent process, not only in the child.
 

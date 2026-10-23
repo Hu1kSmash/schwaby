@@ -114,6 +114,10 @@ setuptools.setup(
             # package's dependency.
             'docutils',
             'pytest',
+            # Not optional: setup.cfg passes `--dist loadgroup`, which pytest
+            # refuses as an unknown argument without it. That is what keeps
+            # `pytest -n auto` from running two login flows on one port.
+            'pytest-xdist',
             # packaging_test builds a small project with the API index
             # extension, so it needs sphinx itself rather than the copy
             # sphinx_rtd_theme happens to bring.
