@@ -273,8 +273,8 @@ these methods to do so.
   ===================================  ==========================  ============
 
   Set only ``duration`` and you get a different order from the one the
-  interface would have placed under the same label. Venue-observed by a
-  consumer running against funded accounts.
+  interface would have placed under the same label. Venue-observed in live
+  trading.
 
 .. autoclass:: schwaby.orders.common::Session
   :members:

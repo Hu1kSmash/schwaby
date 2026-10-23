@@ -1220,7 +1220,7 @@ inherent only if you are trying to decode around the unknown key.
 
 *Corrected in 4.4.2: the three-member layout this paragraph relies on was
 reasoned from .NET, never captured. Schwab sends the whole mantissa in `lo`,
-and none of 5,843 decimal objects in a production archive carried `mid` or
+and none of 5,843 decimal objects in a recorded archive carried `mid` or
 `hi`.*
 
 ### A field Schwab adds to a stream is now visible, not just survivable
@@ -1584,7 +1584,7 @@ one. `docs/order-builder.rst` now states the accepted types **per setter**, in
 a table the test suite checks against the validators — in both directions, so
 it fails if the table lies and if a validator drifts from it.
 
-### Documentation, from a consumer running this against funded accounts
+### Documentation, from live trading use
 
 Findings that could not have come from reading the library, each measured:
 

@@ -1505,7 +1505,7 @@ presence of ``OrderUROutCompleted`` alone to tell a cancel from a rejection.
   On an order that fills in one execution, the first two are equal, so reading
   the wrong one survives every test built on such fills. On an order that fills
   in two, the second fill's ``ExecutionQuantity`` is the second tranche only.
-  Measured on equity orders from a production archive of 160 filled orders:
+  Measured on equity orders from a recorded archive of 160 filled orders:
   all three that filled in two executions showed the split --- the first fill
   with ``LeavesQuantity`` above zero and the two quantities equal, the second
   with ``ExecutionQuantity`` below ``CumulativeQuantity`` and
@@ -1531,7 +1531,7 @@ moment.** Under
 ``BaseEvent/OrderFillCompletedEventOrderLegQuantityInfo/ExecutionInfo``, both
 ``ExecutionTimeStamp/DateTimeString`` and
 ``VenuExecutionTimeStamp/DateTimeString`` (Schwab's spelling) were present on
-all 218 fill items in a production archive --- 163 distinct fills, since the
+all 218 fill items in a recorded archive --- 163 distinct fills, since the
 archive can store one message twice --- and they differed on every one, by
 under a second. Both are strings of the form ``YYYY-MM-DD HH:MM:SS.fff`` with
 no offset. ``ExecutionTimeStamp`` reads as US Eastern time. For 106 of those
@@ -1807,7 +1807,7 @@ nowhere official.
 **The sign of a field is not a side.** Buy versus sell comes from
 ``BuySellCode``. Prices other than ``Mid``, and every quantity, arrived
 positive, with an even ``signScale``; the odd branch exists so a genuinely
-negative field does not decode positive. Across that production archive only
+negative field does not decode positive. Across that recorded archive only
 four fields were ever negative: ``EstimatedPrincipalAmount``,
 ``EstimatedPrincipalAmnt`` and ``EstimatedNetAmount``, negative on a buy
 because the cash goes out, and ``Mid``, negative on the sell orders where the
@@ -1936,7 +1936,7 @@ This section draws on several sources:
 
 - a deliberate place-and-cancel of an unfillable limit order on a funded
   account;
-- a production archive of fill-bearing and unexpected pushes, which is where
+- a recorded archive of fill-bearing and unexpected pushes, which is where
   the decimal and ``Mid`` counts come from;
 - option orders placed by hand whose prices were then changed, described
   below;

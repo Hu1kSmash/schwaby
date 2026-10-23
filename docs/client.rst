@@ -448,8 +448,8 @@ Orders
   Both arguments are opaque strings, so swapping them raises nothing locally.
   It sends a well-formed request naming the wrong account or the wrong order,
   and you find out from the response --- or from a cancel that quietly did not
-  cancel what you meant. A consumer running this against funded accounts keeps
-  a regression test pinning the argument order of each of these, which is a
+  cancel what you meant. One caller running this for live trading keeps a
+  regression test pinning the argument order of each of these, which is a
   fair signal of how easy the mistake is.
 
 

@@ -67,8 +67,8 @@ and stopped, while `find_packages()` was also shipping `tests/`.
 **Ask what the bug was covering for.** Several times now a correctness fix has
 exposed something worse the defect had been masking. Truncating prices hid that a
 `Decimal` built from a float renders its 57-character binary expansion. Migrating
-to `httpx2` for correct types flipped the exception hierarchy under the
-downstream consumer. The question belongs in the fix, not the postmortem.
+to `httpx2` for correct types flipped the exception hierarchy under a caller's
+retry code. The question belongs in the fix, not the postmortem.
 
 **An assertion about an empty result needs a positive control.**
 `assertEqual([], offenders)` holds when the guard works *and* when the input
@@ -229,11 +229,11 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    only executable difference --- which is the safest shape a bump can have.
 
    Say which method established it in the release notes, not just the verdict.
-   A consumer pinning this against funded accounts should be able to re-run
+   A caller pinning this for live trading should be able to re-run
    the check rather than trust the claim.
 
-6. Verify, on **3.11, 3.12 and 3.14** — 3.14 is what the downstream consumer
-   runs, and `asyncio` semantics differ below 3.12 as well as above it:
+6. Verify, on **3.11, 3.12 and 3.14** — 3.14 is the newest Python supported,
+   and `asyncio` semantics differ below 3.12 as well as above it:
 
    ```shell
    pytest tests/ -q -n auto

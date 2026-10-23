@@ -124,7 +124,7 @@ described in the :ref:`Client documentation <orders-section>`.
   So a dictionary keyed by whatever one call site produced misses lookups from
   another, and it misses them silently --- the symptom arrives much later, as
   an order you placed that you have no record of. Pick one representation and
-  convert at every boundary; a consumer running this against funded accounts
+  convert at every boundary; one caller running this for live trading
   normalises to ``str`` at the single point every placement passes through.
 
 Every outcome other than success raises, so there is no ``None`` to check for.

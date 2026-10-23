@@ -1070,8 +1070,8 @@ class DocCoverageTest(unittest.TestCase):
     @staticmethod
     def is_ours(obj):
         # With the separator: `startswith('schwaby')` alone also matches a
-        # sibling package called schwabytools, the shape CLAUDE.md's
-        # sibling-package entry records.
+        # sibling package called schwabytools, the shape the red-proof entry
+        # `client/sibling-package-prefix` records.
         home = getattr(obj, '__module__', '') or ''
         return home == 'schwaby' or home.startswith('schwaby.')
 
