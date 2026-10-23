@@ -6148,3 +6148,25 @@ LOCK_CASES = [
 ]
 
 CASES += LOCK_CASES
+
+
+# tools/repeat.py counts a flake by the test it names.
+REPEAT_CASES = [
+    Case('repeat/failures-are-named',
+         'tools/repeat.py',
+         "    return sorted(set(m.split(' - ')[0] for m in "
+         "_FAILED.findall(output)))",
+         '    return []',
+         'tests/repeat_tool_test.py::FailuresTest'
+         '::test_names_every_failed_and_erroring_test_once',
+         'a failed test was not named'),
+    Case('repeat/errors-count-as-failures',
+         'tools/repeat.py',
+         "_FAILED = re.compile(r'^(?:FAILED|ERROR) (\\S+)', re.MULTILINE)",
+         "_FAILED = re.compile(r'^FAILED (\\S+)', re.MULTILINE)",
+         'tests/repeat_tool_test.py::FailuresTest'
+         '::test_names_every_failed_and_erroring_test_once',
+         'a failed test was not named'),
+]
+
+CASES += REPEAT_CASES
