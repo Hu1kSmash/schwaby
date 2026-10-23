@@ -110,6 +110,54 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                 'token': self.raw_token
             }, json.load(f))
 
+    @no_duplicates
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    @_skip_on_macos_runner
+    def test_the_callback_server_has_exited_when_the_flow_returns(
+            self, mock_webbrowser_get, async_session, sync_session, client):
+        # A killed server holds the port until it has actually exited, so a
+        # second flow started straight after found the port taken. Exited
+        # and reaped is checked rather than the port, which is a race: a
+        # killed child nobody waited for stays in the process table, as a
+        # zombie or still dying, every time.
+        import multiprocess
+        import psutil
+
+        sync_session.return_value = sync_session
+        sync_session.create_authorization_url.return_value = (
+                'https://auth.url.com', None)
+        sync_session.fetch_token.return_value = self.raw_token
+
+        controller = MagicMock()
+        mock_webbrowser_get.return_value = controller
+        controller.open.side_effect = \
+                lambda auth_url: requests.get(
+                        'https://127.0.0.1:6969/callback?code=c', verify=False)
+
+        started = []
+        real_start = multiprocess.Process.start
+
+        def start(process):
+            real_start(process)
+            started.append(process.pid)
+
+        with patch.object(multiprocess.Process, 'start', start):
+            auth.client_from_login_flow(
+                    API_KEY, APP_SECRET, 'https://127.0.0.1:6969/callback',
+                    self.token_path)
+
+        # Positive control: no server started means nothing to have exited.
+        self.assertEqual(1, len(started))
+        self.assertFalse(
+                psutil.pid_exists(started[0]),
+                'the callback server was still in the process table after '
+                'the login flow returned')
+
 
     @patch('schwaby.auth.Client')
     @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)

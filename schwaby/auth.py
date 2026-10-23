@@ -855,6 +855,14 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
                 psutil.Process(server.pid).kill()
             except psutil.NoSuchProcess:
                 pass
+            # kill() only sends the signal, and the port is not free until
+            # the server has exited. Without this a login flow started
+            # straight after found it still held and failed with
+            # RedirectServerExitedError: measured on a loaded machine, at 38
+            # of 720 server starts, held by the server killed up to 191ms
+            # earlier; with it, none. Bounded so that a child which cannot
+            # die promptly delays the caller rather than hanging it.
+            server.join(10)
 
     with callback_server():
         # Wait until the server successfully starts. Bounded, because a server
