@@ -253,6 +253,24 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    `python -m build` earns its place: `setup.py` is not imported by the suite, so
    an edit leaving it unparseable is invisible to `pytest`.
 
+   Then the red-proof, at the commit you will tag:
+
+   ```shell
+   python -I -B tools/redproof.py
+   ```
+
+   It runs every entry whose inputs changed since a verdict was kept, which on
+   a fresh checkout is all of them. Every entry must be PROVEN, KEPT,
+   SUPERSEDED or REMOVED.
+
+   **Nothing is tagged until the release is signed off.** The maintainer, or
+   whoever they have delegated release approval to, approves it having seen
+   the results above for the exact commit that will be tagged. A result from
+   an earlier commit does not count: the release commit itself is the one that
+   changes `version.py`. The same approval covers the PyPI upload, which
+   waits at the publish workflow's `pypi` environment until someone approves
+   it there.
+
 7. Commit, then `git tag -a vX.Y.Z`. Write the message from a file — backticks in
    `git tag -m` are executed as command substitution, which silently swallowed a
    word from the v2.5.0 tag.
