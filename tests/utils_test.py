@@ -402,6 +402,140 @@ class HTTPStatusErrorTest(unittest.TestCase):
         self.assertFalse(issubclass(HTTPStatusError, SchwabError))
 
 
+class TokenEndpointStatusTest(unittest.TestCase):
+    """What a failed refresh says about the token endpoint's answer: its HTTP
+    status, whether it asked for fewer requests, and whether it answered at
+    all. Driven through the real session stack, since the status is taken
+    from the response on the way through."""
+
+    _refreshing_client = staticmethod(HTTPStatusErrorTest._refreshing_client)
+    _json_response = staticmethod(HTTPStatusErrorTest._json_response)
+
+    def refused(self, token_response, asynchronous=False):
+        import asyncio
+        from schwaby.utils import TokenRefreshError
+        client, requests = self._refreshing_client(
+                token_response, asynchronous=asynchronous)
+        with self.assertRaises(TokenRefreshError) as caught:
+            if asynchronous:
+                asyncio.run(client.get_quote('F'))
+            else:
+                client.get_quote('F')
+        return caught.exception, requests
+
+    @no_duplicates
+    def test_a_refusal_without_a_json_body_carries_its_status(self):
+        import httpx2
+        for asynchronous in (False, True):
+            for status in (429, 400, 401):
+                with self.subTest(status=status, asynchronous=asynchronous):
+                    error, requests = self.refused(
+                            lambda request: httpx2.Response(
+                                status, content=b'', request=request),
+                            asynchronous)
+                    self.assertEqual(['/v1/oauth/token'], requests)
+                    self.assertEqual(status, error.status_code)
+                    self.assertTrue(error.endpoint_answered)
+
+    @no_duplicates
+    def test_a_refusal_with_a_json_body_carries_its_status(self):
+        # The case left to authlib, which carries no status on its error, so
+        # an implementation reading it from there leaves this None.
+        for asynchronous in (False, True):
+            for status in (400, 429):
+                with self.subTest(status=status, asynchronous=asynchronous):
+                    error, _ = self.refused(
+                            lambda request: self._json_response(
+                                status, {'error': 'invalid_grant',
+                                         'error_description': 'expired'},
+                                request),
+                            asynchronous)
+                    self.assertEqual(status, error.status_code)
+                    self.assertTrue(error.endpoint_answered)
+                    # Still the endpoint's own refusal, as authlib reports
+                    # one: terminal, with its code and text as the cause.
+                    self.assertTrue(error.refresh_token_invalid)
+                    self.assertEqual('invalid_grant', error.__cause__.error)
+                    self.assertEqual('expired', error.__cause__.description)
+
+    @no_duplicates
+    def test_an_unusable_token_response_carries_its_status(self):
+        error, _ = self.refused(
+                lambda request: self._json_response(
+                    200, {'message': 'Unauthorized'}, request))
+        self.assertEqual('unusable_token_response', error.__cause__.error)
+        self.assertEqual(200, error.status_code)
+        self.assertTrue(error.endpoint_answered)
+
+    @no_duplicates
+    def test_only_a_429_is_rate_limited(self):
+        import httpx2
+        for status in (429, 400, 401, 403):
+            for json_body in (False, True):
+                with self.subTest(status=status, json_body=json_body):
+                    error, _ = self.refused(
+                            (lambda request: self._json_response(
+                                status, {'error': 'x'}, request))
+                            if json_body else
+                            (lambda request: httpx2.Response(
+                                status, content=b'', request=request)))
+                    self.assertEqual(status == 429, error.rate_limited)
+
+    @no_duplicates
+    def test_a_token_that_fails_before_anything_is_sent_says_so(self):
+        # authlib refuses a stored token with no refresh token before asking
+        # the endpoint anything.
+        import httpx2
+        from schwaby.auth import client_from_access_functions
+        from schwaby.utils import TokenRefreshError
+
+        def build(token, requests):
+            def handler(request):
+                requests.append(request.url.path)
+                if request.url.path.endswith('/oauth/token'):
+                    return httpx2.Response(401, content=b'', request=request)
+                return httpx2.Response(200, json={}, request=request)
+            client = client_from_access_functions(
+                    'api-key', 'app-secret',
+                    lambda: {'creation_timestamp': 9999999999, 'token': token},
+                    lambda *args, **kwargs: None)
+            client.session._transport = httpx2.MockTransport(handler)
+            client.session._mounts = {}
+            return client
+
+        requests = []
+        with self.assertRaises(TokenRefreshError) as caught:
+            build({'message': 'Unauthorized'}, requests).get_quote('F')
+        self.assertEqual([], requests)
+        self.assertFalse(caught.exception.endpoint_answered)
+        self.assertIsNone(caught.exception.status_code)
+        self.assertFalse(caught.exception.rate_limited)
+
+        # Positive control: the same client, asking the endpoint, says it
+        # answered.
+        requests = []
+        with self.assertRaises(TokenRefreshError) as caught:
+            build({'access_token': 'a', 'refresh_token': 'r',
+                   'token_type': 'Bearer', 'expires_at': 1},
+                  requests).get_quote('F')
+        self.assertEqual(['/v1/oauth/token'], requests)
+        self.assertTrue(caught.exception.endpoint_answered)
+        self.assertEqual(401, caught.exception.status_code)
+
+    @no_duplicates
+    def test_the_attributes_survive_a_copy_and_a_pickle(self):
+        import copy, pickle
+        from schwaby.utils import LoginExchangeError, TokenRefreshError
+        for exc in (TokenRefreshError('m', status_code=429,
+                                      endpoint_answered=True),
+                    LoginExchangeError('http_429', 'd', status_code=429,
+                                       endpoint_answered=True)):
+            for rebuilt in (copy.copy(exc), pickle.loads(pickle.dumps(exc))):
+                with self.subTest(exception=type(exc).__name__):
+                    self.assertEqual(429, rebuilt.status_code)
+                    self.assertTrue(rebuilt.rate_limited)
+                    self.assertTrue(rebuilt.endpoint_answered)
+
 class EnumEnforcerTest(unittest.TestCase):
 
     class TestClass(EnumEnforcer):

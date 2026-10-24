@@ -2357,7 +2357,7 @@ CASES = [
     # memory.
     Case('auth/unusable-refresh-response-is-refused-before-parsing',
          'schwaby/auth.py',
-         "    if isinstance(body, dict) and ('error' in body or _is_usable_token(body)):",
+         "    if isinstance(body, dict) and _is_usable_token(body):",
          '    if True:',
          'tests/utils_test.py::HTTPStatusErrorTest::test_a_refresh_response_that_is_not_a_token_is_not_stored',
          'Lists differ'),
@@ -2388,7 +2388,161 @@ CASES = [
          "    if isinstance(body, dict) and ('error' in body or _is_usable_token(body)):",
          '    if isinstance(body, dict) and _is_usable_token(body):',
          'tests/utils_test.py::HTTPStatusErrorTest::test_a_refresh_rejected_with_an_error_body_is_a_refresh_error',
+         'False is not true',
+         removed='The hook now raises that rejection itself, carrying the '
+                 'HTTP status, so the line this mutated is gone; the guard '
+                 'is auth/rejection-with-an-error-body-is-reported-as-one.'),
+
+    # The same guard since the hook raises the rejection itself: an error
+    # body that fell through to the usable-token check would be refused as
+    # unusable, and a dead refresh token would read as retryable.
+    Case('auth/rejection-with-an-error-body-is-reported-as-one',
+         'schwaby/auth.py',
+         "    if isinstance(body, dict) and 'error' in body:",
+         '    if False:',
+         'tests/utils_test.py::HTTPStatusErrorTest::test_a_refresh_rejected_with_an_error_body_is_a_refresh_error',
          'False is not true'),
+
+    # Each refusal the hook raises carries the response's status, one case
+    # per branch. The JSON-bodied one is the case authlib raises itself, with
+    # no status on it, so leaving it to authlib is a case of its own.
+    Case('auth/a-bodyless-refusal-carries-its-status',
+         'schwaby/auth.py',
+         "        refusal._token_endpoint_status = response.status_code\n"
+         "        raise refusal from None\n",
+         "        raise refusal from None\n",
+         'tests/utils_test.py::TokenEndpointStatusTest'
+         '::test_a_refusal_without_a_json_body_carries_its_status',
+         '429 != None'),
+
+    Case('auth/a-json-refusal-carries-its-status',
+         'schwaby/auth.py',
+         "        refusal._token_endpoint_status = response.status_code\n"
+         "        raise refusal\n    if isinstance(body, dict) and _is_usable",
+         "        raise refusal\n    if isinstance(body, dict) and _is_usable",
+         'tests/utils_test.py::TokenEndpointStatusTest'
+         '::test_a_refusal_with_a_json_body_carries_its_status',
+         '400 != None'),
+
+    Case('auth/a-json-refusal-is-not-left-to-authlib',
+         'schwaby/auth.py',
+         "    if isinstance(body, dict) and 'error' in body:\n",
+         "    if isinstance(body, dict) and 'error' in body:\n"
+         "        return response\n",
+         'tests/utils_test.py::TokenEndpointStatusTest'
+         '::test_a_refusal_with_a_json_body_carries_its_status',
+         '400 != None'),
+
+    Case('auth/an-unusable-response-carries-its-status',
+         'schwaby/auth.py',
+         "    refusal._described_by_this_library = True\n"
+         "    refusal._token_endpoint_status = response.status_code\n",
+         "    refusal._described_by_this_library = True\n",
+         'tests/utils_test.py::TokenEndpointStatusTest'
+         '::test_an_unusable_token_response_carries_its_status',
+         '200 != None'),
+
+    # Whether the endpoint answered is read from the status the hook put
+    # there, not from this library's mark on its own descriptions: the mark
+    # is on a bodyless 429 too, which the endpoint did answer.
+    Case('refresh/answered-is-not-read-from-the-description-mark',
+         'schwaby/utils.py',
+         "    if '_token_endpoint_status' in vars(error):\n"
+         "        return True, error._token_endpoint_status\n",
+         "    if vars(error).get('_described_by_this_library') is not True:\n"
+         "        return True, vars(error).get('_token_endpoint_status')\n",
+         'tests/utils_test.py::TokenEndpointStatusTest'
+         '::test_a_refusal_without_a_json_body_carries_its_status',
+         '429 != None'),
+
+    Case('refresh/nothing-sent-is-not-answered',
+         'schwaby/utils.py',
+         "        return True, error._token_endpoint_status\n"
+         "    return False, None\n",
+         "        return True, error._token_endpoint_status\n"
+         "    return True, None\n",
+         'tests/utils_test.py::TokenEndpointStatusTest'
+         '::test_a_token_that_fails_before_anything_is_sent_says_so',
+         'True is not false'),
+
+    Case('auth/a-login-refused-before-sending-is-not-answered',
+         'schwaby/utils.py',
+         "        return True, error._token_endpoint_status\n"
+         "    return False, None\n",
+         "        return True, error._token_endpoint_status\n"
+         "    return True, None\n",
+         'tests/auth_test.py::LoginExchangeErrorTest'
+         '::test_a_login_refused_before_the_code_is_sent_says_so',
+         'True is not false'),
+
+    # The checks on the redirect raise before any exchange, with the class's
+    # defaults.
+    Case('auth/a-login-exchange-error-defaults-to-not-answered',
+         'schwaby/utils.py',
+         "                 status_code=None, endpoint_answered=False):\n"
+         "        super().__init__(error, description, uri)\n",
+         "                 status_code=None, endpoint_answered=True):\n"
+         "        super().__init__(error, description, uri)\n",
+         'tests/auth_test.py::LoginExchangeErrorTest'
+         '::test_a_login_refused_before_the_code_is_sent_says_so',
+         'True is not false'),
+
+    Case('refresh/the-status-reaches-the-refresh-error',
+         'schwaby/client/base.py',
+         '                    status_code=status,\n',
+         '                    status_code=None,\n',
+         'tests/utils_test.py::TokenEndpointStatusTest'
+         '::test_a_refusal_without_a_json_body_carries_its_status',
+         '429 != None'),
+
+    Case('refresh/answered-reaches-the-refresh-error',
+         'schwaby/client/base.py',
+         '                    endpoint_answered=answered) from e',
+         '                    endpoint_answered=False) from e',
+         'tests/utils_test.py::TokenEndpointStatusTest'
+         '::test_a_refusal_without_a_json_body_carries_its_status',
+         'False is not true'),
+
+    Case('auth/the-status-reaches-the-login-error',
+         'schwaby/auth.py',
+         '                error, description, e.uri, status_code=status,\n',
+         '                error, description, e.uri, status_code=None,\n',
+         'tests/auth_test.py::LoginExchangeErrorTest'
+         '::test_a_refused_exchange_carries_the_endpoints_status',
+         '429 != None'),
+
+    Case('auth/answered-reaches-the-login-error',
+         'schwaby/auth.py',
+         '                endpoint_answered=answered) from None',
+         '                endpoint_answered=False) from None',
+         'tests/auth_test.py::LoginExchangeErrorTest'
+         '::test_a_refused_exchange_carries_the_endpoints_status',
+         'False is not true'),
+
+    # Rate limited means a 429 and only that, on both classes.
+    Case('refresh/only-a-429-is-rate-limited',
+         'schwaby/utils.py',
+         "        #: nothing was sent.\n        self.status_code = status_code\n"
+         "\n        #: ``True`` for a 429: the endpoint asked for fewer requests.\n"
+         "        self.rate_limited = status_code == 429\n",
+         "        #: nothing was sent.\n        self.status_code = status_code\n"
+         "\n        #: ``True`` for a 429: the endpoint asked for fewer requests.\n"
+         "        self.rate_limited = status_code is not None\n",
+         'tests/utils_test.py::TokenEndpointStatusTest'
+         '::test_only_a_429_is_rate_limited',
+         'False != True'),
+
+    Case('auth/only-a-429-is-rate-limited',
+         'schwaby/utils.py',
+         "        #: the code was never sent.\n        self.status_code = status_code\n"
+         "\n        #: ``True`` for a 429: the endpoint asked for fewer requests.\n"
+         "        self.rate_limited = status_code == 429\n",
+         "        #: the code was never sent.\n        self.status_code = status_code\n"
+         "\n        #: ``True`` for a 429: the endpoint asked for fewer requests.\n"
+         "        self.rate_limited = status_code is not None\n",
+         'tests/auth_test.py::LoginExchangeErrorTest'
+         '::test_a_refused_exchange_carries_the_endpoints_status',
+         'False != True'),
 
     # The access token must be a string; a list is not one the session can send.
     Case('auth/usable-token-access-token-is-a-string',
@@ -3665,8 +3819,8 @@ CASES = [
 
     Case('auth/login-exchange-error-carries-the-uri',
          'schwaby/auth.py',
-         "        raise LoginExchangeError(error, description, e.uri) from None",
-         "        raise LoginExchangeError(error, description) from None",
+         "                error, description, e.uri, status_code=status,",
+         "                error, description, status_code=status,",
          'tests/auth_test.py::LoginExchangeErrorTest::test_a_refused_code_exchange_is_a_login_exchange_error',
          '!= None'),
 
@@ -3954,8 +4108,8 @@ CASES = [
 
     Case('auth/login-exchange-error-is-not-chained',
          'schwaby/auth.py',
-         '        raise LoginExchangeError(error, description, e.uri) from None',
-         '        raise LoginExchangeError(error, description, e.uri) from e',
+         '                endpoint_answered=answered) from None',
+         '                endpoint_answered=answered) from e',
          'tests/auth_test.py::LoginExchangeErrorTest::test_refusal_text_is_escaped_and_cut',
          'unexpectedly found'),
 

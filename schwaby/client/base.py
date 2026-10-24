@@ -19,7 +19,7 @@ from schwaby.orders.generic import OrderBuilder
 
 from ..utils import (EnumEnforcer, TokenRefreshError, _expiry_authlib_acts_on,
                      _format_iso_instant, _is_instance, _qualified_type_name,
-                     _refusal_text)
+                     _refusal_text, _token_endpoint_answer)
 from .. import _redact
 from .. import utils as _utils
 
@@ -248,11 +248,14 @@ class BaseClient(EnumEnforcer):
             # attributes and identity, which callers classify a refresh by.
             text = '{}: {}'.format(*_refusal_text(e))
             e.args = (text,)
+            answered, status = _token_endpoint_answer(e)
             raise TokenRefreshError(
                     'Failed to refresh the Schwab token: {}. {} {}'.format(
                         text, detail, advice),
                     token_age=age,
-                    refresh_token_invalid=invalid) from e
+                    refresh_token_invalid=invalid,
+                    status_code=status,
+                    endpoint_answered=answered) from e
 
     def _stored_token_will_be_refreshed(self):
         '''Whether authlib will replace the session's token by itself. It

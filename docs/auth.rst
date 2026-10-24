@@ -336,6 +336,15 @@ version of ``authlib`` is installed.
 
 .. autoclass:: schwaby.utils.TokenRefreshError
 
+**Read the endpoint's answer from the attributes, not from the text.**
+``rate_limited`` says the token endpoint answered with a 429, asking for
+fewer requests, so the retry should wait longer. ``status_code`` is the HTTP
+status it answered with, and ``endpoint_answered`` says whether it was asked
+at all. All three are set the same way for a refusal with a JSON body and one
+without, and they are what to branch on: the ``http_429`` code this library
+gives a refusal with no body is a message, and could be worded differently in
+a later release.
+
 **Retrying a dead refresh token cannot work, and the retries are not free.**
 A refresh token is good for seven days and is replaced only by the full
 authorization_code flow, which needs a human at a browser. An unattended
@@ -584,6 +593,12 @@ the login again. So does a refusal whose body is not JSON. A server error, or a
 success whose body is not JSON, raises as it does during a call.
 
 .. autoclass:: schwaby.utils.LoginExchangeError
+
+``endpoint_answered`` tells the two kinds of refusal apart: ``False`` for a
+login refused before its code was sent, by the redirect or by the ``state``
+check, and ``True`` for one the token endpoint refused, with its HTTP status
+in ``status_code`` and ``rate_limited`` set for a 429. Either way the login
+has to start again.
 
 During a refresh, ``OAuthError: invalid_client`` is reported with
 ``refresh_token_invalid`` ``False``. RFC 6749 defines ``invalid_client`` as the

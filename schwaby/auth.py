@@ -26,7 +26,8 @@ import webbrowser
 from schwaby import _redact
 from schwaby.client import AsyncClient, Client
 from schwaby.utils import (LoginExchangeError, SchwabError,
-        _expiry_authlib_acts_on, _is_instance, _refusal_text, _venue_text)
+        _expiry_authlib_acts_on, _is_instance, _refusal_text,
+        _token_endpoint_answer, _venue_text)
 from schwaby.debug import register_redactions
 
 
@@ -231,9 +232,7 @@ def _refuse_unusable_token_response(response):
 
     Registered as authlib's ``refresh_token_response`` compliance hook, which
     sees the response before it is parsed, so nothing unusable is stored. A
-    server error is left to authlib, which raises ``HTTPStatusError`` for it,
-    and so is a JSON object carrying ``error``, which authlib reports as the
-    rejection it is.
+    server error is left to authlib, which raises ``HTTPStatusError`` for it.
 
     A refusal -- any status from 300 to 499 -- whose body is not JSON is
     refused here, so it reaches the caller as a rejection like any other.
@@ -245,6 +244,14 @@ def _refuse_unusable_token_response(response):
 
     Also registered as ``access_token_response`` on the client that exchanges
     a login's code, whose token was written the same way.
+
+    Every refusal raised here carries the response's HTTP status, which
+    authlib's errors do not: ``TokenRefreshError`` and ``LoginExchangeError``
+    read it from there, and its presence is how they know the endpoint
+    answered. So a JSON object carrying ``error`` is raised here too, as the
+    ``OAuthError`` authlib would raise for it, built the same way under 1.8
+    and 1.9. Left to authlib, that refusal reached the caller with no status
+    on it anywhere.
     '''
     if response.status_code >= 500:
         return response
@@ -259,8 +266,14 @@ def _refuse_unusable_token_response(response):
                             '{} and no JSON body to say why'.format(
                                 response.status_code))
         refusal._described_by_this_library = True
+        refusal._token_endpoint_status = response.status_code
         raise refusal from None
-    if isinstance(body, dict) and ('error' in body or _is_usable_token(body)):
+    if isinstance(body, dict) and 'error' in body:
+        refusal = OAuthError(error=body['error'],
+                             description=body.get('error_description'))
+        refusal._token_endpoint_status = response.status_code
+        raise refusal
+    if isinstance(body, dict) and _is_usable_token(body):
         return response
     refusal = OAuthError(
             error='unusable_token_response',
@@ -274,6 +287,7 @@ def _refuse_unusable_token_response(response):
     # as TokenRefreshError's cause, and the docs are searched by the line its
     # traceback prints.
     refusal._described_by_this_library = True
+    refusal._token_endpoint_status = response.status_code
     raise refusal
 
 
@@ -1365,7 +1379,10 @@ def client_from_received_url(
         # authlib's error is not chained: its text is not escaped, and a
         # logged traceback prints a cause in full.
         error, description = _refusal_text(e)
-        raise LoginExchangeError(error, description, e.uri) from None
+        answered, status = _token_endpoint_answer(e)
+        raise LoginExchangeError(
+                error, description, e.uri, status_code=status,
+                endpoint_answered=answered) from None
 
     # Don't emit token details in debug logs
     _register_token(token)

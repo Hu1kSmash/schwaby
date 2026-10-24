@@ -1661,6 +1661,65 @@ class LoginExchangeErrorTest(unittest.TestCase):
                                 description, cm.exception.description)
         self.assertEqual([], writes)
 
+    def exchange_refused(self, status, body, url=None):
+        # A real exchange, refused by the transport underneath the session.
+        import httpx2
+        import json
+        from schwaby.utils import LoginExchangeError
+        sent = []
+
+        def refuse(transport, request):
+            sent.append(request.url.path)
+            content = b'' if body is None else json.dumps(body).encode()
+            return httpx2.Response(status, content=content, request=request)
+
+        with patch.object(httpx2.HTTPTransport, 'handle_request', refuse):
+            with self.assertRaises(LoginExchangeError) as cm:
+                auth.client_from_received_url(
+                        API_KEY, APP_SECRET, self.CONTEXT,
+                        url or self.RECEIVED, lambda *args, **kwargs: None)
+        return cm.exception, sent
+
+    @no_duplicates
+    def test_a_refused_exchange_carries_the_endpoints_status(self):
+        cases = ((429, None, 'http_429'),
+                 (401, None, 'http_401'),
+                 # The case authlib raises itself, with no status on it.
+                 (400, {'error': 'invalid_grant'}, 'invalid_grant'),
+                 (429, {'error': 'slow_down'}, 'slow_down'),
+                 (200, {'message': 'Unauthorized'},
+                  'unusable_token_response'))
+        for status, body, error in cases:
+            with self.subTest(status=status, body=body):
+                refusal, sent = self.exchange_refused(status, body)
+                self.assertEqual(['/v1/oauth/token'], sent)
+                self.assertEqual(error, refusal.error)
+                self.assertEqual(status, refusal.status_code)
+                self.assertTrue(refusal.endpoint_answered)
+                self.assertEqual(status == 429, refusal.rate_limited)
+
+    @no_duplicates
+    def test_a_login_refused_before_the_code_is_sent_says_so(self):
+        # One per way a login is refused without asking the endpoint: the
+        # three checks on the redirect, and authlib's state check.
+        base = 'https://127.0.0.1:8182/'
+        for url in (base + '?error=access_denied&state=state',
+                    base + '?code=c&state=state#x',
+                    base + '?state=state',
+                    base + '?code=c&state=OTHER'):
+            with self.subTest(url=url):
+                refusal, sent = self.exchange_refused(400, None, url)
+                self.assertEqual([], sent)
+                self.assertFalse(refusal.endpoint_answered)
+                self.assertIsNone(refusal.status_code)
+                self.assertFalse(refusal.rate_limited)
+
+        # Positive control: the same exchange, reaching the endpoint, says
+        # it answered.
+        refusal, sent = self.exchange_refused(400, None)
+        self.assertEqual(['/v1/oauth/token'], sent)
+        self.assertTrue(refusal.endpoint_answered)
+
     @no_duplicates
     def test_refusal_text_is_escaped_and_cut(self):
         # It comes from the redirect or the endpoint and reaches whatever logs

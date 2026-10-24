@@ -406,6 +406,18 @@ def _refusal_text(error):
     return _venue_text(error.error), description
 
 
+def _token_endpoint_answer(error):
+    '''``(True, status)`` when the token endpoint answered the request an
+    authlib error reports, with its HTTP status; ``(False, None)`` when the
+    error was raised before anything was asked. Read from the status the
+    token response hook puts on every refusal it raises, which is every
+    refusal the endpoint sends. Not from the error's class, which says what
+    went wrong rather than whether anything was sent.'''
+    if '_token_endpoint_status' in vars(error):
+        return True, error._token_endpoint_status
+    return False, None
+
+
 def _type_name(value):
     '''A value's type name for a message, read through type's own descriptor
     so that a metaclass cannot raise inside the message.'''
@@ -836,13 +848,22 @@ class TokenRefreshError(SchwabError):
     401, whichever version of ``authlib`` is installed: ``authlib`` raised
     ``json.JSONDecodeError`` for one before 1.9 and ``HTTPStatusError`` after.
 
+    ``endpoint_answered`` is ``True`` when the token endpoint answered the
+    refresh, and ``status_code`` is then the HTTP status it answered with.
+    Both come from the response itself, so they are set whether or not its
+    body was JSON. A stored token that fails before anything is sent leaves
+    them ``False`` and ``None``. ``rate_limited`` is ``True`` for a 429 and
+    nothing else: the endpoint asking for fewer requests, so wait before
+    retrying.
+
     Not every failed refresh is one of these. A server error from the token
     endpoint raises :class:`~schwaby.utils.HTTPStatusError`, a dropped
     connection raises one of ``httpx2``'s transport errors, and a success whose
     body is not JSON at all raises a ``ValueError``.
     '''
 
-    def __init__(self, message, *, token_age=None, refresh_token_invalid=False):
+    def __init__(self, message, *, token_age=None, refresh_token_invalid=False,
+                 status_code=None, endpoint_answered=False):
         super().__init__(message)
 
         #: Seconds since the token was originally authorized, or ``None``.
@@ -853,6 +874,16 @@ class TokenRefreshError(SchwabError):
         #: will not change on its own -- and only a new login flow will help.
         #: ``False`` when the failure may be transient, or was not recognized.
         self.refresh_token_invalid = refresh_token_invalid
+
+        #: The HTTP status the token endpoint answered with, or ``None`` when
+        #: nothing was sent.
+        self.status_code = status_code
+
+        #: ``True`` for a 429: the endpoint asked for fewer requests.
+        self.rate_limited = status_code == 429
+
+        #: ``True`` when the token endpoint answered the refresh.
+        self.endpoint_answered = endpoint_answered
 
 
 class LoginExchangeError(SchwabError, OAuthError):
@@ -883,7 +914,28 @@ class LoginExchangeError(SchwabError, OAuthError):
     So is a refusal whose body is not JSON. A server error from the token
     endpoint, or a success whose body is not JSON, raises as it does during a
     call rather than as this.
+
+    ``endpoint_answered`` is ``True`` when the token endpoint answered the
+    exchange, and ``status_code`` is then the HTTP status it answered with,
+    whether or not its body was JSON. It is ``False``, and ``status_code``
+    ``None``, when the login was refused before the code was sent: the
+    redirect carried a refusal, a fragment or no code, or its ``state`` did
+    not match. ``rate_limited`` is ``True`` for a 429 and nothing else.
     '''
+
+    def __init__(self, error=None, description=None, uri=None, *,
+                 status_code=None, endpoint_answered=False):
+        super().__init__(error, description, uri)
+
+        #: The HTTP status the token endpoint answered with, or ``None`` when
+        #: the code was never sent.
+        self.status_code = status_code
+
+        #: ``True`` for a 429: the endpoint asked for fewer requests.
+        self.rate_limited = status_code == 429
+
+        #: ``True`` when the token endpoint answered the exchange.
+        self.endpoint_answered = endpoint_answered
 
 
 class LazyLog:
