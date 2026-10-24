@@ -9,7 +9,7 @@ entry lie; keep it when the entry changes.
 
 class Case:
     def __init__(self, name, path, old, new, test, expect, superseded=None,
-                 removed=None, also=None):
+                 removed=None, also=None, subtest=None):
         self.name = name
         self.path = path        # relative to the repository root
         self.old = old          # exact text to replace
@@ -18,6 +18,13 @@ class Case:
                                 # runs several in that order, for a defect
                                 # that needs one test to run before another
         self.expect = expect    # substring which must appear in the failure
+
+        # Text that must appear in the failing subTest's label or params,
+        # when several subtests fail with the same message and only which
+        # one failed tells the guard apart. A qualifier on `expect`, never a
+        # match of its own: a label is text the test chose, so matching it
+        # alone proved a test with no assertion left.
+        self.subtest = subtest
 
         # Set when a mutation stops breaking anything *because a later change
         # subsumed the thing it was testing*. GREEN then means the knob is no
@@ -4364,10 +4371,9 @@ CASES = [
          '    if not isinstance(dt, _DATETIME):\n        raise ValueError(\n'
          '            "cancel time',
          'tests/utils_test.py::HostileClassTest::test_a_class_that_raises_is_refused_like_any_other_instance',
-         # The subtest header pytest prints, bracketed. The bare name also
-         # appears in the test's own source, which the traceback lists, so any
-         # failing subtest in that loop would have matched it.
-         '[set_cancel_time]'),
+         # The failure, in the subtest it is for: the bracketed label is only
+         # which one, and the bare name also appears in the test's source.
+         "!= <class 'RuntimeError'>", subtest='[set_cancel_time]'),
 
     # Reading datetime.datetime at call time rather than the capture. Needs
     # the import the mutated line uses, or it fails on NameError and proves
@@ -4882,7 +4888,7 @@ CASES = [
          "    # An exception's own message can quote venue text, line breaks and all.\n",
          'tests/redact_test.py::RegistrationTest'
          '::test_no_bounded_text_leaves_the_head_of_a_secret',
-         "helper='_safe_str'"),
+         'unexpectedly found in', subtest="helper='_safe_str'"),
 
     Case('secrets/safe-name-redacts-before-the-cut',
          'schwaby/streaming.py',
@@ -4890,7 +4896,7 @@ CASES = [
          "    text = str.__str__(text)\n",
          'tests/redact_test.py::RegistrationTest'
          '::test_no_bounded_text_leaves_the_head_of_a_secret',
-         "helper='_safe_name'"),
+         'unexpectedly found in', subtest="helper='_safe_name'"),
 
     Case('secrets/venue-text-redacts-before-the-cut',
          'schwaby/utils.py',
@@ -4898,7 +4904,7 @@ CASES = [
          "        text = repr(value)\n",
          'tests/redact_test.py::RegistrationTest'
          '::test_no_bounded_text_leaves_the_head_of_a_secret',
-         "helper='_venue_text'"),
+         'unexpectedly found in', subtest="helper='_venue_text'"),
 
     Case('secrets/error-detail-redacts-before-the-cut',
          'schwaby/utils.py',
@@ -4914,7 +4920,7 @@ CASES = [
          "    if len(text) > 200:\n",
          'tests/redact_test.py::RegistrationTest'
          '::test_no_bounded_text_leaves_the_head_of_a_secret',
-         "helper='contrib _safe_repr'"),
+         'unexpectedly found in', subtest="helper='contrib _safe_repr'"),
 
     Case('secrets/contrib-key-redacts-before-the-cut',
          'schwaby/contrib/util.py',
@@ -4922,7 +4928,7 @@ CASES = [
          "    text = str.__str__(text)\n",
          'tests/redact_test.py::RegistrationTest'
          '::test_no_bounded_text_leaves_the_head_of_a_secret',
-         "helper='contrib _safe_key'"),
+         'unexpectedly found in', subtest="helper='contrib _safe_key'"),
 
     Case('secrets/before-cut-makes-plain-str',
          'schwaby/_redact.py',
@@ -5158,25 +5164,30 @@ CASES = [
          '::test_a_record_names_the_line_that_logged_it',
          'Lists differ'),
 
+    # Pickled with its raw arguments: the LazyLog's secret goes into the
+    # bytes. The mutation this replaced recursed inside pickle and never
+    # shipped anything, and its expect, 'protocol=', was the test's own
+    # subtest keyword, which matched with every assertion deleted.
     Case('secrets/message-pickles-redacted',
          'schwaby/_redact.py',
          "        # would otherwise ship the raw message, or fail on a LazyLog.\n"
          "        return (str, (str(self),))\n",
          "        # would otherwise ship the raw message, or fail on a LazyLog.\n"
-         "        return object.__reduce_ex__(self, 4)\n",
+         "        return (str, (str(self._msg) % self._args,))\n",
          'tests/redact_test.py::RedactingFilterTest'
          '::test_a_pickled_record_carries_only_redacted_text',
-         'protocol='),
+         'unexpectedly found in'),
 
+    # Pickled as the frame's raw payload, with the Authorization value in it.
     Case('secrets/frame-pickles-redacted',
          'schwaby/_redact.py',
          "        # rendered there, against a registry that holds nothing.\n"
          "        return (str, (str(self),))\n",
          "        # rendered there, against a registry that holds nothing.\n"
-         "        return object.__reduce_ex__(self, 4)\n",
+         "        return (str, (self._frame.data.decode(),))\n",
          'tests/redact_test.py::RedactingFilterTest'
          '::test_a_pickled_record_carries_only_redacted_text',
-         'protocol='),
+         'unexpectedly found in'),
 
     Case('secrets/filter-goes-first',
          'schwaby/_redact.py',
@@ -6331,8 +6342,10 @@ HARNESS_REVIEW_CASES = [
     # on another assertion read as PROVEN: 150 entries were exposed.
     Case('harness/expect-is-matched-against-what-failed',
          'tools/redproof.py',
-         '    said = failure_text(result.output)',
-         '    said = result.output',
+         "        elif line.startswith('E '):\n"
+         "            current[1].append(line[2:])\n",
+         '        else:\n'
+         '            current[1].append(line)\n',
          'tests/redproof_tool_test.py::JudgeTest'
          '::test_expect_must_be_in_what_the_failure_says',
          'expect text was in the echoed source'),
@@ -6432,23 +6445,23 @@ CASES += HARNESS_REVIEW_CASES
 
 # Round-two review of the harness.
 HARNESS_REVIEW_CASES_2 = [
-    # Subtests failing with one message are told apart only by the label
-    # pytest builds from each; matching without it turned real proofs RED?.
-    Case('harness/a-subtests-label-is-what-failed',
+    # A subtest's label qualifies a failure and is never matched on its own:
+    # it is text the test chose, and matching it proved an entry whose test
+    # had no assertion left (close-out review, 2026-10-24).
+    Case('harness/a-subtest-label-is-never-the-match',
          'tools/redproof.py',
-         "            lines.extend(part for part in m.group('label', 'params', "
-         "'msg')\n",
-         "            lines.extend(part for part in m.group('msg', 'msg')\n",
+         '    return any(case.expect in said\n',
+         '    return any(case.expect in said + title\n',
          'tests/redproof_tool_test.py::JudgeTest'
-         '::test_a_failing_subtests_label_counts',
-         'a subtest label was not counted as what failed'),
-    Case('harness/a-failure-header-is-what-failed',
+         '::test_a_subtest_label_is_never_the_match',
+         'matched on a label the test chose'),
+    Case('harness/the-subtest-qualifier-is-checked',
          'tools/redproof.py',
-         "            lines.append(m.group('sub'))\n",
-         '            pass\n',
+         '               and (not case.subtest or case.subtest in title)\n',
+         '               and True\n',
          'tests/redproof_tool_test.py::JudgeTest'
-         '::test_a_failing_subtests_label_counts',
-         'a failure header was not counted'),
+         '::test_a_subtest_qualifier_picks_the_failing_subtest',
+         'a failure in another subtest was PROVEN'),
     # The branch every ordinary tombstone goes through.
     Case('harness/a-tombstone-retires-a-saved-record',
          'tools/redproof.py',
@@ -6516,3 +6529,25 @@ TOOLS_REVIEW_CASES_2 = [
 ]
 
 CASES += TOOLS_REVIEW_CASES_2
+
+CASES.append(
+    # What a test printed is its own text, E-prefixed or not.
+    Case('harness/captured-output-is-not-what-failed',
+         'tools/redproof.py',
+         "        elif _CAPTURED.match(line):\n"
+         "            current = ['', []]      # read, and counted nowhere\n",
+         '',
+         'tests/redproof_tool_test.py::JudgeTest'
+         '::test_captured_output_and_the_summary_are_not_what_failed',
+         'captured output was taken for what failed'))
+
+CASES.append(
+    # Close-out review: `await` outside an async function parses, so pyflakes
+    # passed it, and the hook committed a file Python cannot import.
+    Case('light-check/the-staged-file-must-compile',
+         'tools/light_check.py',
+         '        error = compile_error(staged, path)\n',
+         '        error = None\n',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_code_that_parses_but_does_not_compile_is_refused',
+         'a file Python cannot compile was let through'))
