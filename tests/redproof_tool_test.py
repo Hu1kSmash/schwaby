@@ -243,12 +243,13 @@ class PinTest(unittest.TestCase):
             snapshot({'.python-versions': ('3.9.1\n%s\n' % other).encode()}))
         self.assertIn('is not the pinned %s' % other, why or '',
                       'a build other than the pinned one was accepted')
-        # The pinned build gets past the pin, and stops at the missing lock:
-        # the positive control that the pin is what refused the other.
+        # The pinned build gets past the pin and is stopped by a later check
+        # (no lock here; on 3.10, pathlib): the positive control that the pin
+        # is what refused the other.
         why = redproof.environment_matches_lock(
             snapshot({'.python-versions': ('%s\n' % running).encode()}))
+        self.assertIsNotNone(why)
         self.assertNotIn('pinned', why)
-        self.assertIn('requirements.lock', why)
 
 
 class StoreTest(unittest.TestCase):
