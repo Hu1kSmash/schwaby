@@ -611,7 +611,9 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         datagram = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         for s in (other, unbound, datagram):
             self.addCleanup(s.close)
-        datagram.bind(('127.0.0.1', 0))
+        # UDP ports are their own space, so this one can share the TCP
+        # socket's number.
+        datagram.bind(('127.0.0.1', self.port))
         url = f'https://127.0.0.1:{self.port}/callback'
 
         # Refused before any server starts. Bounded all the same, so a check
@@ -620,7 +622,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         for name, held, port in (
                 ('another port', other, self.port),
                 ('unbound', unbound, self.port),
-                ('not TCP', datagram, datagram.getsockname()[1])):
+                ('not TCP', datagram, self.port)):
             with self.subTest(name), \
                     patch('schwaby.auth.SERVER_STARTUP_TIMEOUT', 2):
                 with self.assertRaisesRegex(

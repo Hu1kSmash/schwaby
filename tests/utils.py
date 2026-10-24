@@ -11,6 +11,14 @@ import os
 import socket
 
 
+#: Every port free_callback_port and bound_callback_socket have handed out in
+#: this process. A login flow given a loopback port that is not here was
+#: given one written down, and tests/conftest.py fails the test saying so: a
+#: scan of the source for port numbers misses `port = 6969` a line above the
+#: URL that uses it.
+HANDED_OUT_PORTS = set()
+
+
 def free_callback_port():
     '''A loopback port nothing is listening on, for a login-flow test's
     callback URL: a fixed one (6969) made any two runs of the suite on one
@@ -22,7 +30,9 @@ def free_callback_port():
     side by side no longer take each other's server for their own.'''
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('127.0.0.1', 0))
-        return s.getsockname()[1]
+        port = s.getsockname()[1]
+    HANDED_OUT_PORTS.add(port)
+    return port
 
 
 @contextlib.contextmanager
@@ -59,6 +69,7 @@ def bound_callback_socket():
     Bound and not listening: the flow puts it in the listening state.'''
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(('127.0.0.1', 0))
+    HANDED_OUT_PORTS.add(s.getsockname()[1])
     return s
 
 

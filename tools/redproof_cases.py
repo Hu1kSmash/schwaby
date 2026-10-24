@@ -7640,6 +7640,18 @@ CASES.extend([
 CASES.extend([
     # A fixed callback port made two runs of the suite on one machine fail
     # each other; nothing in one run can see one coming back.
+    # The source scan misses a port written a line above the URL that uses
+    # it, the shape the two bind-path tests have; the check on the port each
+    # flow is given does not.
+    Case('tests/a-login-flow-given-a-written-down-port-fails',
+         'tests/auth_test.py',
+         "        port = free_callback_port()\n"
+         "        AUTH_URL = 'https://auth.url.com'\n",
+         "        port = 6969\n"
+         "        AUTH_URL = 'https://auth.url.com'\n",
+         'tests/auth_test.py::ClientFromLoginFlowTest::test_create_token_file',
+         'which neither free_callback_port nor bound_callback_socket'),
+
     Case('tests/no-login-flow-test-names-a-fixed-port',
          'tests/http_module_test.py',
          "                            'https://127.0.0.1:%d/callback'\n"
