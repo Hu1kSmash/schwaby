@@ -2679,6 +2679,67 @@ CASES = [
          '::test_an_unusable_token_response_carries_its_status',
          '200 != None'),
 
+    # A usable token is kept only from a success. authlib keeps one at any
+    # status, so a refusal carrying a token was stored as the new one, at a
+    # login and at a refresh alike. A case per test, a case per side of each
+    # end of 2xx, and one for the status the refusal carries.
+    Case('auth/a-login-refuses-a-token-at-a-refusal',
+         'schwaby/auth.py',
+         '        if 200 <= response.status_code < 300:\n',
+         '        if True:\n',
+         'tests/auth_test.py::TokenBodyFromASuccessOnlyTest'
+         '::test_a_login_keeps_a_token_only_from_a_success',
+         'unexpectedly None', subtest='status=401'),
+
+    Case('refresh/a-refresh-refuses-a-token-at-a-refusal',
+         'schwaby/auth.py',
+         '        if 200 <= response.status_code < 300:\n',
+         '        if True:\n',
+         'tests/auth_test.py::TokenBodyFromASuccessOnlyTest'
+         '::test_a_refresh_keeps_a_token_only_from_a_success',
+         'TokenRefreshError not raised', subtest='status=401'),
+
+    Case('auth/a-token-at-300-is-refused',
+         'schwaby/auth.py',
+         '        if 200 <= response.status_code < 300:\n',
+         '        if 200 <= response.status_code <= 300:\n',
+         'tests/auth_test.py::TokenBodyFromASuccessOnlyTest'
+         '::test_a_login_keeps_a_token_only_from_a_success',
+         'unexpectedly None', subtest='status=300'),
+
+    Case('auth/a-token-at-299-is-kept',
+         'schwaby/auth.py',
+         '        if 200 <= response.status_code < 300:\n',
+         '        if 200 <= response.status_code < 299:\n',
+         'tests/auth_test.py::TokenBodyFromASuccessOnlyTest'
+         '::test_a_login_keeps_a_token_only_from_a_success',
+         'is not None', subtest='status=299'),
+
+    Case('auth/a-token-at-199-is-refused',
+         'schwaby/auth.py',
+         '        if 200 <= response.status_code < 300:\n',
+         '        if 199 <= response.status_code < 300:\n',
+         'tests/auth_test.py::TokenBodyFromASuccessOnlyTest'
+         '::test_a_login_keeps_a_token_only_from_a_success',
+         'unexpectedly None', subtest='status=199'),
+
+    Case('auth/a-token-at-200-is-kept',
+         'schwaby/auth.py',
+         '        if 200 <= response.status_code < 300:\n',
+         '        if 201 <= response.status_code < 300:\n',
+         'tests/auth_test.py::TokenBodyFromASuccessOnlyTest'
+         '::test_a_login_keeps_a_token_only_from_a_success',
+         'is not None', subtest='status=200'),
+
+    Case('auth/a-token-at-a-refusal-carries-its-status',
+         'schwaby/auth.py',
+         "        refusal._token_endpoint_status = response.status_code\n"
+         "        raise refusal\n    refusal = OAuthError(\n",
+         "        raise refusal\n    refusal = OAuthError(\n",
+         'tests/auth_test.py::TokenBodyFromASuccessOnlyTest'
+         '::test_a_login_keeps_a_token_only_from_a_success',
+         '401 != None', subtest='status=401'),
+
     # Whether the endpoint answered is read from the status the hook put
     # there, not from this library's mark on its own descriptions: the mark
     # is on a bodyless 429 too, which the endpoint did answer.

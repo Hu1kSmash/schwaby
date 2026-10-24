@@ -806,8 +806,9 @@ def _expiry_authlib_acts_on(expires_at):
 class TokenRefreshError(SchwabError):
     '''
     Raised when a refresh of the OAuth token fails: Schwab rejects it, the
-    token endpoint answers with something that is not a usable token, or the
-    stored token cannot be refreshed at all.
+    token endpoint answers with something that is not a usable token, or with
+    a token at a status other than a success, or the stored token cannot be
+    refreshed at all.
 
     Every request refreshes the token first if it is close to expiring, so this
     surfaces from an ordinary call rather than from anything token-shaped. It
@@ -895,7 +896,8 @@ class LoginExchangeError(SchwabError, OAuthError):
     when the user declines), has no code or an empty one, carries a fragment,
     or has a ``state`` that does not match the login's; or the token endpoint
     refuses the code, or answers with something that is not a usable token
-    (``unusable_token_response``).
+    (``unusable_token_response``), or with a token at a status other than a
+    success (``http_<status>``).
 
     It is also authlib's ``OAuthError``, so ``except OAuthError`` written
     before this class existed still catches it, and ``error`` and

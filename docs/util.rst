@@ -296,9 +296,15 @@ deliberately does not.
     stored in either case. ``authlib`` changed what a refusal like this raised
     at 1.9 --- ``json.JSONDecodeError`` before, ``HTTPStatusError`` after ---
     so this library refuses it itself, and the answer does not depend on which
-    version a fresh install resolves.
+    version a fresh install resolves;
+  - a usable token is kept only when the status is a success, 200 to 299. At
+    any other status below 500 it raises
+    :class:`~schwaby.utils.TokenRefreshError`, with the code
+    ``http_<status>``, and nothing is stored. ``authlib`` keeps a token
+    whatever the status, so through 5.2.0 a refusal carrying one was stored as
+    the new token.
 
-  What Schwab's token endpoint sends in the last two cases has not been
+  What Schwab's token endpoint sends in the last three cases has not been
   observed.
 
   **It covers HTTP status, not the network.** A timeout or a dropped

@@ -2193,6 +2193,115 @@ class LoginExchangeErrorTest(unittest.TestCase):
                         lambda *args, **kwargs: None)
 
 
+class TokenBodyFromASuccessOnlyTest(unittest.TestCase):
+    '''A token is kept only from a success. authlib keeps any JSON object
+    without an ``error`` key, whatever the status, so a refusal carrying a
+    usable token was stored as the new one.'''
+
+    CONTEXT = LoginExchangeErrorTest.CONTEXT
+    RECEIVED = LoginExchangeErrorTest.RECEIVED
+    TOKEN = {'access_token': 'NEW', 'token_type': 'Bearer',
+             'expires_in': 1800, 'refresh_token': 'r2'}
+    # Either side of each end of 2xx, and the refusals most likely to carry
+    # a body.
+    REFUSED = (199, 300, 302, 401, 429, 499)
+    KEPT = (200, 299)
+
+    def answer_with(self, status):
+        import httpx2
+        sent = []
+
+        def answer(transport, request):
+            sent.append(request.url.path)
+            return httpx2.Response(status, json=self.TOKEN, request=request)
+        return sent, patch.object(httpx2.HTTPTransport, 'handle_request',
+                                  answer)
+
+    def assert_refused_by_status(self, refusal, status):
+        self.assertEqual('http_{}'.format(status), refusal.error)
+        self.assertIn('kept only from a success', refusal.description)
+
+    @no_duplicates
+    def test_a_login_keeps_a_token_only_from_a_success(self):
+        from schwaby.utils import LoginExchangeError
+        for status in self.REFUSED + self.KEPT:
+            with self.subTest(status=status):
+                writes = []
+                sent, transport = self.answer_with(status)
+                with transport:
+                    try:
+                        auth.client_from_received_url(
+                                API_KEY, APP_SECRET, self.CONTEXT,
+                                self.RECEIVED,
+                                lambda token, *args, **kwargs:
+                                    writes.append(token))
+                    except LoginExchangeError as e:
+                        refusal = e
+                    else:
+                        refusal = None
+                self.assertEqual(['/v1/oauth/token'], sent)
+                if status in self.KEPT:
+                    self.assertIsNone(refusal)
+                    self.assertEqual(['NEW'],
+                                     [t['token']['access_token']
+                                      for t in writes])
+                else:
+                    self.assertIsNotNone(refusal)
+                    self.assert_refused_by_status(refusal, status)
+                    self.assertEqual(status, refusal.status_code)
+                    self.assertTrue(refusal.endpoint_answered)
+                    self.assertEqual([], writes)
+
+    @no_duplicates
+    def test_a_refresh_keeps_a_token_only_from_a_success(self):
+        import httpx2
+        from schwaby.utils import TokenRefreshError
+        for status in self.REFUSED + self.KEPT:
+            with self.subTest(status=status):
+                writes = []
+                # expires_in without expires_at refreshes on the first call.
+                client = auth.client_from_access_functions(
+                        API_KEY, APP_SECRET,
+                        lambda: {'creation_timestamp':
+                                 TOKEN_CREATION_TIMESTAMP,
+                                 'token': {'access_token': 'OLD',
+                                           'token_type': 'Bearer',
+                                           'expires_in': 1800,
+                                           'refresh_token': 'r'}},
+                        lambda token, *args, **kwargs: writes.append(token))
+                sent = []
+
+                def handler(request):
+                    sent.append(request.url.path)
+                    if request.url.path.endswith('/oauth/token'):
+                        return httpx2.Response(status, json=self.TOKEN,
+                                               request=request)
+                    return httpx2.Response(200, json={}, request=request)
+                client.session._transport = httpx2.MockTransport(handler)
+                client.session._mounts = {}
+
+                if status in self.KEPT:
+                    client.get_quote('AAPL')
+                    self.assertEqual('NEW',
+                                     client.session.token['access_token'])
+                    self.assertEqual(['NEW'],
+                                     [t['token']['access_token']
+                                      for t in writes])
+                else:
+                    with self.assertRaises(TokenRefreshError) as cm:
+                        client.get_quote('AAPL')
+                    self.assert_refused_by_status(cm.exception.__cause__,
+                                                  status)
+                    self.assertEqual(status, cm.exception.status_code)
+                    self.assertTrue(cm.exception.endpoint_answered)
+                    self.assertFalse(cm.exception.refresh_token_invalid)
+                    self.assertEqual('OLD',
+                                     client.session.token['access_token'])
+                    self.assertEqual([], writes)
+                self.assertEqual(
+                        1, sum(p.endswith('/oauth/token') for p in sent))
+
+
 class TokenFileWriterTest(unittest.TestCase):
     '''The public writer leaves the token file the library reads.'''
 

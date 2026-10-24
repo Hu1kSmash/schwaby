@@ -246,6 +246,11 @@ def _refuse_unusable_token_response(response):
     Also registered as ``access_token_response`` on the client that exchanges
     a login's code, whose token was written the same way.
 
+    A usable token is kept only from a success, 200 to 299. authlib keeps
+    one at any status, so a refusal or a redirect carrying one was stored as
+    the new token; here it is refused as ``http_<status>``, like a refusal
+    with no JSON body.
+
     Every refusal raised here carries the response's HTTP status, which
     authlib's errors do not: ``TokenRefreshError`` and ``LoginExchangeError``
     read it from there, and its presence is how they know the endpoint
@@ -275,7 +280,15 @@ def _refuse_unusable_token_response(response):
         refusal._token_endpoint_status = response.status_code
         raise refusal
     if isinstance(body, dict) and _is_usable_token(body):
-        return response
+        if 200 <= response.status_code < 300:
+            return response
+        refusal = OAuthError(
+                error='http_{}'.format(response.status_code),
+                description='the token endpoint answered with HTTP {} and a '
+                            'token, which was not stored: a token is kept '
+                            'only from a success'.format(response.status_code))
+        refusal._token_endpoint_status = response.status_code
+        raise refusal
     refusal = OAuthError(
             error='unusable_token_response',
             description='the token endpoint answered with something that is '
