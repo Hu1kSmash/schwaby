@@ -2110,14 +2110,11 @@ listening_yet, and none of ten once each test took a free port. It also
         loopback = re.compile(r'^https?://(127\.0\.0\.1|localhost):')
 
 
-        runs_the_flow = self.runs_the_flow
         offenders, seen = [], set()
         for path in self.python_files_under_tests():
             with open(path, encoding='utf-8') as f:
                 tree = ast.parse(f.read())
-            for cls in ast.walk(tree):
-                if not (isinstance(cls, ast.ClassDef) and runs_the_flow(cls)):
-                    continue
+            for cls in self.classes_running_the_flow(tree):
                 for node in ast.walk(cls):
                     if not (isinstance(node, ast.Constant)
                             and isinstance(node.value, str)):
@@ -2137,13 +2134,48 @@ listening_yet, and none of ten once each test took a free port. It also
                  'ConnectErrorSiblingsAreAbsorbedTest'}, seen)
 
     @staticmethod
-    def runs_the_flow(cls):
-        '''Whether a test class starts the login flow: one place decides it,
-        for both checks that care.'''
-        return any(isinstance(n, ast.Call) and
-                   getattr(n.func, 'attr', getattr(n.func, 'id', None))
-                   == 'client_from_login_flow'
-                   for n in ast.walk(cls))
+    def classes_running_the_flow(tree):
+        '''The test classes in a module that start the login flow, calling
+        it by its own name or by any name it is imported as.'''
+        names = {'client_from_login_flow'}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                # Only an alias adds a name: a plain import's asname is None,
+                # which is also what a call on a subscript or a call reads as.
+                names.update(alias.asname for alias in node.names
+                             if alias.name == 'client_from_login_flow'
+                             and alias.asname)
+        return [cls for cls in ast.walk(tree)
+                if isinstance(cls, ast.ClassDef)
+                and any(isinstance(n, ast.Call)
+                        and getattr(n.func, 'attr',
+                                    getattr(n.func, 'id', None)) in names
+                        for n in ast.walk(cls))]
+
+    @no_duplicates
+    def test_a_class_calling_the_flow_by_an_alias_runs_it(self):
+        # A class whose only call is through an alias. tests/auth_test.py
+        # imports the flow as one, and its class was found only through its
+        # other calls.
+        source = (
+            'from schwaby.auth import client_from_login_flow as _flow\n'
+            'from schwaby.auth import client_from_login_flow\n'
+            'from schwaby.auth import client_from_token_file as _other\n'
+            'class Aliased:\n'
+            '    def test(self):\n'
+            '        _flow(1, 2, 3, 4)\n'
+            'class Other:\n'
+            '    def test(self):\n'
+            '        _other(1, 2, 3)\n'
+            'class ByAttribute:\n'
+            '    def test(self):\n'
+            '        auth.client_from_login_flow(1, 2, 3, 4)\n'
+            'class Subscripted:\n'
+            '    def test(self):\n'
+            '        handlers[0]()\n')
+        found = {cls.name for cls in
+                 self.classes_running_the_flow(ast.parse(source))}
+        self.assertEqual({'Aliased', 'ByAttribute'}, found)
 
     @staticmethod
     def python_files_under_tests():
