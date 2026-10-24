@@ -228,12 +228,14 @@ def no_duplicates(f):
 class MockOAuthClient(MagicMock):
     def __call__(self, *args, **kwargs):
         if 'update_token' in kwargs:
-            assert not inspect.iscoroutinefunction(kwargs['update_token'])
+            assert not inspect.iscoroutinefunction(kwargs['update_token']), (
+                'a sync OAuth client was handed a coroutine token writer')
         return MagicMock.__call__(self, *args, **kwargs)
 
 
 class MockAsyncOAuthClient(MagicMock):
     def __call__(self, *args, **kwargs):
         if 'update_token' in kwargs:
-            assert inspect.iscoroutinefunction(kwargs['update_token'])
+            assert inspect.iscoroutinefunction(kwargs['update_token']), (
+                'an async OAuth client was handed a plain token writer')
         return MagicMock.__call__(self, *args, **kwargs)

@@ -39,6 +39,12 @@ jobs:
         version: "0.13.4"
         python-version: ${{ steps.pin.outputs.version }}
         activate-environment: true
+    - name: The interpreter is the pinned build
+      shell: bash
+      run: >-
+        python -c "import platform, sys; v = platform.python_version();
+        sys.exit(0 if v == sys.argv[1] else 'running %s, pinned %s' % (v, sys.argv[1]))"
+        ${{ steps.pin.outputs.version }}
     # No -c requirements.lock: the newest of everything setup.py allows.
     - name: Install dependencies
       run: uv pip install ".[dev]"

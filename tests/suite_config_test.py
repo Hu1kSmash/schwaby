@@ -104,6 +104,13 @@ class PythonPinsTest(unittest.TestCase):
             self.assertEqual(
                 minors, re.findall(r'"([0-9.]+)"', matrices[0]),
                 '%s does not test every pinned Python' % workflow)
-            self.assertNotIn('uses: actions/setup-python', text,
-                             '%s installs a Python the pin does not '
-                             'choose' % workflow)
+            self.assertIsNone(
+                re.search(r'uses:\s*["\']?actions/setup-python', text),
+                '%s installs a Python the pin does not choose' % workflow)
+            # Every uv setup takes the pinned build, and checks it got it.
+            uv = text.count('uses: astral-sh/setup-uv@')
+            self.assertEqual(
+                uv, text.count('python-version: ${{ steps.pin.outputs.version }}'),
+                '%s sets up a Python other than the pinned one' % workflow)
+            self.assertEqual(uv, text.count('The interpreter is the pinned build'),
+                             '%s does not check its interpreter' % workflow)

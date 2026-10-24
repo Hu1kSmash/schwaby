@@ -672,7 +672,10 @@ CASES = [
          '        client_class = Client',
          'tests/auth_test.py::ClientFromAccessFunctionsTest'
          '::test_asyncio_builds_an_async_client_and_still_writes_the_token',
-         'AsyncClient'),
+         # The mock refuses a sync client handed the async writer, which is
+         # what the mutation does; `AsyncClient` matched only the echoed
+         # decorators until expect was held to what a failure says.
+         'a sync OAuth client was handed a coroutine token writer'),
 
     # The same async token writer as auth/async-entry-point, 140 lines away in
     # client_from_received_url. The first fix stopped at the first instance;
@@ -4717,13 +4720,21 @@ CASES = [
          '::test_an_incremental_build_updates_the_index',
          'Client.get_quotes()'),
 
+    # The prefix check the comment warns about, whole: without the second
+    # half, importing the empty module name of an unqualified `StreamClient`
+    # raised ValueError, a crash that matched only the echoed source until
+    # expect was held to what a failure says (2026-10-24).
     Case('docs-config/ignore-list-is-standard-library-only',
          'tests/packaging_test.py',
          "                ok = (module.split('.')[0] in sys.stdlib_module_names\n",
          "                ok = (not module.startswith('schwaby')\n",
          'tests/packaging_test.py::DocsConfigTest'
          '::test_the_ignore_check_refuses_names_of_ours',
-         "'StreamClient'"),
+         "'StreamClient'",
+         also=("                      and hasattr(importlib.import_module(module), "
+               "name))\n",
+               "                      and (not module or hasattr("
+               "importlib.import_module(module), name)))\n")),
 
     Case('docs-config/nitpicky',
          'docs/conf.py',
@@ -6168,7 +6179,7 @@ LIGHT_CHECK_CASES += [
          'a file Python cannot decode was let through'),
     Case('light-check/a-syntax-error-is-never-subtracted',
          'tools/light_check.py',
-         "        if message.startswith('syntax error:'):\n"
+         "        if message.startswith(('syntax error:', 'error:')):\n"
          '            new[message] = now[message]\n',
          '        pass\n',
          'tests/light_check_test.py::LightCheckTest'
@@ -6206,35 +6217,32 @@ CASES += LOCK_CASES
 # tools/repeat.py counts a flake by the test it names.
 REPEAT_CASES = [
     Case('repeat/failures-are-named',
-         'tools/repeat.py',
-         '    return sorted(set(_FAILED.findall(output)))',
-         '    return []',
-         'tests/repeat_tool_test.py::FailuresTest'
-         '::test_names_every_failed_and_erroring_test_once',
-         'a failed test was not named'),
+         'tools/repeat.py', 'x', 'y',
+         'tests/repeat_tool_test.py', 'a failed test was not named',
+         removed="repeat.py no longer reads pytest's summary lines: a subTest label, a parametrize id or a test's own captured output each made them ambiguous, so failures are now recorded by a plugin from pytest's reports. The repeat/plugin-* entries replace this one."),
     Case('repeat/errors-count-as-failures',
-         'tools/repeat.py',
-         "    r'^(?:SUB)?(?:FAILED|ERROR)(?:\\([^)]*\\))? (.+?)(?: - .*)?$', "
-         "re.MULTILINE)",
-         "    r'^(?:SUB)?FAILED(?:\\([^)]*\\))? (.+?)(?: - .*)?$', "
-         "re.MULTILINE)",
-         'tests/repeat_tool_test.py::FailuresTest'
-         '::test_names_every_failed_and_erroring_test_once',
-         'a failed test was not named'),
-]
-
-REPEAT_CASES.append(
-    # pytest reports a failing subTest as SUBFAILED(...), which a pattern for
-    # FAILED alone never named: the flake vanished from the counts.
+         'tools/repeat.py', 'x', 'y',
+         'tests/repeat_tool_test.py', 'a failed test was not named',
+         removed="repeat.py no longer reads pytest's summary lines: a subTest label, a parametrize id or a test's own captured output each made them ambiguous, so failures are now recorded by a plugin from pytest's reports. The repeat/plugin-* entries replace this one."),
     Case('repeat/a-failing-subtest-is-named',
+         'tools/repeat.py', 'x', 'y',
+         'tests/repeat_tool_test.py', 'a failing subtest was not named',
+         removed="repeat.py no longer reads pytest's summary lines: a subTest label, a parametrize id or a test's own captured output each made them ambiguous, so failures are now recorded by a plugin from pytest's reports. The repeat/plugin-* entries replace this one."),
+    Case('repeat/plugin-notes-failing-reports',
          'tools/repeat.py',
-         "    r'^(?:SUB)?(?:FAILED|ERROR)(?:\\([^)]*\\))? (.+?)(?: - .*)?$', "
-         "re.MULTILINE)",
-         "    r'^(?:FAILED|ERROR)(?:\\([^)]*\\))? (.+?)(?: - .*)?$', "
-         "re.MULTILINE)",
-         'tests/repeat_tool_test.py::FailuresTest'
-         '::test_a_failing_subtest_and_a_spaced_id_are_named',
-         'a failing subtest was not named'))
+         "    if report.failed:",
+         "    if False:",
+         'tests/repeat_tool_test.py::RunOnceTest'
+         '::test_every_failing_test_is_named_once_and_nothing_else',
+         'a failing test was not named'),
+    Case('repeat/plugin-notes-collection-errors',
+         'tools/repeat.py',
+         "def pytest_collectreport(report):\n    _note(report)\n",
+         '',
+         'tests/repeat_tool_test.py::RunOnceTest'
+         '::test_a_collection_error_is_named',
+         'a collection error was not named'),
+]
 
 CASES += REPEAT_CASES
 
@@ -6420,3 +6428,91 @@ HARNESS_REVIEW_CASES = [
 ]
 
 CASES += HARNESS_REVIEW_CASES
+
+
+# Round-two review of the harness.
+HARNESS_REVIEW_CASES_2 = [
+    # Subtests failing with one message are told apart only by the label
+    # pytest builds from each; matching without it turned real proofs RED?.
+    Case('harness/a-subtests-label-is-what-failed',
+         'tools/redproof.py',
+         "            lines.extend(part for part in m.group('label', 'params', "
+         "'msg')\n",
+         "            lines.extend(part for part in m.group('msg', 'msg')\n",
+         'tests/redproof_tool_test.py::JudgeTest'
+         '::test_a_failing_subtests_label_counts',
+         'a subtest label was not counted as what failed'),
+    Case('harness/a-failure-header-is-what-failed',
+         'tools/redproof.py',
+         "            lines.append(m.group('sub'))\n",
+         '            pass\n',
+         'tests/redproof_tool_test.py::JudgeTest'
+         '::test_a_failing_subtests_label_counts',
+         'a failure header was not counted'),
+    # The branch every ordinary tombstone goes through.
+    Case('harness/a-tombstone-retires-a-saved-record',
+         'tools/redproof.py',
+         "            return current if cls.when(current, 'proved') > "
+         "cls.when(new) else (",
+         '            return current if True else (',
+         'tests/redproof_tool_test.py::StoreTest'
+         '::test_a_tombstone_retires_a_record_already_saved',
+         'did not retire the record it named'),
+    Case('harness/a-baselines-restored-write-is-reported',
+         'tools/redproof.py',
+         '        changed = sorted(set(changed) | set(writes))\n',
+         '        pass\n',
+         'tests/redproof_tool_test.py::BaselineTest'
+         '::test_a_baselines_restored_write_is_reported',
+         'restored it went unreported'),
+    Case('harness/secret-directories-at-the-root',
+         'tools/redproof.py',
+         "(^|/)\\.(config|ssh|gnupg)/',",
+         "/\\.(config|ssh|gnupg)/',",
+         'tests/redproof_tool_test.py::SnapshotTest'
+         '::test_secret_directories_at_the_root_are_left_out',
+         'a secret directory at the root was copied'),
+    Case('harness/a-record-is-kept-only-with-its-baseline',
+         'tools/redproof.py',
+         '        if why is None and baseline_reads is not None:',
+         '        if why is None:',
+         'tests/redproof_tool_test.py::JudgeTest'
+         '::test_a_record_needs_both_runs_to_be_keepable',
+         'kept without the baseline being keepable'),
+]
+
+CASES += HARNESS_REVIEW_CASES_2
+
+
+# Round-two review of the tools.
+TOOLS_REVIEW_CASES_2 = [
+    Case('suite/every-workflow-uses-the-pinned-build',
+         '.github/workflows/fresh.yml',
+         '        python-version: ${{ steps.pin.outputs.version }}\n',
+         '        python-version: ${{ matrix.python }}\n',
+         'tests/suite_config_test.py::PythonPinsTest'
+         '::test_ci_tests_the_pinned_pythons',
+         'sets up a Python other than the pinned one'),
+    # pyflakes writes some line numbers into its messages ("redefinition of
+    # unused 'os' from line 1"), which made a moved warning a new one.
+    Case('light-check/line-numbers-in-a-message-are-not-the-warning',
+         'tools/light_check.py',
+         "        self.messages.append(re.sub(r'\\bline \\d+', 'line N',\n"
+         "                                    message.message % "
+         "message.message_args))",
+         '        self.messages.append(message.message % message.message_args)',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_warning_that_names_a_line_is_the_same_when_moved',
+         'a warning naming a line was blamed'),
+    # A symlink replaced by a file is a type change, T, which the filter
+    # dropped: staged code that skipped both checks.
+    Case('light-check/a-type-change-is-checked',
+         'tools/light_check.py',
+         "'--diff-filter=ACMRT')",
+         "'--diff-filter=ACMR')",
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_symlink_replaced_by_a_file_is_checked',
+         'a file that was a symlink went unchecked'),
+]
+
+CASES += TOOLS_REVIEW_CASES_2

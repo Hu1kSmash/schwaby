@@ -1940,7 +1940,7 @@ This section draws on several sources:
   the decimal and ``Mid`` counts come from;
 - option orders placed by hand whose prices were then changed, described
   below;
-- for the batch ordering above, a note: it was recorded live without
+- for the batch ordering above, a note: it was observed live without
   the frame being retained, so it is attested by a note rather than by bytes
   anyone can still produce.
 
