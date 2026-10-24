@@ -263,30 +263,61 @@ class JudgeTest(unittest.TestCase):
                                    "'expected' not found in")
         self.assertEqual('PROVEN', self.judge(said)[0])
 
-    def test_a_failing_subtests_label_counts(self):
-        # Every subtest fails with the same message; only the label pytest
-        # builds from the subtest says which one.
-        same = "E       AssertionError: '7521' unexpectedly found in 'xxx'"
-        for label in ("SUBFAILED(helper='_safe_str', offset=188) "
-                      'tests/redact_test.py::T::test_x',
-                      'SUBFAILED[_safe_str] (i=1) tests/redact_test.py::T::'
-                      'test_x - AssertionError'):
-            self.assertEqual('PROVEN', self.judge(
-                '\n'.join([same, label, '1 failed']), expect='_safe_str')[0],
-                'a subtest label was not counted as what failed')
-        header = ("____ T.test_x (helper='_safe_str', offset=188) ____")
+    SAME = "E       AssertionError: '7521' unexpectedly found in 'xxx'"
+
+    @staticmethod
+    def section(title, *said):
+        return '\n'.join(['_ %s _' % title, '    def test_x(self):', *said])
+
+    def test_a_subtest_qualifier_picks_the_failing_subtest(self):
+        # Every subtest fails with the same message; only the subtest pytest
+        # names in each header says which helper it was.
+        both = '\n'.join([
+            self.section("T.test_x (helper='_safe_name', offset=1)", self.SAME),
+            self.section("T.test_x (helper='_safe_str', offset=1)", self.SAME),
+            '=== short test summary info ===', '1 failed'])
         self.assertEqual('PROVEN', self.judge(
-            '\n'.join([header, same, '1 failed']), expect="helper='_safe_str'"
-        )[0], 'a failure header was not counted')
-        # The positive control's other half: the node id is still not.
+            both, expect='unexpectedly found in',
+            subtest="helper='_safe_str'")[0])
+        other = '\n'.join([
+            self.section("T.test_x (helper='_safe_name', offset=1)", self.SAME),
+            '=== short test summary info ===', '1 failed'])
         self.assertEqual('RED?', self.judge(
-            '\n'.join([same, 'FAILED tests/x_test.py::T::test_safe_str']),
-            expect='safe_str')[0])
+            other, expect='unexpectedly found in',
+            subtest="helper='_safe_str'")[0],
+            'a failure in another subtest was PROVEN')
+
+    def test_a_subtest_label_is_never_the_match(self):
+        # The test's own subtest keyword, and a failure that is a crash, not
+        # the assertion: this was PROVEN with every assertion deleted.
+        crashed = '\n'.join([
+            self.section('T.test_x (protocol=0)',
+                         'E   RecursionError: maximum recursion depth exceeded'),
+            "SUBFAILED(protocol=0) tests/redact_test.py::T::test_x",
+            '1 failed'])
+        self.assertEqual('RED?', self.judge(crashed, expect='protocol=')[0],
+                         'an entry matched on a label the test chose')
 
     def test_a_subtest_failure_message_counts(self):
-        out = ('SUBFAILED(i=1) tests/x_test.py::T::test_x - AssertionError: '
-               'expected 3\n1 failed')
+        out = '\n'.join([self.section('T.test_x (i=1)',
+                                       'E   AssertionError: expected 3'),
+                          '1 failed'])
         self.assertEqual('PROVEN', self.judge(out)[0])
+
+    def test_captured_output_and_the_summary_are_not_what_failed(self):
+        # A captured log line and the short summary both echo text a test can
+        # choose; only the failure's own E lines say what failed.
+        out = '\n'.join([
+            self.section('T.test_x', 'E   AssertionError: something else'),
+            '----- Captured stdout call -----',
+            'E   AssertionError: expected, printed by the test itself',
+            '----- Captured log call -----',
+            'ERROR    schwaby.streaming:streaming.py:812 expected',
+            '=== short test summary info ===',
+            'FAILED tests/x_test.py::T::test_x - AssertionError: expected',
+            '1 failed'])
+        self.assertEqual('RED?', self.judge(out)[0],
+                         'captured output was taken for what failed')
 
     def test_a_baseline_that_fails_is_not_judged(self):
         verdict, detail, _ = self.judge(self.ECHOED,

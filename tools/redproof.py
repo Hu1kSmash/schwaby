@@ -209,37 +209,46 @@ def pairs_of(case):
     return [(old.encode('utf-8'), new.encode('utf-8')) for old, new in pairs]
 
 
-# A line of pytest's short summary: FAILED, ERROR or SUBFAILED with a subtest's
-# [message] and (params), then the node id, then " - message" if any.
-_SUMMARY = re.compile(
-    r'^(?:SUB)?(?:FAILED|ERROR)(?P<label>\[.*?\])?\s*(?P<params>\(.*\))?'
-    r'\s+\S*\.py\S*(?: - (?P<msg>.*))?$')
-# A failure's header: underscores, the test, a subtest's label, underscores.
-_HEADER = re.compile(r'^_{3,} \S+ (?P<sub>.+?) _{3,}$')
+# A failure's header: underscores, its title (the test, and a failing
+# subTest's label or params), underscores. pytest pads a long title with one.
+_HEADER = re.compile(r'^_+ (?P<title>.+) _+$')
+# A line that starts the next part of the report, ending a failure's section.
+_RULE = re.compile(r'^={3,}')
+# A failure's captured stdout, stderr or log: what the test printed, which
+# can start a line with `E ` like anything else it chooses.
+_CAPTURED = re.compile(r'^-{3,} Captured ')
 
 
-def failure_text(output):
-    '''What pytest says the failures were: the `E` lines of each traceback,
-    each short-summary message, and the label and params of each failing
-    subTest, which pytest builds from the subtest itself and which are all
-    that tells apart subtests failing with the same message. Not the source
-    lines pytest echoes around a failure, and not node ids: either can
-    contain an entry's `expect` whatever actually failed, which made a
-    failure on the wrong assertion read as PROVEN.'''
-    lines = []
+def failure_sections(output):
+    '''[(title, what it says)] for each failure pytest reports: the header
+    naming the test (and the subtest, if one failed) and the `E` lines of its
+    traceback. Not the source lines pytest echoes, not node ids, not a
+    test's captured output: any of those can contain an entry's `expect`
+    whatever actually failed, which made a failure on the wrong assertion
+    read as PROVEN. `E` lines outside any section count, untitled.'''
+    sections = [['', []]]
+    current = sections[0]
     for line in output.splitlines():
-        if line.startswith('E '):
-            lines.append(line[2:])
-            continue
-        m = _SUMMARY.match(line)
-        if m:
-            lines.extend(part for part in m.group('label', 'params', 'msg')
-                         if part)
-            continue
         m = _HEADER.match(line)
         if m:
-            lines.append(m.group('sub'))
-    return '\n'.join(lines)
+            current = [m.group('title'), []]
+            sections.append(current)
+        elif _RULE.match(line):
+            current = sections[0]
+        elif _CAPTURED.match(line):
+            current = ['', []]      # read, and counted nowhere
+        elif line.startswith('E '):
+            current[1].append(line[2:])
+    return [(title, '\n'.join(said)) for title, said in sections if said]
+
+
+def failed_on(case, output):
+    '''Whether a failure says the entry's expect, in the subtest it names.
+    A subtest's label is a qualifier, never the match: it is text the test
+    chose, so matching it proved an entry whose test had no assertion left.'''
+    return any(case.expect in said
+               and (not case.subtest or case.subtest in title)
+               for title, said in failure_sections(output))
 
 
 def mutate(case, original):
@@ -268,6 +277,7 @@ def case_fields(case):
         'new': case.new, 'test': tests_of(case), 'expect': case.expect,
         'also': list(case.also) if case.also else None,
         'superseded': case.superseded,
+        'subtest': getattr(case, 'subtest', None),
     }
 
 
@@ -929,11 +939,12 @@ def judge(run, case, baseline, baseline_reads=None):
                          'Either the test is asleep, or what was mutated is '
                          'no longer load-bearing; if the second, mark the '
                          'entry superseded= rather than deleting it.'), None
-    said = failure_text(result.output)
-    if case.expect not in said:
-        first = [line for line in said.splitlines() if line.strip()]
-        return 'RED?', ('failed, but not on %r: got %s' % (
-            case.expect, first[0].strip() if first else '?')), None
+    if not failed_on(case, result.output):
+        said = [line for _, text in failure_sections(result.output)
+                for line in text.splitlines() if line.strip()]
+        return 'RED?', ('failed, but not on %r%s: got %s' % (
+            case.expect, ' in subtest %r' % case.subtest if case.subtest
+            else '', said[0].strip() if said else '?')), None
     kept = None
     if audit is not None:
         reads, why, _ = reads_from(audit, classifier, run.snapshot,
