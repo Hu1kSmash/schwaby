@@ -172,10 +172,31 @@ CASES = [
          '::test_a_redirect_for_another_login_is_ignored',
          "'state=THIS_LOGIN' not found"),
 
+    # Skipped means forgotten: the flow waits on, and does not exchange the
+    # skipped redirect when the wait ends.
+    Case('auth/a-skipped-redirect-is-not-exchanged',
+         'schwaby/auth.py',
+         "                received_url = None\n                continue\n",
+         "                continue\n",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_flow_given_only_another_logins_redirect_times_out',
+         'RedirectTimeoutError not raised'),
+
+    # Repeated, the state read is the last, as authlib's own check reads it.
+    Case('auth/a-repeated-state-is-read-as-authlib-reads-it',
+         'schwaby/auth.py',
+         "        received = dict(urllib.parse.parse_qsl(\n"
+         "                urllib.parse.urlparse(received_url).query)).get('state')",
+         "        received = dict(reversed(urllib.parse.parse_qsl(\n"
+         "                urllib.parse.urlparse(received_url).query))).get('state')",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_only_a_redirect_naming_another_state_is_ignored',
+         'True != False'),
+
     Case('auth/a-redirect-naming-no-state-is-not-skipped',
          'schwaby/auth.py',
-         "    return bool(received) and received[0] != state\n",
-         "    return not received or received[0] != state\n",
+         "    return bool(received) and received != state\n",
+         "    return not received or received != state\n",
          'tests/auth_test.py::ClientFromLoginFlowTest'
          '::test_only_a_redirect_naming_another_state_is_ignored',
          'False != True'),
@@ -183,9 +204,9 @@ CASES = [
     Case('auth/a-login-with-no-state-skips-nothing',
          'schwaby/auth.py',
          "    if state is None:\n        return False\n    try:\n"
-         "        received = urllib.parse.parse_qs(",
+         "        # Read as authlib reads it",
          "    try:\n"
-         "        received = urllib.parse.parse_qs(",
+         "        # Read as authlib reads it",
          'tests/auth_test.py::ClientFromLoginFlowTest'
          '::test_only_a_redirect_naming_another_state_is_ignored',
          'False != True'),

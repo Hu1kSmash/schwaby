@@ -749,11 +749,13 @@ def _carries_another_state(received_url, state):
     if state is None:
         return False
     try:
-        received = urllib.parse.parse_qs(
-                urllib.parse.urlparse(received_url).query).get('state')
+        # Read as authlib reads it for its own state check, the last of a
+        # repeated parameter winning, so the two cannot disagree on a URL.
+        received = dict(urllib.parse.parse_qsl(
+                urllib.parse.urlparse(received_url).query)).get('state')
     except (TypeError, ValueError):
         return False
-    return bool(received) and received[0] != state
+    return bool(received) and received != state
 
 class RedirectServerExitedError(SchwabError):
     pass

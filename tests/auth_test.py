@@ -642,16 +642,51 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                             for line in logged.output))
 
     @no_duplicates
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
+    @_skip_on_macos_runner
+    def test_a_flow_given_only_another_logins_redirect_times_out(
+            self, mock_webbrowser_get, async_session, sync_session, client):
+        # Skipped, the flow goes on waiting for its own, and nothing is
+        # exchanged.
+        sync_session.return_value = sync_session
+        sync_session.create_authorization_url.return_value = (
+                'https://auth.url.com', 'THIS_LOGIN')
+        # A token to exchange for, so a flow that exchanged the skipped
+        # redirect returns rather than failing on something else.
+        sync_session.fetch_token.return_value = self.raw_token
+        base = f'https://127.0.0.1:{self.port}/callback'
+
+        controller = MagicMock()
+        mock_webbrowser_get.return_value = controller
+        controller.open.side_effect = lambda auth_url: requests.get(
+                base + '?code=EARLIER&state=EARLIER_LOGIN', verify=False)
+
+        with self.assertLogs('schwaby.auth', level='WARNING'):
+            with self.assertRaises(auth.RedirectTimeoutError):
+                auth.client_from_login_flow(
+                        API_KEY, APP_SECRET, base, self.token_path,
+                        callback_socket=self.socket, callback_timeout=1)
+        sync_session.fetch_token.assert_not_called()
+
+    @no_duplicates
     def test_only_a_redirect_naming_another_state_is_ignored(self):
         # One naming no state is taken, so the exchange refuses it by name
-        # rather than the flow waiting until it times out.
-        base = 'https://127.0.0.1:8182/callback?code=c'
+        # rather than the flow waiting until it times out. No port in the
+        # URL: nothing listens, and the state is all that is read.
+        base = 'https://127.0.0.1/callback?code=c'
         for url, state, ignored in (
                 (base + '&state=OTHER', 'THIS', True),
                 (base + '&state=THIS', 'THIS', False),
                 (base, 'THIS', False),
                 (base + '&state=', 'THIS', False),
-                (base + '&state=OTHER', None, False)):
+                (base + '&state=OTHER', None, False),
+                # Repeated, the last one is the one authlib checks.
+                (base + '&state=OTHER&state=THIS', 'THIS', False),
+                (base + '&state=THIS&state=OTHER', 'THIS', True)):
             with self.subTest(url=url, state=state):
                 self.assertEqual(
                         ignored, auth._carries_another_state(url, state))
