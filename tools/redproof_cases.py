@@ -6475,8 +6475,8 @@ HARNESS_REVIEW_CASES_2 = [
          'did not retire the record it named'),
     Case('harness/a-baselines-tracked-write-is-reported',
          'tools/redproof.py',
-         "    if changed:\n        run.tracked_writes['the baseline of '",
-         "    if False:\n        run.tracked_writes['the baseline of '",
+         '    if changed:\n        run.tracked_writes[name] = changed\n',
+         '    if False:\n        run.tracked_writes[name] = changed\n',
          'tests/redproof_tool_test.py::BaselineTest'
          '::test_a_baselines_tracked_write_is_reported',
          'a baseline that wrote a tracked file went unreported'),
@@ -6895,8 +6895,8 @@ CASES.extend([
          "a write by the copy's real path went unreported"),
     Case('harness/the-run-keeps-what-the-hook-saw',
          'tools/redproof.py',
-         '                changed.update(tracked_writes_in(\n',
-         '                changed.union(tracked_writes_in(\n',
+         '            changed.update(tracked_writes_in(\n',
+         '            changed.union(tracked_writes_in(\n',
          'tests/redproof_tool_test.py::RunRecordTest'
          '::test_a_write_the_record_names_is_one_the_run_made',
          'a write the hook recorded was dropped'),
@@ -6931,14 +6931,14 @@ CASES.extend([
 # a half gains nothing from reusing one. Each of these mutated the store, its
 # keys or the gates that decided when a verdict could be kept. Kept, with the
 # reason, as removed cases are.
+_KEPT_VERDICTS_FOUND = set()
 KEPT_VERDICTS_REMOVED = (
     'Kept verdicts were deleted: every run judges every entry, since the '
     'whole set takes about a minute and a half on 20 cores, and the '
     'machinery that kept them produced every high finding in two review '
     'rounds, each a way a verdict stayed kept after something it read had '
     'changed. This case mutated that machinery.')
-for _case in CASES:
-    if _case.name in {
+_KEPT_VERDICTS_CASES = {
             'harness/a-started-process-is-never-kept',
             'harness/a-secret-file-is-never-digested',
             'harness/proc-is-never-kept',
@@ -6978,8 +6978,11 @@ for _case in CASES:
             'harness/the-stdlib-digest-leaves-out-per-build-files',
             'harness/a-link-in-the-stdlib-is-refused',
             'harness/a-stray-compiled-module-in-the-stdlib-is-refused',
-            'harness/the-gate-checks-the-standard-library'}:
+            'harness/the-gate-checks-the-standard-library'}
+for _case in CASES:
+    if _case.name in _KEPT_VERDICTS_CASES:
         _case.removed = KEPT_VERDICTS_REMOVED
+        _KEPT_VERDICTS_FOUND.add(_case.name)
 del _case
 
 CASES.extend([
@@ -7019,4 +7022,119 @@ CASES.extend([
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
          'the pool waited on a dead or overdue worker'),
+])
+
+# A name above that matches nothing would leave its case live and pointing
+# at deleted code, unnoticed: say so where it happens.
+if _KEPT_VERDICTS_CASES - _KEPT_VERDICTS_FOUND:
+    raise ValueError('no such case: %s' % ', '.join(sorted(
+        _KEPT_VERDICTS_CASES - _KEPT_VERDICTS_FOUND)))
+
+CASES.extend([
+    # The audit hook, a case per kind of write: each is the one thing that
+    # sees its kind of write when a test puts the file back.
+    Case('audit/a-removal-is-a-write',
+         'tools/redproof_audit.py',
+         "    'os.remove': ((0, 1),),\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a removal was not recorded'),
+    Case('audit/a-rmdir-is-a-write',
+         'tools/redproof_audit.py',
+         "    'os.rmdir': ((0, 1),),\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a rmdir was not recorded'),
+    Case('audit/a-mkdir-is-a-write',
+         'tools/redproof_audit.py',
+         "    'os.mkdir': ((0, 2),),\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a mkdir was not recorded'),
+    Case('audit/a-chmod-is-a-write',
+         'tools/redproof_audit.py',
+         "    'os.chmod': ((0, 2),),\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a chmod was not recorded'),
+    Case('audit/a-chown-is-a-write',
+         'tools/redproof_audit.py',
+         "    'os.chown': ((0, 3),),\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a chown was not recorded'),
+    Case('audit/a-utime-is-a-write',
+         'tools/redproof_audit.py',
+         "    'os.utime': ((0, 3),),\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a utime was not recorded'),
+    Case('audit/a-symlink-is-a-write',
+         'tools/redproof_audit.py',
+         "    'os.symlink': ((1, 2),),\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a symlink was not recorded'),
+    Case('audit/a-link-is-a-write',
+         'tools/redproof_audit.py',
+         "    'os.link': ((1, 3),),\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a link was not recorded'),
+    Case('audit/a-truncation-is-a-write',
+         'tools/redproof_audit.py',
+         "    'os.truncate': ((0, None),),\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a truncation was not recorded'),
+    Case('audit/a-rmtree-is-a-write',
+         'tools/redproof_audit.py',
+         "    'shutil.rmtree': ((0, 1),),\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a rmtree was not recorded',
+         superseded='shutil.rmtree removes what it removes through os.remove '
+         'and os.rmdir, each its own audited event, the top directory '
+         'included: measured on 3.10, 3.12 and 3.14. Its own event adds '
+         'nothing they do not.'),
+    Case('audit/a-write-relative-to-a-directory-is-placed',
+         'tools/redproof_audit.py',
+         "                p = _at(path, kwargs.get('dir_fd'))\n",
+         '                p = _at(path)\n',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a write relative to a directory descriptor was not recorded'),
+    Case('harness/a-run-with-no-record-is-unchecked',
+         'tools/redproof.py',
+         "            unchecked = 'it left no record of its writes'\n",
+         '            pass\n',
+         'tests/redproof_tool_test.py::RunRecordTest'
+         '::test_a_write_the_record_names_is_one_the_run_made',
+         'a run whose writes went unchecked passed as having none',
+         subtest='no_record'),
+    Case('harness/an-unplaced-write-is-unchecked',
+         'tools/redproof.py',
+         "            if record.get('unresolved'):\n",
+         '            if False:\n',
+         'tests/redproof_tool_test.py::RunRecordTest'
+         '::test_a_write_the_record_names_is_one_the_run_made',
+         'a run whose writes went unchecked passed as having none',
+         subtest='unresolved'),
+    Case('harness/an-unchecked-run-is-reported',
+         'tools/redproof.py',
+         '    if unchecked:\n        run.unchecked[case.name] = unchecked\n',
+         '    if False:\n        run.unchecked[case.name] = unchecked\n',
+         'tests/redproof_tool_test.py::JudgeTest'
+         '::test_a_run_that_could_not_be_checked_is_reported',
+         'a run whose writes went unchecked was not reported'),
 ])

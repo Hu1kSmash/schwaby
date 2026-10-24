@@ -12,14 +12,18 @@ mutated copy and an import from somewhere else look the same: every verdict a
 false GREEN.
 
 With ``REDPROOF_AUDIT`` set, an audit hook goes in before pytest is imported
-and records every path the run writes: an ``open()`` for writing, and a
-rename, removal, ``mkdir``, permission or time change, link or truncation. The
-record is written to that path when pytest returns. The harness compares the
-copy with the snapshot after the run, which catches a tracked file left
-changed; this catches one changed and put back. A write the hook could not
-place is recorded as unresolved. Recording never raises into the run: an
-exception there would fail the call being audited, and a test failing for
-that reason is a red the mutation did not cause.
+and records every path the run writes: an ``open()`` or ``os.open()`` for
+writing, and a rename, removal, ``mkdir``, permission or time change, link or
+truncation. ``os.open`` is wrapped as well as audited: its audit event does
+not carry ``dir_fd``, so a name relative to a directory descriptor was
+recorded at the wrong path. The record is written to that path when pytest
+returns. The harness compares the copy with the snapshot after the run,
+which catches a tracked file left changed; this catches one changed and put
+back. A write the hook could not place is recorded as unresolved, and the
+harness fails the run for it, as it does for a run that left no record.
+Recording never raises into the run: an exception there would fail the call
+being audited, and a test failing for that reason is a red the mutation did
+not cause. What it cannot see is a write by a process the test started.
 
 ``--collect`` writes ``{node id: xdist group}`` for every collected test with
 an ``xdist_group`` mark. The harness reads it to keep two entries that share a
@@ -121,6 +125,31 @@ def _record(event, args):
 
 def _install():
     sys.addaudithook(_hook)
+
+    import posix
+    real = os.open
+
+    def audited_open(path, flags, *args, **kwargs):
+        # The audit event names a dir_fd-relative path as if relative to
+        # the working directory; this records where it really is. The event
+        # still records its own reading too, in case a caller took os.open
+        # before this was put in: a wrong path costs a false alarm, a
+        # missing one a tracked write unseen.
+        try:
+            if isinstance(flags, int) and flags & _WRITE and not (
+                    _ANONYMOUS and (flags & _ANONYMOUS) == _ANONYMOUS):
+                p = _at(path, kwargs.get('dir_fd'))
+                if p == '':
+                    _unresolved.append('os.open')
+                elif p is not None:
+                    _written.add(p)
+        except Exception:
+            _unresolved.append('os.open')
+        return real(path, flags, *args, **kwargs)
+
+    if real in os.supports_dir_fd:
+        os.supports_dir_fd.add(audited_open)
+    os.open = posix.open = audited_open
 
 
 def write_record(path):

@@ -1,7 +1,8 @@
-'''The red-proof harness's own decisions: what a mutation does, what keys a
-kept verdict, when one holds, and how many runs fit. A harness that keeps a
-verdict it should not reports a guard as working after the guard broke, and
-nothing else would ever notice.'''
+'''The red-proof harness's own decisions: what a mutation does, which failure
+counts, which writes to tracked files are caught, how many runs fit, and what
+its worker processes do when one dies. A harness that calls a guard PROVEN
+when it is not reports it working after it broke, and nothing else would
+ever notice.'''
 
 import argparse
 import importlib.util
@@ -42,7 +43,7 @@ def case(old='a = 1', new='a = 2', **kwargs):
 
 def snapshot(content):
     s = redproof.Snapshot.__new__(redproof.Snapshot)
-    s.index(content)
+    s.content = content
     s.tracked = set(content)
     return s
 
@@ -78,15 +79,16 @@ class FakeRun:
     '''Stands in for redproof.Run in judge(): a snapshot, and run() handing
     back a canned result and the tracked files it wrote.'''
 
-    def __init__(self, content, result, changed=()):
+    def __init__(self, content, result, changed=(), unchecked=None):
         self.snapshot = snapshot(content)
         self.result, self.changed = result, list(changed)
-        self.tracked_writes = {}
+        self.unchecked_why = unchecked
+        self.tracked_writes, self.unchecked = {}, {}
         self.ran = []
 
     def run(self, nodes, mutation=None):
         self.ran.append((nodes, mutation))
-        return self.result, self.changed
+        return self.result, self.changed, self.unchecked_why
 
 
 def result(code, output='', killed=None):
@@ -226,6 +228,14 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual('SUPERSEDED', self.judge(
             '1 passed', code=0, superseded='covered elsewhere')[0])
 
+    def test_a_run_that_could_not_be_checked_is_reported(self):
+        run = FakeRun(self.CONTENT, result(1, 'E   expected'),
+                      unchecked='it left no record of its writes')
+        redproof.judge(run, case(), self.PASSED)
+        self.assertEqual({'x/y': 'it left no record of its writes'},
+                         run.unchecked, 'a run whose writes went unchecked '
+                         'was not reported')
+
     def test_a_tracked_write_is_reported_against_the_entry(self):
         run = FakeRun(self.CONTENT, result(1, 'E   expected'),
                       changed=['schwaby/x.py'])
@@ -270,7 +280,7 @@ class AuditTest(unittest.TestCase):
     a tracked file written and put back before the run ended.'''
 
     TEST = '''
-import os
+import os, shutil
 
 def test_writes_and_puts_back():
     with open('tracked.py', 'rb') as f:
@@ -283,14 +293,43 @@ def test_writes_and_puts_back():
     os.rename('moved2.py', 'moved.py')
     with open('only_read.py') as f:
         f.read()
+    # One path per kind of write, so each kind is seen on its own.
+    os.remove('removed.py')
+    os.rmdir('emptied')
+    os.mkdir('made')
+    os.chmod('chmodded.py', 0o644)
+    os.chown('chowned.py', os.getuid(), os.getgid())
+    os.utime('touched.py')
+    os.symlink('tracked.py', 'soft_link')
+    os.link('tracked.py', 'hard_link')
+    os.truncate('truncated.py', 0)
+    shutil.rmtree('tree')
+    fd = os.open('sub', os.O_RDONLY)
+    try:
+        os.close(os.open('inner.py', os.O_WRONLY, dir_fd=fd))
+    finally:
+        os.close(fd)
 '''
+
+    KINDS = (('removed.py', 'removal'), ('emptied', 'rmdir'),
+             ('made', 'mkdir'), ('chmodded.py', 'chmod'),
+             ('chowned.py', 'chown'), ('touched.py', 'utime'),
+             ('soft_link', 'symlink'), ('hard_link', 'link'),
+             ('truncated.py', 'truncation'), ('tree', 'rmtree'),
+             ('sub/inner.py', 'write relative to a directory descriptor'))
 
     def test_a_write_put_back_is_recorded_and_a_read_is_not(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = os.path.realpath(tmp.name)
+        for d in ('emptied', 'tree/deep', 'sub'):
+            os.makedirs(os.path.join(root, d))
         for name, data in (('test_x.py', self.TEST), ('tracked.py', 'a = 1\n'),
-                           ('moved.py', ''), ('only_read.py', '')):
+                           ('moved.py', ''), ('only_read.py', ''),
+                           ('removed.py', ''), ('chmodded.py', ''),
+                           ('chowned.py', ''), ('touched.py', ''),
+                           ('truncated.py', 'x'), ('tree/deep/x', ''),
+                           ('sub/inner.py', '')):
             with open(os.path.join(root, name), 'w') as f:
                 f.write(data)
         out = os.path.join(root, 'record.json')
@@ -307,6 +346,9 @@ def test_writes_and_puts_back():
             self.assertIn(os.path.join(root, name), written,
                           'a write the test put back was not recorded '
                           '(%s)' % name)
+        for name, kind in self.KINDS:
+            self.assertIn(os.path.join(root, name), written,
+                          'a %s was not recorded' % kind)
         # The positive control: what was only read is not a write.
         self.assertNotIn(os.path.join(root, 'only_read.py'), written,
                          'a read was recorded as a write')
@@ -339,9 +381,29 @@ class RunRecordTest(unittest.TestCase):
             return result(1, 'E   expected')
 
         with mock.patch.object(redproof, 'run_tests', run_tests):
-            _, changed = run.run(['tests/x_test.py'])
+            _, changed, unchecked = run.run(['tests/x_test.py'])
         self.assertEqual(['schwaby/x.py'], changed,
                          'a write the hook recorded was dropped')
+        self.assertIsNone(unchecked)
+
+        # A run that left no record, and one whose writes the hook could
+        # not all place: neither is a run with no writes.
+        def no_record(work, copy, nodes, audit, record):
+            return result(1, 'E   expected')
+
+        def unresolved(work, copy, nodes, audit, record):
+            with open(record, 'w') as f:
+                json.dump({'written': [], 'unresolved': ['os.rename']}, f)
+            return result(1, 'E   expected')
+
+        for fake, why in ((no_record, 'it left no record of its writes'),
+                          (unresolved, 'the audit could not place 1 of its '
+                           'writes (os.rename)')):
+            with self.subTest(fake.__name__):
+                with mock.patch.object(redproof, 'run_tests', fake):
+                    self.assertEqual(why, run.run(['tests/x_test.py'])[2],
+                                     'a run whose writes went unchecked '
+                                     'passed as having none')
 
 
 class BaselineTest(unittest.TestCase):
@@ -372,7 +434,7 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(
             ['.env.local', 'docs/api-credentials.rst', 'notes/token-notes.md'],
             redproof.secret_untracked(files, tracked),
-            'an untracked secret-named file would be copied and digested')
+            'an untracked secret-named file would be copied')
 
 
 @unittest.skipUnless(os.path.isdir('/proc'), 'the scenarios find processes '
@@ -623,7 +685,7 @@ print('dies-after', sorted(got), flush=True)
         from unittest import mock
         run = types.SimpleNamespace(
             snapshot=types.SimpleNamespace(content={}), timing=threading.local(),
-            tracked_writes={}, largest=0, lowest_available=None)
+            tracked_writes={}, unchecked={}, largest=0, lowest_available=None)
         run.timing.copy, run.timing.lock, run.timing.pytest = 0.1, 0.0, 0.5
         entry = case()
         with mock.patch.object(redproof, '_job', {

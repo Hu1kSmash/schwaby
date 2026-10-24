@@ -45,7 +45,10 @@ POSIX only: each run is a process group of its own, waited for with
 os.wait4 and killed with os.killpg.
 
 Exit status 0 only when every selected entry is PROVEN, SUPERSEDED or
-REMOVED, and no run wrote to a tracked file; 2 when --name matches nothing.
+REMOVED, and no run wrote to a tracked file or went unchecked for one; 1
+otherwise, and when the copy does not import its own schwaby or the suite
+cannot be collected; 2 when --name matches nothing, or the arguments are
+wrong.
 
 Every run judges every selected entry. Verdicts are not kept from one run to
 the next: the whole set takes about a minute and a half on 20 cores, and the
@@ -79,9 +82,11 @@ a fixed port, 6969, and two copies of it fail each other.
 
 TRACKED WRITES. A test that writes to a tracked file fails the run, by
 name: the copy is compared with the snapshot after each run, and the audit
-hook records every write, so a file written and put back before the run
-ended is caught too. What the hook cannot see is a write by a process the
-test started, unless it is left in place.
+hook records the run's writes, so a file written and put back before the run
+ended is caught too. A run whose writes the hook could not all place, or
+that left no record of them, fails the run the same way. What the hook
+cannot see is a write by a process the test started, unless it is left in
+place.
 '''
 
 import argparse
@@ -331,9 +336,6 @@ class Snapshot:
         for f in self.files:
             with open(os.path.join(path, f), 'rb') as fh:
                 content[f] = fh.read()
-        self.index(content)
-
-    def index(self, content):
         self.content = content
 
     def copy(self, dest):
@@ -376,7 +378,7 @@ class Result:
         self.killed = killed        # why it has no exit status
 
 
-def run_tests(workdir, copy, nodes, audit_script, record=None,
+def run_tests(workdir, copy, nodes, audit_script, record,
               limit=RUN_LIMIT):
     env = {
         'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
@@ -386,8 +388,7 @@ def run_tests(workdir, copy, nodes, audit_script, record=None,
     }
     os.makedirs(env['HOME'], exist_ok=True)
     os.makedirs(env['TMPDIR'], exist_ok=True)
-    if record:
-        env['REDPROOF_AUDIT'] = record
+    env['REDPROOF_AUDIT'] = record
     # --tb=short: pytest's long form prints each frame's arguments through
     # repr, and a test object whose repr or type name raises (several here
     # exist to) then crashed pytest itself, with an INTERNALERROR and no
@@ -473,6 +474,8 @@ class Run:
         self.largest = 0
         self.lowest_available = available_memory()
         self.tracked_writes = {}
+        # Runs whose writes could not all be checked, and why.
+        self.unchecked = {}
         self.timing = threading.local()
 
     def workdir(self):
@@ -525,7 +528,8 @@ class Run:
 
     def run(self, nodes, mutation=None):
         '''Runs nodes in a fresh copy, with the mutation (path, bytes) if any.
-        Returns (Result, the tracked files it wrote).'''
+        Returns (Result, the tracked files it wrote, why its writes could not
+        all be checked or None).'''
         started = time.monotonic()
         work = self.workdir()
         copy = os.path.join(work, 'copy')
@@ -546,17 +550,27 @@ class Run:
                 lock.close()
         self.note_memory(result)
         changed = set(self.changed_tracked(copy, mutation))
+        unchecked = None
         if os.path.exists(record_path):
             with open(record_path, 'rb') as f:
-                changed.update(tracked_writes_in(
-                    json.loads(f.read()), copy, self.snapshot.tracked))
+                record = json.loads(f.read())
+            changed.update(tracked_writes_in(
+                record, copy, self.snapshot.tracked))
+            if record.get('unresolved'):
+                unchecked = 'the audit could not place %d of its writes (%s)' % (
+                    len(record['unresolved']),
+                    ', '.join(sorted(set(record['unresolved']))))
+        else:
+            # Killed, or a test that left with os._exit: what it wrote and
+            # put back is unknown.
+            unchecked = 'it left no record of its writes'
         shutil.rmtree(work, ignore_errors=True)
         # Where the time went, for the entry's line: the copy, the wait for a
         # port group's lock, and pytest itself; the rest is the harness's.
         self.timing.copy = copied - started
         self.timing.lock = locked - copied
         self.timing.pytest = result.seconds
-        return result, sorted(changed)
+        return result, sorted(changed), unchecked
 
     def changed_tracked(self, copy, mutation):
         '''Tracked files whose bytes differ after the run. A write that was
@@ -579,9 +593,12 @@ class Run:
 def run_baseline(run, nodes):
     '''Runs nodes unmutated; a tracked file it wrote, restored or not, is
     noted against it.'''
-    result, changed = run.run(list(nodes))
+    result, changed, unchecked = run.run(list(nodes))
+    name = 'the baseline of ' + ' '.join(nodes)
     if changed:
-        run.tracked_writes['the baseline of ' + ' '.join(nodes)] = changed
+        run.tracked_writes[name] = changed
+    if unchecked:
+        run.unchecked[name] = unchecked
     return result
 
 
@@ -598,9 +615,11 @@ def judge(run, case, baseline):
     if baseline.code != 0:
         return 'SPEC', 'test does not pass before the mutation%s' % (
             ' (%s)' % baseline.killed if baseline.killed else '')
-    result, changed = run.run(tests_of(case), (case.path, mutated))
+    result, changed, unchecked = run.run(tests_of(case), (case.path, mutated))
     if changed:
         run.tracked_writes[case.name] = changed
+    if unchecked:
+        run.unchecked[case.name] = unchecked
     if result.code is None:
         return 'RED?', result.killed
     if result.code == 0:
@@ -710,11 +729,18 @@ def judge_all(run, args, started):
     for name, files in sorted(run.tracked_writes.items()):
         print('redproof: %s wrote to tracked files: %s' % (
             name, ', '.join(files)))
-    print('redproof: %d accounted for, %d not%s, %d s' % (
+    for name, why in sorted(run.unchecked.items()):
+        print('redproof: %s could not be checked for tracked writes: %s' % (
+            name, why))
+    writes = len(set(run.tracked_writes) | set(run.unchecked))
+    print('redproof: %d accounted for, %d not%s%s, %d s' % (
         len(selected) - len(bad), len(bad),
         (': ' + '; '.join('%s (%s)' % (n, verdicts[n][0]) for n in bad))
-        if bad else '', time.monotonic() - started), flush=True)
-    return 1 if bad or run.tracked_writes else 0
+        if bad else '',
+        '; %d run%s wrote to tracked files or could not be checked' % (
+            writes, '' if writes == 1 else 's') if writes else '',
+        time.monotonic() - started), flush=True)
+    return 1 if bad or writes else 0
 
 
 def pool_size(args, per_task):
@@ -792,8 +818,9 @@ def run_entries(run, args, entries):
 
     def merge(task_result):
         '''What a worker learned that the run as a whole keeps.'''
-        writes, largest, lowest = task_result[-3:]
+        writes, unchecked, largest, lowest = task_result[-4:]
         run.tracked_writes.update(writes)
+        run.unchecked.update(unchecked)
         run.largest = max(run.largest, largest)
         if lowest is not None and (run.lowest_available is None
                                    or lowest < run.lowest_available):
@@ -861,10 +888,12 @@ _job = {}
 
 def _worker_result(run):
     '''What every task hands back besides its own result: the tracked
-    writes it found, and the memory it saw.'''
-    writes = dict(run.tracked_writes)
+    writes it found, the runs it could not check for them, and the memory
+    it saw.'''
+    writes, unchecked = dict(run.tracked_writes), dict(run.unchecked)
     run.tracked_writes.clear()
-    return writes, run.largest, run.lowest_available
+    run.unchecked.clear()
+    return writes, unchecked, run.largest, run.lowest_available
 
 
 def _baseline_task(t):
@@ -900,11 +929,11 @@ def _entry_task(name):
 
 
 def _baseline_failed(t, why):
-    return (t, Result(None, '', 0.0, 0, why), {}, 0, None)
+    return (t, Result(None, '', 0.0, 0, why), {}, {}, 0, None)
 
 
 def _entry_failed(name, why):
-    return (name, 'ERROR', why, 0.0, '', {}, 0, None)
+    return (name, 'ERROR', why, 0.0, '', {}, {}, 0, None)
 
 
 #: How long a worker has to stop once told to, before it is killed
@@ -918,10 +947,11 @@ TASK_LIMIT = GROUP_LOCK_LIMIT + RUN_LIMIT + REAP_LIMIT + 300
 def parallel(fn, items, size, failed):
     '''fn over items in `size` worker processes, yielding each result as
     it arrives, and failed(item, why) for an item whose worker died, raised
-    or overran TASK_LIMIT. Processes, not threads: the harness's own work on
-    an entry holds the interpreter lock, and twenty threads queued on it
-    spent about fourteen seconds an entry waiting where pytest took half of
-    one.
+    or overran TASK_LIMIT. Processes, not threads: measured while the harness
+    still classified every run's reads, twenty threads queued on the
+    interpreter lock spent about fourteen seconds an entry waiting where
+    pytest took half of one. That work is gone since; processes still keep
+    each task's state its own.
 
     A pool of its own, not multiprocessing's or concurrent.futures': a Pool
     waits forever on a dead worker and hangs in terminate() after an idle
