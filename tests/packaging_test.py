@@ -2107,11 +2107,8 @@ class DocExampleTest(unittest.TestCase):
         cfg.read(os.path.join(REPO_ROOT, 'setup.cfg'))
         self.assertIn('--dist loadgroup', cfg['tool:pytest']['addopts'])
 
-        def runs_the_flow(cls):
-            return any(isinstance(n, ast.Call) and
-                       getattr(n.func, 'attr', getattr(n.func, 'id', None))
-                       == 'client_from_login_flow'
-                       for n in ast.walk(cls))
+
+        runs_the_flow = self.runs_the_flow
 
         def grouped(cls):
             return any(getattr(d, 'id', getattr(d, 'attr', None))
@@ -2135,6 +2132,57 @@ class DocExampleTest(unittest.TestCase):
         self.assertLessEqual(
                 {'ClientFromLoginFlowTest', 'ParentSideImportTest',
                  'ConnectErrorSiblingsAreAbsorbedTest'}, set(found))
+
+    @no_duplicates
+    def test_no_login_flow_test_names_a_fixed_port(self):
+        """A login-flow test's callback URL takes its port from
+        free_callback_port(), never a number written down.
+
+        A fixed port (6969, then 8182) made any two runs of the suite on one
+        machine fail each other: measured, every one of six paired runs lost
+        test_create_token_file or test_a_connect_timeout_is_treated_as_not_\
+listening_yet, and none of ten once each test took a free port. Nothing in
+        a single run can see a fixed port coming back, so this looks.
+        """
+        import re
+        fixed = re.compile(r'^https?://(127\.0\.0\.1|localhost):\d')
+        loopback = re.compile(r'^https?://(127\.0\.0\.1|localhost):')
+
+
+        runs_the_flow = self.runs_the_flow
+        offenders, seen = [], set()
+        for path in self.python_files_under_tests():
+            with open(path, encoding='utf-8') as f:
+                tree = ast.parse(f.read())
+            for cls in ast.walk(tree):
+                if not (isinstance(cls, ast.ClassDef) and runs_the_flow(cls)):
+                    continue
+                for node in ast.walk(cls):
+                    if not (isinstance(node, ast.Constant)
+                            and isinstance(node.value, str)):
+                        continue
+                    if loopback.match(node.value):
+                        seen.add(cls.name)
+                    if fixed.match(node.value):
+                        offenders.append('%s: %s line %d names a fixed port: '
+                                         '%r' % (display_path(path), cls.name,
+                                                 node.lineno, node.value))
+        self.assertEqual([], offenders, 'a login-flow test names a fixed '
+                         'callback port')
+        # The positive control: the scan saw each class's loopback URLs, so
+        # its silence about fixed ports means something.
+        self.assertLessEqual(
+                {'ClientFromLoginFlowTest', 'ParentSideImportTest',
+                 'ConnectErrorSiblingsAreAbsorbedTest'}, seen)
+
+    @staticmethod
+    def runs_the_flow(cls):
+        '''Whether a test class starts the login flow: one place decides it,
+        for both checks that care.'''
+        return any(isinstance(n, ast.Call) and
+                   getattr(n.func, 'attr', getattr(n.func, 'id', None))
+                   == 'client_from_login_flow'
+                   for n in ast.walk(cls))
 
     @staticmethod
     def python_files_under_tests():

@@ -3,7 +3,7 @@ from .utils import (
         AnyStringWith,
         MockAsyncOAuthClient,
         MockOAuthClient,
-        callback_port_group,
+        callback_port_group, free_callback_port,
         no_duplicates
 )
 from unittest.mock import patch, ANY, MagicMock
@@ -69,6 +69,7 @@ _skip_on_macos_runner = unittest.skipIf(
 class ClientFromLoginFlowTest(unittest.TestCase):
 
     def setUp(self):
+        self.port = free_callback_port()
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.token_path = os.path.join(self.tmp_dir.name, 'token.json')
         self.raw_token = {'token': 'yes'}
@@ -92,13 +93,13 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         sync_session.create_authorization_url.return_value = AUTH_URL, None
         sync_session.fetch_token.return_value = self.raw_token
 
-        callback_url = 'https://127.0.0.1:6969/callback'
+        callback_url = f'https://127.0.0.1:{self.port}/callback'
 
         controller = MagicMock()
         mock_webbrowser_get.return_value = controller
         controller.open.side_effect = \
                 lambda auth_url: requests.get(
-                        'https://127.0.0.1:6969/callback?code=c', verify=False)
+                        f'https://127.0.0.1:{self.port}/callback?code=c', verify=False)
 
         client.return_value = 'returned client'
 
@@ -138,7 +139,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         mock_webbrowser_get.return_value = controller
         controller.open.side_effect = \
                 lambda auth_url: requests.get(
-                        'https://127.0.0.1:6969/callback?code=c', verify=False)
+                        f'https://127.0.0.1:{self.port}/callback?code=c', verify=False)
 
         started = []
         real_start = multiprocess.Process.start
@@ -149,7 +150,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
 
         with patch.object(multiprocess.Process, 'start', start):
             auth.client_from_login_flow(
-                    API_KEY, APP_SECRET, 'https://127.0.0.1:6969/callback',
+                    API_KEY, APP_SECRET, f'https://127.0.0.1:{self.port}/callback',
                     self.token_path)
 
         # Positive control: no server started means nothing to have exited.
@@ -175,13 +176,13 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         sync_session.create_authorization_url.return_value = AUTH_URL, None
         sync_session.fetch_token.return_value = self.raw_token
 
-        callback_url = 'https://127.0.0.1:6969/callback'
+        callback_url = f'https://127.0.0.1:{self.port}/callback'
 
         controller = MagicMock()
         mock_webbrowser_get.return_value = controller
         controller.open.side_effect = \
                 lambda auth_url: requests.get(
-                        'https://127.0.0.1:6969/callback?code=c', verify=False)
+                        f'https://127.0.0.1:{self.port}/callback?code=c', verify=False)
 
         auth.client_from_login_flow(
                 API_KEY, APP_SECRET, callback_url, self.token_path,
@@ -206,13 +207,13 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         sync_session.create_authorization_url.return_value = AUTH_URL, None
         sync_session.fetch_token.return_value = self.raw_token
 
-        callback_url = 'https://127.0.0.1:6969/callback'
+        callback_url = f'https://127.0.0.1:{self.port}/callback'
 
         controller = MagicMock()
         mock_webbrowser_get.return_value = controller
         controller.open.side_effect = \
                lambda auth_url: requests.get(
-                        'https://127.0.0.1:6969/callback?code=c', verify=False)
+                        f'https://127.0.0.1:{self.port}/callback?code=c', verify=False)
 
         client.return_value = 'returned client'
 
@@ -244,13 +245,13 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         sync_session.create_authorization_url.return_value = AUTH_URL, None
         sync_session.fetch_token.return_value = self.raw_token
 
-        callback_url = 'https://127.0.0.1:6969/'
+        callback_url = f'https://127.0.0.1:{self.port}/'
 
         controller = MagicMock()
         mock_webbrowser_get.return_value = controller
         controller.open.side_effect = \
                lambda auth_url: requests.get(
-                        'https://127.0.0.1:6969/?code=c', verify=False)
+                        f'https://127.0.0.1:{self.port}/?code=c', verify=False)
 
         client.return_value = 'returned client'
 
@@ -316,7 +317,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         # would race against it. It did exactly that on one CI runner.
         with self.assertRaises(auth.RedirectTimeoutError):
             auth.client_from_login_flow(
-                    API_KEY, APP_SECRET, 'https://127.0.0.1:6969/callback',
+                    API_KEY, APP_SECRET, f'https://127.0.0.1:{self.port}/callback',
                     self.token_path, callback_timeout=0.1)
 
         self.assertEqual(3, mock_get.call_count)
@@ -339,7 +340,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
             with self.assertRaisesRegex(
                     auth.RedirectServerExitedError, 'did not become ready'):
                 auth.client_from_login_flow(
-                        API_KEY, APP_SECRET, 'https://127.0.0.1:6969/callback',
+                        API_KEY, APP_SECRET, f'https://127.0.0.1:{self.port}/callback',
                         self.token_path)
 
 
@@ -393,7 +394,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                 auth.RedirectServerExitedError,
                 'Something other than the schwaby callback server'):
             auth.client_from_login_flow(
-                    API_KEY, APP_SECRET, 'https://127.0.0.1:6969/callback',
+                    API_KEY, APP_SECRET, f'https://127.0.0.1:{self.port}/callback',
                     self.token_path)
 
 
@@ -458,7 +459,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         sync_session.create_authorization_url.return_value = AUTH_URL, None
         sync_session.fetch_token.return_value = self.raw_token
 
-        callback_url = 'https://127.0.0.1:6969/callback'
+        callback_url = f'https://127.0.0.1:{self.port}/callback'
 
         with self.assertRaisesRegex(auth.RedirectTimeoutError,
                                     'Timed out waiting'):
@@ -482,7 +483,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         sync_session.create_authorization_url.return_value = AUTH_URL, None
         sync_session.fetch_token.return_value = self.raw_token
 
-        callback_url = 'https://127.0.0.1:6969/callback'
+        callback_url = f'https://127.0.0.1:{self.port}/callback'
 
         with self.assertRaisesRegex(ValueError, 'endless wait requested'):
             auth.client_from_login_flow(
@@ -505,7 +506,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         sync_session.create_authorization_url.return_value = AUTH_URL, None
         sync_session.fetch_token.return_value = self.raw_token
 
-        callback_url = 'https://127.0.0.1:6969/callback'
+        callback_url = f'https://127.0.0.1:{self.port}/callback'
 
         with self.assertRaisesRegex(ValueError, 'endless wait requested'):
             auth.client_from_login_flow(
@@ -2496,7 +2497,7 @@ class ParentSideImportTest(unittest.TestCase):
         with self.block('flask'):
             with self.assertRaises(Exception) as cm:
                 auth.client_from_login_flow(
-                        API_KEY, APP_SECRET, 'https://127.0.0.1:8182',
+                        API_KEY, APP_SECRET, f'https://127.0.0.1:{free_callback_port()}',
                         '/tmp/does-not-matter.json')
 
         # An ImportError naming flask -- not whatever the parent makes of a
@@ -2513,7 +2514,7 @@ class ParentSideImportTest(unittest.TestCase):
         with self.block('cryptography'):
             with self.assertRaises(Exception) as cm:
                 auth.client_from_login_flow(
-                        API_KEY, APP_SECRET, 'https://127.0.0.1:8182',
+                        API_KEY, APP_SECRET, f'https://127.0.0.1:{free_callback_port()}',
                         '/tmp/does-not-matter.json')
 
         self.assertIsInstance(cm.exception, ImportError)
@@ -2533,7 +2534,7 @@ class ParentSideImportTest(unittest.TestCase):
             with self.block('flask'):
                 with self.assertRaises(ImportError):
                     auth.easy_client(
-                            API_KEY, APP_SECRET, 'https://127.0.0.1:8182',
+                            API_KEY, APP_SECRET, f'https://127.0.0.1:{free_callback_port()}',
                             token_path)
 
 

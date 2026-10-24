@@ -8,6 +8,7 @@ import httpx2
 import json
 import os
 import pytest
+import socket
 
 
 #: Put on every test class which runs ``client_from_login_flow``. The flow
@@ -17,6 +18,17 @@ import pytest
 #: worker under ``pytest -n auto``; setup.cfg's ``--dist loadgroup`` is what
 #: makes xdist honour it. packaging_test checks no such class goes without it.
 callback_port_group = pytest.mark.xdist_group('callback-port')
+
+
+def free_callback_port():
+    '''A loopback port nothing is listening on, for a login-flow test's
+    callback URL: a fixed one (6969) made any two runs of the suite on one
+    machine fail each other. The port is free when this returns and the flow
+    binds it a moment later, so another process could take it between the
+    two; the flow cannot be handed a socket already bound.'''
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('127.0.0.1', 0))
+        return s.getsockname()[1]
 
 
 # Resolved from this file rather than the working directory. Every test that

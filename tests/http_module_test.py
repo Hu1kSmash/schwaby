@@ -33,7 +33,8 @@ from schwaby.orders import generic
 from schwaby.orders.generic import OrderBuilder
 
 from .utils import (MockAsyncOAuthClient, MockOAuthClient,
-                    callback_port_group, no_duplicates)
+                    callback_port_group, free_callback_port,
+                    no_duplicates)
 
 
 HTTP_MODULE_NAMES = ('httpx', 'httpx2')
@@ -170,7 +171,8 @@ class ConnectErrorSiblingsAreAbsorbedTest(unittest.TestCase):
                 with self.assertRaises(auth.RedirectServerExitedError):
                     auth.client_from_login_flow(
                             API_KEY, APP_SECRET,
-                            'https://127.0.0.1:6969/callback',
+                            'https://127.0.0.1:%d/callback'
+                            % free_callback_port(),
                             self.token_path)
 
         # Without this the test would also pass if the patch never intercepted

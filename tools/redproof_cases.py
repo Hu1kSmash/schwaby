@@ -5827,8 +5827,8 @@ That is the whole install.''',
          "'--dist loadgroup' not found"),
     Case('suite/port-group-guard-sees-the-calls',
          'tests/packaging_test.py',
-         "                       == 'client_from_login_flow'",
-         "                       == 'client_from_login_flow_'",
+         "                   == 'client_from_login_flow'\n",
+         "                   == 'client_from_login_flow_'\n",
          'tests/packaging_test.py::DocExampleTest'
          '::test_every_login_flow_test_is_in_the_callback_port_group',
          'not less than or equal to'),
@@ -7353,4 +7353,17 @@ CASES.extend([
          'tests/redproof_tool_test.py::SnapshotTest'
          '::test_a_copy_keeps_each_files_mode',
          'a copy lost a file\'s mode'),
+])
+
+CASES.extend([
+    # A fixed callback port made two runs of the suite on one machine fail
+    # each other; nothing in one run can see one coming back.
+    Case('tests/no-login-flow-test-names-a-fixed-port',
+         'tests/http_module_test.py',
+         "                            'https://127.0.0.1:%d/callback'\n"
+         '                            % free_callback_port(),\n',
+         "                            'https://127.0.0.1:6969/callback',\n",
+         'tests/packaging_test.py::DocExampleTest'
+         '::test_no_login_flow_test_names_a_fixed_port',
+         'a login-flow test names a fixed callback port'),
 ])
