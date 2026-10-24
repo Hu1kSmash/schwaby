@@ -2093,8 +2093,8 @@ class DocExampleTest(unittest.TestCase):
 
     @no_duplicates
     def test_no_login_flow_test_names_a_fixed_port(self):
-        """A login-flow test's callback URL takes its port from
-        free_callback_port(), never a number written down.
+        """A login-flow test's callback URL takes its port from a socket it
+        holds, or from free_callback_port(), never a number written down.
 
         A fixed port (6969, then 8182) made any two runs of the suite on one
         machine fail each other: measured, every one of six paired runs lost

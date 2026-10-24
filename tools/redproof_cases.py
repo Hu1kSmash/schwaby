@@ -7595,7 +7595,7 @@ CASES.extend([
     Case('tests/no-login-flow-test-names-a-fixed-port',
          'tests/http_module_test.py',
          "                            'https://127.0.0.1:%d/callback'\n"
-         '                            % free_callback_port(),\n',
+         '                            % held.getsockname()[1],\n',
          "                            'https://127.0.0.1:6969/callback',\n",
          'tests/packaging_test.py::DocExampleTest'
          '::test_no_login_flow_test_names_a_fixed_port',

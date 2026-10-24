@@ -33,7 +33,7 @@ from schwaby.orders import generic
 from schwaby.orders.generic import OrderBuilder
 
 from .utils import (MockAsyncOAuthClient, MockOAuthClient,
-                    free_callback_port,
+                    bound_callback_socket,
                     no_duplicates)
 
 
@@ -166,13 +166,15 @@ class ConnectErrorSiblingsAreAbsorbedTest(unittest.TestCase):
         with patch.object(http, 'get') as mock_get:
             mock_get.side_effect = getattr(http, exception_name)('nope')
 
+            held = bound_callback_socket()
+            self.addCleanup(held.close)
             with patch('schwaby.auth.SERVER_STARTUP_TIMEOUT', 0.3):
                 with self.assertRaises(auth.RedirectServerExitedError):
                     auth.client_from_login_flow(
                             API_KEY, APP_SECRET,
                             'https://127.0.0.1:%d/callback'
-                            % free_callback_port(),
-                            self.token_path)
+                            % held.getsockname()[1],
+                            self.token_path, callback_socket=held)
 
         # Without this the test would also pass if the patch never intercepted
         # anything and the wait gave up for some unrelated reason.
