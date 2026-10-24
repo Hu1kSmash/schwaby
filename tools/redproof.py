@@ -1027,7 +1027,9 @@ def parallel(fn, items, size, failed):
                 if frames is None:
                     # Gone: what it left running dies with it. Its port
                     # group's lock stays held by its pytest, which inherited
-                    # it, until that pytest dies here with its group.
+                    # it, until every holder of it is gone: the group, killed
+                    # here, and anything the test started outside it, which
+                    # may hold the port as well.
                     w.reap_groups()
                     selector.unregister(w.results)
                     workers.remove(w)
@@ -1081,6 +1083,8 @@ def parallel(fn, items, size, failed):
                 w.drain()
             except BaseException as e:
                 failures.append(e)
+                # Whatever stopped the wait, the worker does not outlive it.
+                w.signal(signal.SIGKILL)
             try:
                 w.reap_groups()
                 os.close(w.results)

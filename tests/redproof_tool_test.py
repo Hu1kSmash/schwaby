@@ -673,6 +673,14 @@ try:
 except ValueError:
     print('cleanup-error raised', flush=True)
 rp._wait_gone = real_wait_gone
+# That pool never waited for its workers: reap them here, or they are this
+# script's zombies until it exits, and then systemd's, which the check for
+# a worker outliving its pool raced.
+while True:
+    try:
+        os.waitpid(-1, 0)
+    except ChildProcessError:
+        break
 got = []
 for result in rp.parallel(task, ['dies-after', 'b', 'c'], 1, failed):
     got.append(result)
@@ -693,20 +701,38 @@ print('dies-after', sorted(got), flush=True)
                 [sys.executable, '-I', script, os.path.join(
                     os.path.dirname(__file__), '..', 'tools', 'redproof.py')],
                 stdout=out, stderr=err, start_new_session=True)
+        def kill_what_it_started():
+            # Each test group runs in a session of its own, so killing the
+            # script's group does not reach them; the script names each as it
+            # starts it.
+            with open(os.path.join(tmp, 'out')) as f:
+                for line in f.read().splitlines():
+                    name, _, rest = line.partition(' ')
+                    if name.endswith(('-group', 'orphan')) and rest.isdigit():
+                        redproof.kill_group(int(rest))
+
         try:
             proc.wait(timeout=40)
         except subprocess.TimeoutExpired:
             os.killpg(proc.pid, 9)
             proc.wait()
+            kill_what_it_started()
             self.stderr = ''
             self.fail('the pool waited on a dead or overdue worker')
-        try:
-            os.killpg(proc.pid, 0)
-        except ProcessLookupError:
-            pass
-        else:
-            os.killpg(proc.pid, 9)
-            self.fail('a worker outlived its pool')
+        # A worker the script never waited for is reaped by init once the
+        # script exits, which takes a moment: allow it one.
+        deadline = time.monotonic() + 2
+        while True:
+            try:
+                os.killpg(proc.pid, 0)
+            except ProcessLookupError:
+                break
+            if time.monotonic() > deadline:
+                os.killpg(proc.pid, 9)
+                kill_what_it_started()
+                self.stderr = ''
+                self.fail('a worker outlived its pool')
+            time.sleep(0.05)
         with open(os.path.join(tmp, 'err')) as f:
             self.stderr = f.read()
         self.returncode = proc.returncode
@@ -886,15 +912,18 @@ class PortLockTest(unittest.TestCase):
         os.makedirs(work)
         os.makedirs(copy)
         script = os.path.join(tmp.name, 'fake_audit.py')
+        # The test process checks the descriptor it was handed is the lock
+        # file itself, not merely that some descriptor has that number.
         with open(script, 'w') as f:
             f.write('import os, sys\n'
-                    'os.fstat(int(sys.argv[-1]))\n'
-                    'open(os.path.join(os.environ["HOME"], "held"), "w")\n')
+                    'fd, path = int(sys.argv[-2]), sys.argv[-1]\n'
+                    'if os.fstat(fd).st_ino == os.stat(path).st_ino:\n'
+                    '    open(os.path.join(os.environ["HOME"], "held"), "w")\n')
         run = types.SimpleNamespace(locks_dir=tmp.name)
         held = redproof.Run.hold_groups(run, ['callback-port'])
         self.addCleanup(lambda: [f.close() for f in held])
         fd = held[0].fileno()
-        redproof.run_tests(work, copy, [str(fd)], script,
+        redproof.run_tests(work, copy, [str(fd), held[0].name], script,
                            os.path.join(work, 'record.json'), keep_open=[fd])
         self.assertTrue(os.path.exists(os.path.join(work, 'home', 'held')),
                         'the port lock did not reach the test')
@@ -915,12 +944,24 @@ class PortLockTest(unittest.TestCase):
         seen = []
 
         def run_tests(work, copy, nodes, audit, record, keep_open=()):
-            seen.extend(keep_open)
+            # Each descriptor handed over is a lock another process cannot
+            # take while the test runs.
+            for fd in keep_open:
+                probe = subprocess.run([sys.executable, '-c', '''
+import fcntl, os, sys
+with open(sys.argv[1], 'w') as f:
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        print('taken')
+    except BlockingIOError:
+        print('held')
+''', os.readlink('/proc/self/fd/%d' % fd)], capture_output=True, text=True)
+                seen.append(probe.stdout.strip())
             return result(0, '1 passed')
 
         with mock.patch.object(redproof, 'run_tests', run_tests):
             run.run(['tests/x_test.py'])
-        self.assertEqual(1, len(seen), 'a run kept its port lock from the '
+        self.assertEqual(['held'], seen, 'a run kept its port lock from the '
                          'test')
 
 
