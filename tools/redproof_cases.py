@@ -5933,11 +5933,11 @@ HARNESS_CASES = [
          "'file:"),
     Case('harness/a-tracked-write-is-reported',
          'tools/redproof.py',
-         "            if c[0] == 'copy' and c[1] in tracked:",
-         '            if False:',
-         'tests/redproof_tool_test.py::ReadsTest'
-         '::test_a_write_to_a_tracked_file_is_reported',
-         "['schwaby/__init__.py']"),
+         '                if rel in tracked:\n',
+         '                if False:\n',
+         'tests/redproof_tool_test.py::TrackedWritesTest'
+         '::test_a_write_the_run_put_back_is_found',
+         'a write the run restored went unreported'),
     Case('harness/a-tombstone-holds-nothing',
          'tools/redproof.py',
          "                if k.startswith(prefix) and not r.get('gone')}",
@@ -6428,19 +6428,18 @@ HARNESS_REVIEW_CASES = [
          'fails unmutated'),
     Case('harness/a-run-with-no-status-proves-nothing',
          'tools/redproof.py',
-         "    if result.code is None:\n        return 'RED?', result.killed, "
-         "None\n",
+         "    if result.code is None:\n        return 'RED?', result.killed\n",
          '',
          'tests/redproof_tool_test.py::JudgeTest'
          '::test_a_run_with_no_exit_status_proves_nothing',
          'a timed-out run was judged'),
-    Case('harness/a-restored-tracked-write-is-reported',
+    Case('harness/an-entrys-tracked-write-is-reported',
          'tools/redproof.py',
-         '        changed = sorted(set(changed) | set(found))\n',
-         '        pass\n',
+         '    if changed:\n        run.tracked_writes[case.name] = changed\n',
+         '    if False:\n        run.tracked_writes[case.name] = changed\n',
          'tests/redproof_tool_test.py::JudgeTest'
-         '::test_a_restored_write_to_a_tracked_file_is_reported',
-         'a write the run restored went unreported'),
+         '::test_a_tracked_write_is_reported_against_the_entry',
+         'a tracked write went unreported'),
 ]
 
 CASES += HARNESS_REVIEW_CASES
@@ -6474,13 +6473,13 @@ HARNESS_REVIEW_CASES_2 = [
          'tests/redproof_tool_test.py::StoreTest'
          '::test_a_tombstone_retires_a_record_already_saved',
          'did not retire the record it named'),
-    Case('harness/a-baselines-restored-write-is-reported',
+    Case('harness/a-baselines-tracked-write-is-reported',
          'tools/redproof.py',
-         '        changed = sorted(set(changed) | set(writes))\n',
-         '        pass\n',
+         "    if changed:\n        run.tracked_writes['the baseline of '",
+         "    if False:\n        run.tracked_writes['the baseline of '",
          'tests/redproof_tool_test.py::BaselineTest'
-         '::test_a_baselines_restored_write_is_reported',
-         'restored it went unreported'),
+         '::test_a_baselines_tracked_write_is_reported',
+         'a baseline that wrote a tracked file went unreported'),
     Case('harness/secret-directories-at-the-root',
          'tools/redproof.py',
          "(^|/)\\.(config|ssh|gnupg)/',",
@@ -6880,3 +6879,102 @@ CASES.append(
          'tests/redproof_tool_test.py::InstalledFilesTest'
          '::test_the_gate_holds_installed_files_to_their_records',
          'the gate does not check the standard library'))
+
+CASES.extend([
+    # With no verdicts kept, the audit hook records writes alone, and it is
+    # the one thing that sees a tracked file written and put back.
+    Case('harness/a-write-by-the-copys-real-path-is-found',
+         'tools/redproof.py',
+         '    for root in {os.path.abspath(copy), os.path.realpath(copy)}:\n',
+         '    for root in {os.path.abspath(copy)}:\n',
+         'tests/redproof_tool_test.py::TrackedWritesTest'
+         '::test_a_write_through_a_linked_path_is_found',
+         "a write by the copy's real path went unreported"),
+    Case('harness/the-run-keeps-what-the-hook-saw',
+         'tools/redproof.py',
+         '                changed.update(tracked_writes_in(\n',
+         '                changed.union(tracked_writes_in(\n',
+         'tests/redproof_tool_test.py::RunRecordTest'
+         '::test_a_write_the_record_names_is_one_the_run_made',
+         'a write the hook recorded was dropped'),
+    Case('audit/a-write-put-back-is-recorded',
+         'tools/redproof_audit.py',
+         "        if not ((isinstance(mode, str) and any(c in mode for c in "
+         "'wax+'))\n",
+         "        if True or not ((isinstance(mode, str) and any(c in mode for "
+         "c in 'wax+'))\n",
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a write the test put back was not recorded (tracked.py)'),
+    Case('audit/a-rename-is-a-write',
+         'tools/redproof_audit.py',
+         "    'os.rename': ((0, 2), (1, 3)),\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a write the test put back was not recorded (moved.py)'),
+    Case('audit/a-read-is-not-a-write',
+         'tools/redproof_audit.py',
+         "        if not ((isinstance(mode, str) and any(c in mode for c in "
+         "'wax+'))\n",
+         "        if False and not ((isinstance(mode, str) and any(c in mode "
+         "for c in 'wax+'))\n",
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a read was recorded as a write'),
+])
+
+# Kept verdicts were deleted: a suite whose whole run takes about a minute and
+# a half gains nothing from reusing one. Each of these mutated the store, its
+# keys or the gates that decided when a verdict could be kept. Kept, with the
+# reason, as removed cases are.
+KEPT_VERDICTS_REMOVED = (
+    'Kept verdicts were deleted: every run judges every entry, since the '
+    'whole set takes about a minute and a half on 20 cores, and the '
+    'machinery that kept them produced every high finding in two review '
+    'rounds, each a way a verdict stayed kept after something it read had '
+    'changed. This case mutated that machinery.')
+for _case in CASES:
+    if _case.name in {
+            'harness/a-started-process-is-never-kept',
+            'harness/a-secret-file-is-never-digested',
+            'harness/proc-is-never-kept',
+            'harness/probes-above-a-root-key-nothing',
+            'harness/the-key-holds-the-mutated-bytes',
+            'harness/a-tombstone-holds-nothing',
+            'harness/unused-records-are-pruned',
+            'harness/a-save-merges',
+            'harness/lock-markers-are-evaluated',
+            'harness/only-the-pinned-build-keeps-verdicts',
+            'harness/a-record-keys-the-baseline-too',
+            'harness/a-renewal-does-not-undo-a-tombstone',
+            'harness/a-prune-spares-a-record-used-since',
+            'harness/the-key-names-the-lock',
+            'harness/the-key-names-the-pinned-build',
+            'harness/an-environment-unlike-the-lock-keeps-nothing',
+            'harness/a-tombstone-retires-a-saved-record',
+            'harness/a-record-is-kept-only-with-its-baseline',
+            'harness/an-edited-installed-file-keeps-nothing',
+            'harness/pip-is-held-to-its-record',
+            'harness/a-missing-installed-file-keeps-nothing',
+            'harness/no-record-keeps-nothing',
+            'harness/an-unhashed-source-keeps-nothing',
+            'harness/an-unchecked-hash-keeps-nothing',
+            'harness/an-unlisted-installed-file-keeps-nothing',
+            'harness/the-gate-checks-installed-files',
+            'harness/the-key-names-the-standard-library',
+            'harness/schwaby-is-held-to-its-record',
+            'harness/a-dependency-from-a-directory-keeps-nothing',
+            'harness/unhashed-only-in-its-place',
+            'harness/bytecode-in-pycache-is-not-refused',
+            'harness/a-new-name-for-a-listed-file-keeps-nothing',
+            'harness/a-linked-directory-keeps-nothing',
+            'harness/a-directory-of-nothing-listed-keeps-nothing',
+            'harness/an-archive-on-the-path-keeps-nothing',
+            'harness/the-stdlib-digest-reads-every-file',
+            'harness/the-stdlib-digest-leaves-out-per-build-files',
+            'harness/a-link-in-the-stdlib-is-refused',
+            'harness/a-stray-compiled-module-in-the-stdlib-is-refused',
+            'harness/the-gate-checks-the-standard-library'}:
+        _case.removed = KEPT_VERDICTS_REMOVED
+del _case

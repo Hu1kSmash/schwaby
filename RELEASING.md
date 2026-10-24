@@ -259,9 +259,9 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    python -I -B tools/redproof.py
    ```
 
-   It runs every entry whose inputs changed since a verdict was kept, which on
-   a fresh checkout is all of them. Every entry must be PROVEN, KEPT,
-   SUPERSEDED or REMOVED.
+   It runs every entry: no verdict is kept from one run to the next. Every
+   entry must be PROVEN, SUPERSEDED or REMOVED, and no run may write to a
+   tracked file.
 
    **Nothing is tagged until the release is signed off.** The maintainer, or
    whoever they have delegated release approval to, approves it having seen

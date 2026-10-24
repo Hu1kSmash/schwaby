@@ -1,4 +1,4 @@
-'''Runs pytest for tools/redproof.py, recording what the run read.
+'''Runs pytest for tools/redproof.py, recording what the run wrote.
 
     python -I -B tools/redproof_audit.py <pytest arguments>
     python -I -B tools/redproof_audit.py --where
@@ -12,40 +12,27 @@ mutated copy and an import from somewhere else look the same: every verdict a
 false GREEN.
 
 With ``REDPROOF_AUDIT`` set, an audit hook goes in before pytest is imported
-and the record is written to that path when pytest returns. Python's audit
-hooks see every ``open()`` (an import's source too, through ``io.open_code``),
-every directory listing, every process started and every socket connected.
-They do not see an existence check, which opens nothing, so ``os.stat``,
-``os.lstat``, ``os.access`` and ``os.readlink`` are wrapped where ``os.path``,
-``pathlib`` and the import system look them up. A kept verdict has to stop
-holding when a file it only checked for appears or goes, as surely as when one
-it read changes.
-
-What the hook cannot see, it says. A process started from the run reads files
-nothing here records, so the record names it and the harness never keeps that
-run. A path the hook could not work out is recorded as unresolved, with the
-same effect. Recording never raises into the run: an exception there would fail
-the call being audited, and a test failing for that reason is a red the
-mutation did not cause.
+and records every path the run writes: an ``open()`` for writing, and a
+rename, removal, ``mkdir``, permission or time change, link or truncation. The
+record is written to that path when pytest returns. The harness compares the
+copy with the snapshot after the run, which catches a tracked file left
+changed; this catches one changed and put back. A write the hook could not
+place is recorded as unresolved. Recording never raises into the run: an
+exception there would fail the call being audited, and a test failing for
+that reason is a red the mutation did not cause.
 
 ``--collect`` writes ``{node id: xdist group}`` for every collected test with
 an ``xdist_group`` mark. The harness reads it to keep two entries that share a
 fixed port (the login flow's callback server, on 6969) from running at once.
 '''
 
-import functools
 import json
 import os
 import sys
 
 _OUT = os.environ.get('REDPROOF_AUDIT')
 
-_opened = set()
 _written = set()
-_listed = set()
-_probed = set()
-_spawned = []
-_connected = []
 _unresolved = []
 
 _WRITE = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
@@ -69,12 +56,7 @@ _CHANGES = {
     'os.truncate': ((0, None),),
     'shutil.rmtree': ((0, 1),),
 }
-_SPAWN = ('subprocess.Popen', 'os.posix_spawn', 'os.exec', 'os.spawn',
-          'os.system', 'os.fork', 'os.forkpty', 'pty.spawn')
-
-# The real ones, for the hook's own lookups: those must not be recorded as
-# the run's probes.
-_READLINK = os.readlink
+# The real one, for the hook's own lookups.
 _LSTAT = os.lstat
 
 
@@ -86,7 +68,7 @@ def _at(value, dir_fd=None):
     try:
         name = os.fsdecode(os.fspath(value))
         if isinstance(dir_fd, int) and dir_fd >= 0 and not os.path.isabs(name):
-            name = os.path.join(_READLINK('/proc/self/fd/%d' % dir_fd), name)
+            name = os.path.join(os.readlink('/proc/self/fd/%d' % dir_fd), name)
         return os.path.abspath(name)
     except Exception:
         return ''
@@ -98,13 +80,6 @@ def _exists(path):
     except OSError:
         return False
     return True
-
-
-def _loopback(address):
-    if isinstance(address, tuple) and address and isinstance(address[0], str):
-        return address[0] in ('localhost', '::1') or address[0].startswith('127.')
-    # A Unix socket: a file on this machine, not the network
-    return isinstance(address, (str, bytes))
 
 
 def _hook(event, args):
@@ -121,22 +96,14 @@ def _record(event, args):
         if isinstance(flags, int) and _ANONYMOUS and (
                 flags & _ANONYMOUS) == _ANONYMOUS:
             return
+        if not ((isinstance(mode, str) and any(c in mode for c in 'wax+'))
+                or (isinstance(flags, int) and flags & _WRITE)):
+            return
         path = _at(args[0])
         if path == '':
             _unresolved.append(event)
         elif path is not None:
-            _opened.add(path)
-            if ((isinstance(mode, str) and any(c in mode for c in 'wax+'))
-                    or (isinstance(flags, int) and flags & _WRITE)):
-                _written.add(path)
-    elif event in ('os.listdir', 'os.scandir'):
-        # A listing by descriptor (shutil.rmtree's, os.fwalk's) was preceded
-        # by the open that made the descriptor, and that open was recorded.
-        path = _at(args[0] if args and args[0] is not None else '.')
-        if path == '':
-            _unresolved.append(event)
-        elif path is not None:
-            _listed.add(path)
+            _written.add(path)
     elif event in _CHANGES:
         for at, fd in _CHANGES[event]:
             if at >= len(args):
@@ -149,73 +116,17 @@ def _record(event, args):
             # directories with exist_ok=True.
             elif path is not None and not (
                     event == 'os.mkdir' and _exists(path)):
-                _opened.add(path)
                 _written.add(path)
-    elif event in _SPAWN:
-        _spawned.append(event)
-    elif (event == 'socket.connect' and len(args) > 1
-            and not _loopback(args[1])):
-        _connected.append(repr(args[1]))
-
-
-def _probe(real):
-    @functools.wraps(real)
-    def probe(path, *args, **kwargs):
-        try:
-            p = _at(path, kwargs.get('dir_fd'))
-            if p == '':
-                _unresolved.append(real.__name__)
-            elif p is not None:
-                _probed.add(p)
-        except Exception:
-            _unresolved.append(real.__name__)
-        return real(path, *args, **kwargs)
-    return probe
 
 
 def _install():
     sys.addaudithook(_hook)
 
-    import posix
-
-    # os.path, pathlib and importlib look these up at each call, so they see
-    # the wrappers. Each wrapper also stands where its original stood in the
-    # os.supports_* sets, which shutil reads when it is imported.
-    supports = (os.supports_dir_fd, os.supports_fd,
-                os.supports_follow_symlinks, os.supports_effective_ids)
-    for name in ('stat', 'lstat', 'access', 'readlink'):
-        real = getattr(os, name)
-        wrapper = _probe(real)
-        for s in supports:
-            if real in s:
-                s.add(wrapper)
-        setattr(os, name, wrapper)
-        setattr(posix, name, wrapper)
-
-    # multiprocessing's spawn and forkserver start their processes through
-    # util.spawnv_passfds, which calls this; a spawn start raises no audit
-    # event at all (measured on 3.14). A start is a start, whatever makes it.
-    import _posixsubprocess
-    fork_exec = _posixsubprocess.fork_exec
-
-    def counted_fork_exec(*args, **kwargs):
-        _spawned.append('_posixsubprocess.fork_exec')
-        return fork_exec(*args, **kwargs)
-
-    _posixsubprocess.fork_exec = counted_fork_exec
-
 
 def write_record(path):
     # Copies first: a thread the run left behind may still be adding.
-    opened, written = set(_opened), set(_written)
-    record = {
-        'opened': {p: p in written for p in sorted(opened | written)},
-        'listed': sorted(set(_listed)),
-        'probed': sorted(set(_probed)),
-        'spawned': list(_spawned),
-        'connected': list(_connected),
-        'unresolved': list(_unresolved),
-    }
+    record = {'written': sorted(set(_written)),
+              'unresolved': list(_unresolved)}
     with open(path + '.tmp', 'w', encoding='utf-8') as f:
         json.dump(record, f)
     os.replace(path + '.tmp', path)
@@ -256,8 +167,8 @@ def main(argv):
         try:
             write_record(_OUT)
         except Exception as e:
-            # The exit status is pytest's. With no record the run is never
-            # kept, which costs a rerun and nothing else.
+            # The exit status is pytest's. With no record, a write put back
+            # before the end goes unseen; one left in place is still caught.
             print('redproof_audit: no record (%s: %s)' % (type(e).__name__, e),
                   file=sys.stderr)
     return code

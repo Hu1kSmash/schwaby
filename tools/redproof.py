@@ -1,9 +1,8 @@
 '''Mechanical red-proofing: break the code on purpose, and require the failure
 to arrive on the assertion you named.
 
-    .venv/bin/python -I -B tools/redproof.py                 # every stale entry
+    .venv/bin/python -I -B tools/redproof.py                 # every entry
     .venv/bin/python -I -B tools/redproof.py --name auth/    # names containing it
-    .venv/bin/python -I -B tools/redproof.py --all           # every entry, kept or not
     .venv/bin/python -I -B tools/redproof.py --jobs 4        # entries at once
     .venv/bin/python -I -B tools/redproof.py --shard 2/3     # one slice of three
 
@@ -28,7 +27,6 @@ substring that must appear in the failure.
 VERDICTS
     PROVEN      the test passed unmutated, failed mutated, and the output
                 carries `expect`: the check works.
-    KEPT        PROVEN by an earlier run whose every input still holds (below).
     GREEN       the test passed with the code broken. Two readings, needing
                 different fixes: the test is asleep, or what was mutated is no
                 longer load-bearing because something later covers it. If the
@@ -46,15 +44,21 @@ VERDICTS
 POSIX only: each run is a process group of its own, waited for with
 os.wait4 and killed with os.killpg.
 
-Exit status 0 only when every selected entry is PROVEN, KEPT, SUPERSEDED or
+Exit status 0 only when every selected entry is PROVEN, SUPERSEDED or
 REMOVED, and no run wrote to a tracked file; 2 when --name matches nothing.
+
+Every run judges every selected entry. Verdicts are not kept from one run to
+the next: the whole set takes about a minute and a half on 20 cores, and the
+machinery that kept them, keyed on everything a run read, produced every high
+finding in two review rounds, each a way a verdict stayed kept after
+something it depended on had changed.
 
 SHARDS. `--shard K/N` judges one slice of N, so N machines can share one
 run: the selected entries (after --name) are divided by a hash of each name,
-and only the stale entries in slice K run. Every entry is in exactly one
-slice, whichever entries are stale, so the slices of one run never overlap
-and never miss one, and an entry stays in its slice from run to run. An empty
-slice is not an error: it has nothing to run and exits 0.
+and the entries in slice K run. Every entry is in exactly one slice, so the
+slices of one run never overlap and never miss one, and an entry stays in its
+slice from run to run. An empty slice is not an error: it has nothing to run
+and exits 0.
 
 THE WORKING TREE IS NEVER TOUCHED. The run snapshots the repository's own files
 (tracked, plus untracked and not ignored) into a temporary directory, reads the
@@ -73,42 +77,11 @@ measurement. `--jobs` overrides the core count. Entries whose tests carry the
 same xdist_group mark never run at once: the login flow's callback server binds
 a fixed port, 6969, and two copies of it fail each other.
 
-KEPT VERDICTS. A PROVEN entry is kept in cache/redproof.json (gitignored) on
-exactly what its two runs read, as recorded by the audit hook: the mutated run
-and the unmutated baseline it depends on. The copy's files count by their bytes
-as each run found them (the mutation applied in the one, not the other), the
-directories listed by their names, and the paths only checked by what they
-were (file, directory or absent). The interpreter counts as its implementation,
-major.minor version, the release .python-versions pins for it and a digest
-of its standard library's Python sources, and the installed libraries as
-requirements.lock, so a verdict is kept or reused only when the interpreter
-is that exact release and the installed set is exactly the lock, every
-installed file what its RECORD says and nothing in site-packages that no
-RECORD lists. Never the machine: one store serves every rig, and the release
-is not the build, so the compiled parts of another vendor's build of the
-same release pass. Never kept: a run that
-started a process (what a child reads is not recorded), connected beyond
-loopback, read /proc or /sys, read a file outside the copy that may hold a
-secret (whose bytes are never digested), or wrote outside its own temporary
-directory. An untracked file in the checkout whose name says it may hold a
-secret is left out of the copies altogether. Kept verdicts need Python 3.11 or
-newer, where pathlib looks os.stat up at each call; earlier versions were not
-checked.
-
-What the audit cannot see, a record cannot key, and these are known: files the
-C library reads for itself (time zone data under TZ, locale files), an
-os.open() relative to a directory descriptor (recorded at the wrong path), and
-a probed path's size or permissions (only its kind is keyed), and bytecode in
-a __pycache__ directory, which nothing hashes and Python reads in place of its
-source when its header matches the source's time and size. Not reading it
-(-X pycache_prefix) costs 0.6 s a run; replacing one by hand is the only way
-known to make it disagree with its source.
-
-A selected entry with a record that still holds is KEPT without running, and
-the record's time is renewed. A record that has not held or been proved for 60
-days is dropped. A run that finds an entry not PROVEN while a record says it
-was retires every record that held, with a `gone` tombstone, and a save never
-lets a renewal undo one: only a proof made after it does.
+TRACKED WRITES. A test that writes to a tracked file fails the run, by
+name: the copy is compared with the snapshot after each run, and the audit
+hook records every write, so a file written and put back before the run
+ended is caught too. What the hook cannot see is a write by a process the
+test started, unless it is left in place.
 '''
 
 import argparse
@@ -116,7 +89,6 @@ import hashlib
 import importlib.util
 import json
 import os
-import platform
 import re
 import shutil
 import signal
@@ -125,16 +97,10 @@ import sys
 import tempfile
 import threading
 import time
-from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CASES = 'tools/redproof_cases.py'
 AUDIT = 'tools/redproof_audit.py'
-LOCK = 'requirements.lock'
-PYTHONS = '.python-versions'
-STORE = os.path.join(ROOT, 'cache', 'redproof.json')
-STORE_VERSION = 2
-KEEP_DAYS = 60
 
 #: The lowest a run may leave available, in bytes
 FLOOR = 2 << 30
@@ -142,17 +108,14 @@ FLOOR = 2 << 30
 RUN_LIMIT = 600
 #: The bound on a run's leftover processes going, once it has exited
 REAP_LIMIT = 30
-#: The bounds on the steps before any entry runs, and on the store's lock
+#: The bounds on the steps before any entry runs
 GIT_LIMIT = 60
 PREPARE_LIMIT = 300
-LOCK_LIMIT = 120
 #: The bound on waiting for a port group's lock, behind its other entries
 GROUP_LOCK_LIMIT = 3600
 
-DEVICES = ('/dev/null', '/dev/zero', '/dev/full', '/dev/random',
-           '/dev/urandom', '/dev/tty')
-#: Files that may hold a secret: a run that read one is never kept, so its
-#: bytes are never digested into the store.
+#: Files that may hold a secret, which an untracked file named like one is
+#: left out of every copy for
 SECRET_PATH = re.compile(
     r'(^|/)(\.env[^/]*|\.netrc|\.pypirc|\.git-credentials|[^/]*token[^/]*'
     r'|[^/]*secret[^/]*|[^/]*credential[^/]*|[^/]*password[^/]*'
@@ -206,10 +169,6 @@ def gib(n):
     if n < 1 << 30:
         return '%d MiB' % (n >> 20)
     return '%.1f GiB' % (n / (1 << 30))
-
-
-def now_iso():
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
 
 def sha(data):
@@ -327,16 +286,6 @@ def mutate(case, original):
     return mutated, None
 
 
-def case_fields(case):
-    return {
-        'name': case.name, 'path': case.path, 'old': case.old,
-        'new': case.new, 'test': tests_of(case), 'expect': case.expect,
-        'also': list(case.also) if case.also else None,
-        'superseded': case.superseded,
-        'subtest': getattr(case, 'subtest', None),
-    }
-
-
 # --------------------------------------------------------------- the snapshot
 
 def repo_files():
@@ -356,8 +305,8 @@ def tracked_files():
 
 def secret_untracked(files, tracked):
     '''The untracked files whose names say they may hold a secret. They are
-    not copied: a copy's reads are digested into the store, and nothing in
-    the repository can depend on a file git does not have.'''
+    not copied: nothing in the repository can depend on a file git does not
+    have, and a copy is one more place for a secret to be read from.'''
     return [f for f in files if f not in tracked and SECRET_PATH.search(f)]
 
 
@@ -386,26 +335,9 @@ class Snapshot:
 
     def index(self, content):
         self.content = content
-        self.dirs = {}
-        for f in content:
-            parts = f.split('/')
-            for i in range(len(parts)):
-                parent = '/'.join(parts[:i])
-                kind = 'f' if i == len(parts) - 1 else 'd'
-                self.dirs.setdefault(parent, set()).add((parts[i], kind))
 
     def copy(self, dest):
         copy_tree(self.files, self.path, dest)
-
-    def kind(self, rel):
-        if rel in self.content:
-            return 'file'
-        if rel in self.dirs:
-            return 'dir'
-        return 'absent'
-
-    def listing(self, rel):
-        return sha(json.dumps(sorted(self.dirs.get(rel, ()))).encode())
 
 
 # --------------------------------------------------------------- running tests
@@ -506,574 +438,24 @@ def run_tests(workdir, copy, nodes, audit_script, record=None,
     return Result(proc.returncode, output, seconds, peak)
 
 
-# ------------------------------------------------------------- kept verdicts
+# ------------------------------------------------------------ tracked writes
 
-def lock_pins(snapshot):
-    '''The pins that apply to this interpreter. The lock covers every Python
-    the project supports, with a marker where a version differs; a line whose
-    marker does not hold here belongs to another interpreter's set.'''
-    from packaging.markers import Marker
-    pins = {}
-    for line in snapshot.content.get(LOCK, b'').decode('utf-8').splitlines():
-        requirement, _, marker = line.split('#')[0].strip().partition(';')
-        if '==' not in requirement:
-            continue
-        if marker.strip() and not Marker(marker.strip()).evaluate():
-            continue
-        name, version = requirement.split('==', 1)
-        pins[normalize(name)] = version.strip()
-    return pins
+def under(path, root):
+    return path == root or path.startswith(root.rstrip('/') + '/')
 
 
-def normalize(name):
-    return re.sub(r'[-_.]+', '-', name).lower()
+def tracked_writes_in(record, copy, tracked):
+    '''The tracked files the audit saw a run write, by their path in the
+    copy, whether or not the run put them back.'''
+    found = set()
+    for root in {os.path.abspath(copy), os.path.realpath(copy)}:
+        for path in record.get('written', ()):
+            if under(path, root):
+                rel = os.path.relpath(path, root).replace(os.sep, '/')
+                if rel in tracked:
+                    found.add(rel)
+    return sorted(found)
 
-
-def pinned_python(snapshot):
-    '''The exact release .python-versions pins for this interpreter's minor
-    version, or None.'''
-    minor = '%d.%d.' % sys.version_info[:2]
-    for line in snapshot.content.get(PYTHONS, b'').decode('utf-8').split():
-        if line.startswith(minor):
-            return line
-    return None
-
-
-def environment_matches_lock(snapshot):
-    '''None when the interpreter is the pinned build and the installed
-    distributions are exactly the lock, otherwise why not. A verdict is keyed
-    on the interpreter's minor version and on the lock, so one measured
-    against anything else must not be kept, nor stand in for a run. The key
-    stays loose and the environment is held to the pin, so every rig on the
-    pin shares verdicts.'''
-    pinned = pinned_python(snapshot)
-    running = platform.python_version()
-    if sys.implementation.name != 'cpython' or pinned != running:
-        return 'Python %s %s is not the pinned %s' % (
-            sys.implementation.name, running, pinned or 'build (none for '
-            '%d.%d in %s)' % (sys.version_info[0], sys.version_info[1],
-                               PYTHONS))
-    if sys.version_info < (3, 11):
-        # 3.11's pathlib calls os.stat at each call, which is what lets the
-        # audit see its checks; earlier versions were not checked.
-        return ('Python %d.%d: not checked that pathlib looks os.stat up at '
-                'each call' % sys.version_info[:2])
-    try:
-        pins = lock_pins(snapshot)
-    except ImportError:
-        return 'packaging is not installed, so the lock cannot be read'
-    if not pins:
-        return 'no %s' % LOCK
-    from importlib import metadata
-    installed = {}
-    for dist in metadata.distributions():
-        name = dist.metadata['Name']
-        if name:
-            installed[normalize(name)] = dist.version
-    # Neither is a test dependency: pip installs, and schwaby is under test.
-    for own in ('pip', 'schwaby'):
-        installed.pop(own, None)
-    differ = sorted(n for n in set(pins) | set(installed)
-                    if pins.get(n) != installed.get(n))
-    if differ:
-        shown = ', '.join('%s %s (lock: %s)' % (n, installed.get(n, 'absent'),
-                                                pins.get(n, 'absent'))
-                          for n in differ[:3])
-        return '%d installed distributions differ from %s: %s%s' % (
-            len(differ), LOCK, shown, ', ...' if len(differ) > 3 else '')
-    edited = installed_files_differ(metadata.distributions())
-    if edited:
-        return 'an installed file is not what was installed: %s' % edited
-    edited = stdlib_differs()
-    if edited:
-        return edited
-    return None
-
-
-#: The hashes a RECORD may name that are checked; PEP 376 asks for sha256
-#: or stronger, and a name hashlib does not know is refused, not skipped.
-RECORD_HASHES = ('sha256', 'sha384', 'sha512')
-
-
-def import_roots():
-    '''What the interpreter pytest runs under imports from: its sys.path
-    under -I, as the harness starts it, so what .pth files and system
-    site-packages add is in it.'''
-    out = subprocess.run(
-        [sys.executable, '-I', '-B', '-c',
-         'import json, sys; print(json.dumps(sys.path))'],
-        capture_output=True, text=True, timeout=60, check=True)
-    return [p for p in json.loads(out.stdout) if p]
-
-
-def installed_files_differ(distributions, roots=None):
-    '''The first thing pytest's interpreter could import from that is not
-    what was installed, as text, or None. The lock pins versions, so a
-    library file edited in place at the same version passed the lock gate
-    and could keep a verdict measured against the original.
-
-    A closed world, not a list of bad cases (an earlier list missed five):
-    every file under every import root outside the standard library, which
-    stdlib_digest() covers, must be one a RECORD lists by that path and
-    whose bytes match its hash. So a file or a link no RECORD lists, a
-    linked directory, a directory with nothing listed under it (an
-    uninstall's leftovers import as a namespace package), an archive on the
-    path, a distribution with no RECORD, a hash it cannot check, a listed
-    file without a hash other than its dist-info's RECORD and __pycache__
-    bytecode, and a distribution installed from a directory or VCS (its
-    files are not in its RECORD) each keep nothing. schwaby, under test, may
-    be installed from its checkout. __pycache__ directories are not walked:
-    bytecode is not hashed by anything (see the module docstring).'''
-    import base64
-    listed = set()
-    for dist in distributions:
-        name = normalize(dist.metadata['Name'] or '')
-        if dist.files is None:
-            return '%s has no RECORD, so its files cannot be checked' % name
-        if name != 'schwaby' and dist.read_text('direct_url.json') is not None:
-            return ('%s is installed from a directory or a repository, whose '
-                    'files its RECORD does not list' % name)
-        for f in dist.files:
-            path = dist.locate_file(f)
-            listed.add(os.path.abspath(path))
-            if not f.hash:
-                parts = str(f).replace(os.sep, '/').split('/')
-                if (parts[-1] == 'RECORD' and len(parts) >= 2
-                        and parts[-2].endswith('.dist-info')) or (
-                        parts[-1].endswith('.pyc') and len(parts) >= 2
-                        and parts[-2] == '__pycache__'):
-                    continue
-                return '%s: %s has no hash in its RECORD' % (name, f)
-            if f.hash.mode not in RECORD_HASHES:
-                return '%s: %s is hashed with %s, which is not checked' % (
-                    name, f, f.hash.mode)
-            try:
-                with open(path, 'rb') as fh:
-                    data = fh.read()
-            except OSError:
-                return '%s: %s is missing' % (name, f)
-            digest = base64.urlsafe_b64encode(
-                hashlib.new(f.hash.mode, data).digest()).rstrip(b'=') \
-                .decode('ascii')
-            if digest != f.hash.value:
-                return '%s: %s differs from its RECORD' % (name, f)
-    if roots is None:
-        stdlib = stdlib_root()
-        roots = [r for r in import_roots()
-                 if not (Classifier.under(r, stdlib) and not Classifier.under(
-                     r, os.path.join(stdlib, 'site-packages')))]
-    for root in roots:
-        why = _unlisted_under(os.path.abspath(root), listed)
-        if why:
-            return why
-    return None
-
-
-def _unlisted_under(root, listed):
-    if not os.path.lexists(root):
-        return None
-    if not os.path.isdir(root) or os.path.islink(root):
-        return '%s is on the import path and is not a directory' % root
-    holding = set()
-    for path in listed:
-        if Classifier.under(path, root):
-            d = os.path.dirname(path)
-            while d not in holding and Classifier.under(d, root):
-                holding.add(d)
-                d = os.path.dirname(d)
-    for dirpath, dirnames, files in os.walk(root):
-        for d in sorted(dirnames):
-            path = os.path.join(dirpath, d)
-            if os.path.islink(path):
-                return '%s in %s is a link to a directory' % (
-                    os.path.relpath(path, root), root)
-        dirnames[:] = sorted(d for d in dirnames if d != '__pycache__')
-        if dirpath != root and dirpath not in holding:
-            return '%s in %s holds nothing any RECORD lists' % (
-                os.path.relpath(dirpath, root), root)
-        for f in sorted(files):
-            path = os.path.join(dirpath, f)
-            if path not in listed:
-                return '%s is in %s but no RECORD lists it' % (
-                    os.path.relpath(path, root), root)
-    return None
-
-
-#: In the standard library but not its digest: built for one architecture,
-#: or holding the build's own paths, so different on every rig on the pin.
-#: The compiled modules among them are held to the release alone.
-STDLIB_PER_BUILD = re.compile(
-    r'^(lib-dynload|config-[^/]*|site-packages)(/|$)'
-    r'|(^|/)__pycache__(/|$)'
-    r'|^(_sysconfigdata[^/]*|_sysconfig_vars[^/]*|build-details\.json)$')
-
-
-def stdlib_root():
-    import sysconfig
-    return os.path.abspath(sysconfig.get_paths()['stdlib'])
-
-
-_stdlib_digests = {}
-
-
-def stdlib_digest(root=None):
-    '''A digest of the standard library, for the key: every file under
-    it but the per-build ones (STDLIB_PER_BUILD) and __pycache__, each by
-    its path and bytes. Nothing installs the standard library, so no RECORD
-    holds it, and the pin holds only the release: an edited unittest/case.py
-    kept every verdict, and so did a sourceless .pyc, which only a digest of
-    every file sees. One value on every rig on the pin: measured equal for
-    3.14.8's aarch64 and x86_64 builds. A link in it, which this digest
-    would not follow, is refused by stdlib_differs().'''
-    root = os.path.abspath(root or stdlib_root())
-    if root not in _stdlib_digests:
-        h = hashlib.sha256()
-        for rel, path in _stdlib_files(root):
-            if os.path.islink(path):
-                h.update(b'L' + rel.encode() + b'\0'
-                         + os.readlink(path).encode() + b'\0')
-                continue
-            with open(path, 'rb') as fh:
-                h.update(b'F' + rel.encode() + b'\0' + fh.read() + b'\0')
-        _stdlib_digests[root] = h.hexdigest()
-    return _stdlib_digests[root]
-
-
-def _stdlib_files(root):
-    for dirpath, dirnames, files in os.walk(root):
-        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, '/')
-        rel_dir = '' if rel_dir == '.' else rel_dir + '/'
-        kept = []
-        for d in sorted(dirnames):
-            if STDLIB_PER_BUILD.search(rel_dir + d):
-                continue
-            if os.path.islink(os.path.join(dirpath, d)):
-                yield rel_dir + d, os.path.join(dirpath, d)
-                continue
-            kept.append(d)
-        dirnames[:] = kept
-        for f in sorted(files):
-            if not STDLIB_PER_BUILD.search(rel_dir + f):
-                yield rel_dir + f, os.path.join(dirpath, f)
-
-
-def stdlib_differs(root=None):
-    '''Why the standard library cannot be digested as it stands, or
-    None. A build ships it with no links and with compiled modules only in
-    lib-dynload, so either elsewhere is something added.'''
-    root = os.path.abspath(root or stdlib_root())
-    if not os.path.isdir(root):
-        return 'the standard library is not at %s' % root
-    for rel, path in _stdlib_files(root):
-        if os.path.islink(path):
-            return 'the standard library\'s %s is a link' % rel
-        if rel.endswith(('.so', '.pyd', '.dylib')):
-            return ('the standard library\'s %s is a compiled module outside '
-                    'lib-dynload' % rel)
-    return None
-
-
-def entry_key(case, snapshot):
-    harness = [sha(snapshot.content[f]) for f in (
-        'tools/redproof.py', AUDIT)]
-    material = {
-        'version': STORE_VERSION,
-        'entry': case_fields(case),
-        'harness': harness,
-        # The minor version, and the build .python-versions pins for it: a
-        # pin bump is a new interpreter on every rig, so nothing measured on
-        # the old one stands.
-        'python': [sys.implementation.name, *sys.version_info[:2],
-                   pinned_python(snapshot)],
-        'stdlib': stdlib_digest(),
-        'lock': sha(snapshot.content.get(LOCK, b'')),
-    }
-    return sha(json.dumps(material, sort_keys=True).encode())
-
-
-class Classifier:
-    '''Sorts the paths a run touched into what keys it and what does not.'''
-
-    def __init__(self, copy, own_roots):
-        self.copy = os.path.abspath(copy)
-        self.copy_real = os.path.realpath(copy)
-        self.own = [os.path.realpath(r) for r in own_roots]
-        interpreter = set()
-        for p in (sys.prefix, sys.base_prefix, sys.exec_prefix,
-                  sys.base_exec_prefix, os.path.dirname(sys.executable)):
-            interpreter.add(os.path.abspath(p))
-            interpreter.add(os.path.realpath(p))
-        import sysconfig
-        for name in ('stdlib', 'platstdlib', 'purelib', 'platlib'):
-            p = sysconfig.get_path(name)
-            if p:
-                interpreter.add(os.path.abspath(p))
-                interpreter.add(os.path.realpath(p))
-        # Debian's interpreter reads its sitecustomize from here.
-        interpreter.add('/etc/python%d.%d' % sys.version_info[:2])
-        self.interpreter = sorted(interpreter)
-
-    def above(self, path):
-        '''Whether path is a directory above the copy, the run's own files or
-        the interpreter. Resolving any path probes every directory above it,
-        and where those live differs from rig to rig while saying nothing
-        about the code: keying them would key the machine.'''
-        prefix = path.rstrip('/') + '/'
-        return any(root.startswith(prefix) for root in (
-            [self.copy, self.copy_real] + self.own + self.interpreter))
-
-    @staticmethod
-    def under(path, root):
-        return path == root or path.startswith(root.rstrip('/') + '/')
-
-    def classify(self, path):
-        '''('copy', relative) | ('own',) | ('interpreter',) | ('device',) |
-        ('system',) | ('secret',) | ('unresolved',) | ('outside', path).
-        Never raises: a test can probe any path, including one with a NUL in
-        it, which os.path.realpath refuses.'''
-        if '\0' in path:
-            return ('unresolved',)
-        for copy in (self.copy, self.copy_real):
-            if self.under(path, copy):
-                rel = os.path.relpath(path, copy).replace(os.sep, '/')
-                return ('copy', '' if rel == '.' else rel)
-        # By the path as recorded first: most of a run's paths are the
-        # interpreter's and the libraries', and resolving each through
-        # realpath was most of the harness's own time on an entry. They stay
-        # covered by the key's pinned build and lock and the RECORD check.
-        for root in self.own:
-            if self.under(path, root):
-                return ('own',)
-        for root in self.interpreter:
-            if self.under(path, root):
-                return ('interpreter',)
-        try:
-            real = os.path.realpath(path)
-        except (OSError, ValueError):
-            return ('unresolved',)
-        for root in self.own:
-            if self.under(real, root):
-                return ('own',)
-        for root in self.interpreter:
-            if self.under(real, root):
-                return ('interpreter',)
-        if path in DEVICES or path.startswith('/dev/fd/') or path.startswith(
-                '/dev/pts/'):
-            return ('device',)
-        if self.under(path, '/proc') or self.under(path, '/sys'):
-            return ('system',)
-        if SECRET_PATH.search(path):
-            return ('secret',)
-        return ('outside', path)
-
-
-def outside_now(path, what):
-    try:
-        if what == 'probe':
-            if os.path.isdir(path):
-                return 'dir'
-            return 'file' if os.path.exists(path) else 'absent'
-        if os.path.isdir(path):
-            return 'dir:' + sha(json.dumps(sorted(os.listdir(path))).encode())
-        with open(path, 'rb') as f:
-            return 'file:' + sha(f.read())
-    except OSError:
-        return 'absent'
-
-
-def copy_value(snapshot, mutated, rel, what):
-    if what == 'probe':
-        return snapshot.kind(rel)
-    kind = snapshot.kind(rel)
-    if kind == 'file':
-        data = mutated[1] if mutated and mutated[0] == rel else (
-            snapshot.content[rel])
-        return 'file:' + sha(data)
-    if kind == 'dir':
-        return 'dir:' + snapshot.listing(rel)
-    return 'absent'
-
-
-def reads_from(record, classifier, snapshot, mutated, tracked):
-    '''The reads that key this run, or (None, why not kept, tracked writes).'''
-    tracked_writes = []
-    why = None
-    if record['spawned']:
-        why = 'started a process (%s)' % record['spawned'][0]
-    elif record['connected']:
-        why = 'connected beyond loopback'
-    elif record['unresolved']:
-        why = 'touched a path the audit could not work out'
-    reads = {}
-    for path, writing in record['opened'].items():
-        c = classifier.classify(path)
-        if c[0] == 'unresolved':
-            why = why or 'touched a path that cannot be resolved'
-            continue
-        if writing:
-            if c[0] == 'copy' and c[1] in tracked:
-                tracked_writes.append(c[1])
-            if c[0] not in ('own', 'device'):
-                why = why or 'wrote %s' % path
-            continue
-        reads[path] = 'read'
-    for path in record['listed']:
-        reads.setdefault(path, 'read')
-    for path in record['probed']:
-        reads.setdefault(path, 'probe')
-    keyed = {}
-    for path, what in sorted(reads.items()):
-        if what == 'probe' and classifier.above(path):
-            continue
-        c = classifier.classify(path)
-        if c[0] in ('own', 'interpreter', 'device'):
-            continue
-        if c[0] == 'unresolved':
-            why = why or 'touched a path that cannot be resolved'
-            continue
-        if c[0] == 'system':
-            why = why or 'read %s' % path
-            continue
-        if c[0] == 'secret':
-            # Never digested, whatever else the run did.
-            why = why or 'read a file that may hold a secret'
-            continue
-        if c[0] == 'copy':
-            keyed['copy:' + c[1]] = (what, copy_value(
-                snapshot, mutated, c[1], what))
-        else:
-            keyed[path] = (what, outside_now(path, what))
-    return (None if why else keyed), why, tracked_writes
-
-
-def holds(reads, snapshot, mutated):
-    '''Whether every read a record keys is still what the runs found: the
-    mutated run's with the mutation applied, the unmutated baseline's
-    without it. A record keyed on the mutated run alone stayed KEPT when
-    something only the passing branch reads had changed.'''
-    if not isinstance(reads, dict) or not {'mutated', 'baseline'} <= set(reads):
-        return False
-    return (holds_one(reads['mutated'], snapshot, mutated)
-            and holds_one(reads['baseline'], snapshot, None))
-
-
-def holds_one(reads, snapshot, mutated):
-    for path, (what, value) in reads.items():
-        if path.startswith('copy:'):
-            now = copy_value(snapshot, mutated, path[len('copy:'):], what)
-        else:
-            if SECRET_PATH.search(path):
-                return False
-            now = outside_now(path, what)
-        if now != value:
-            return False
-    return True
-
-
-class Store:
-    def __init__(self, path):
-        self.path = path
-        self.records = {}
-        self.changed = {}
-        self.removed = set()
-
-    def load(self):
-        try:
-            with open(self.path, 'rb') as f:
-                data = json.loads(f.read())
-            if data.get('version') == STORE_VERSION:
-                self.records = dict(data.get('records', {}))
-        except (OSError, ValueError, AttributeError):
-            self.records = {}
-
-    def under(self, key):
-        prefix = key + ':'
-        return {k: r for k, r in self.records.items()
-                if k.startswith(prefix) and not r.get('gone')}
-
-    def put(self, record_id, record):
-        self.records[record_id] = record
-        self.changed[record_id] = record
-
-    @staticmethod
-    def when(record, field='at'):
-        try:
-            return datetime.fromisoformat(record[field])
-        except (KeyError, TypeError, ValueError):
-            return datetime.min.replace(tzinfo=timezone.utc)
-
-    @classmethod
-    def merged(cls, current, new):
-        '''Which of two versions of one record a save keeps. A run that found
-        the entry not PROVEN outranks one that only found the record still
-        holding, whichever saved last; only a proof made after the tombstone
-        brings a record back. Otherwise the most recently used wins.'''
-        if current is None:
-            return new
-        if current.get('gone') and not new.get('gone'):
-            return new if cls.when(new, 'proved') > cls.when(current) else (
-                current)
-        if new.get('gone') and not current.get('gone'):
-            return current if cls.when(current, 'proved') > cls.when(new) else (
-                new)
-        return new if cls.when(new) >= cls.when(current) else current
-
-    def prune(self):
-        cutoff = datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS)
-        self.cutoff = cutoff
-        for k, r in list(self.records.items()):
-            try:
-                at = datetime.fromisoformat(r['at'])
-            except (KeyError, TypeError, ValueError):
-                continue
-            if at < cutoff:
-                del self.records[k]
-                self.changed.pop(k, None)
-                self.removed.add(k)
-
-    def save(self):
-        if not self.changed and not self.removed:
-            return
-        # Imported here: POSIX only, like the process groups the runs use, and
-        # importing it at the top stopped the suite collecting this module's
-        # tests on Windows.
-        import fcntl
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        with open(self.path + '.lock', 'w') as lock:
-            deadline = time.monotonic() + LOCK_LIMIT
-            while True:
-                try:
-                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except BlockingIOError:
-                    if time.monotonic() > deadline:
-                        raise RuntimeError('%s.lock was held for %d s, so no '
-                                           'verdict was saved'
-                                           % (self.path, LOCK_LIMIT))
-                    time.sleep(0.1)
-            # Merge onto what is there now, record by record: another run may
-            # have saved since this one loaded.
-            current = Store(self.path)
-            current.load()
-            records = current.records
-            for k, new in self.changed.items():
-                records[k] = self.merged(records.get(k), new)
-            cutoff = getattr(self, 'cutoff', None)
-            for k in self.removed:
-                # Unless another run has used it since this one loaded.
-                if k in records and cutoff is not None and (
-                        self.when(records[k]) >= cutoff):
-                    continue
-                records.pop(k, None)
-            tmp = self.path + '.tmp'
-            with open(tmp, 'wb') as f:
-                f.write(json.dumps({'version': STORE_VERSION,
-                                    'records': records},
-                                   indent=1, sort_keys=True).encode('utf-8'))
-            os.replace(tmp, self.path)
-
-
-# ------------------------------------------------------------------ judging
 
 class Run:
     def __init__(self, args):
@@ -1141,9 +523,9 @@ class Run:
             held.append(f)
         return held
 
-    def run(self, nodes, mutation=None, record=False):
+    def run(self, nodes, mutation=None):
         '''Runs nodes in a fresh copy, with the mutation (path, bytes) if any.
-        Returns (Result, record dict or None, Classifier, tracked writes).'''
+        Returns (Result, the tracked files it wrote).'''
         started = time.monotonic()
         work = self.workdir()
         copy = os.path.join(work, 'copy')
@@ -1151,7 +533,7 @@ class Run:
         if mutation:
             with open(os.path.join(copy, mutation[0]), 'wb') as f:
                 f.write(mutation[1])
-        record_path = os.path.join(work, 'record.json') if record else None
+        record_path = os.path.join(work, 'record.json')
         copied = time.monotonic()
         locks = self.hold_groups(self.locks_for(nodes))
         locked = time.monotonic()
@@ -1163,24 +545,23 @@ class Run:
             for lock in reversed(locks):
                 lock.close()
         self.note_memory(result)
-        changed = self.changed_tracked(copy, mutation)
-        audit = None
-        if record_path and os.path.exists(record_path):
+        changed = set(self.changed_tracked(copy, mutation))
+        if os.path.exists(record_path):
             with open(record_path, 'rb') as f:
-                audit = json.loads(f.read())
-        classifier = Classifier(copy, [work, self.tmp])
+                changed.update(tracked_writes_in(
+                    json.loads(f.read()), copy, self.snapshot.tracked))
         shutil.rmtree(work, ignore_errors=True)
         # Where the time went, for the entry's line: the copy, the wait for a
         # port group's lock, and pytest itself; the rest is the harness's.
         self.timing.copy = copied - started
         self.timing.lock = locked - copied
         self.timing.pytest = result.seconds
-        return result, audit, classifier, changed
+        return result, sorted(changed)
 
     def changed_tracked(self, copy, mutation):
         '''Tracked files whose bytes differ after the run. A write that was
-        restored before the run ended is caught by the audit instead (the
-        tracked writes reads_from returns), when the run was recorded.'''
+        restored before the run ended is caught by the audit instead
+        (tracked_writes_in).'''
         changed = []
         for f in sorted(self.snapshot.tracked):
             expected = mutation[1] if mutation and mutation[0] == f else (
@@ -1196,67 +577,46 @@ class Run:
 
 
 def run_baseline(run, nodes):
-    '''Runs nodes unmutated, under the audit. (Result, keyed reads or None
-    when the run cannot be kept); a tracked file it wrote, restored or not,
-    is noted against it.'''
-    result, audit, classifier, changed = run.run(list(nodes), record=True)
-    reads = None
-    if audit is not None:
-        keyed, why, writes = reads_from(audit, classifier, run.snapshot, None,
-                                        run.snapshot.tracked)
-        reads = keyed if why is None else None
-        changed = sorted(set(changed) | set(writes))
+    '''Runs nodes unmutated; a tracked file it wrote, restored or not, is
+    noted against it.'''
+    result, changed = run.run(list(nodes))
     if changed:
         run.tracked_writes['the baseline of ' + ' '.join(nodes)] = changed
-    return result, reads
+    return result
 
 
-def judge(run, case, baseline, baseline_reads=None):
-    '''(verdict, detail, record reads or None). baseline_reads are the
-    unmutated run's keyed reads, or None when that run cannot be kept.'''
+def judge(run, case, baseline):
+    '''(verdict, detail).'''
     original = run.snapshot.content.get(case.path)
     if original is None:
         return 'SPEC', ('%s does not exist. If the code was deleted on '
                         'purpose, mark the entry removed= with the reason.'
-                        % case.path), None
+                        % case.path)
     mutated, why = mutate(case, original)
     if mutated is None:
-        return 'SPEC', why, None
+        return 'SPEC', why
     if baseline.code != 0:
         return 'SPEC', 'test does not pass before the mutation%s' % (
-            ' (%s)' % baseline.killed if baseline.killed else ''), None
-    result, audit, classifier, changed = run.run(
-        tests_of(case), (case.path, mutated), record=True)
-    reads = why = None
-    if audit is not None:
-        # Once: classifying a run's few thousand paths is most of what the
-        # harness itself spends on an entry.
-        reads, why, found = reads_from(audit, classifier, run.snapshot,
-                                       (case.path, mutated),
-                                       run.snapshot.tracked)
-        changed = sorted(set(changed) | set(found))
+            ' (%s)' % baseline.killed if baseline.killed else '')
+    result, changed = run.run(tests_of(case), (case.path, mutated))
     if changed:
         run.tracked_writes[case.name] = changed
     if result.code is None:
-        return 'RED?', result.killed, None
+        return 'RED?', result.killed
     if result.code == 0:
         if case.superseded:
-            return 'SUPERSEDED', case.superseded, None
+            return 'SUPERSEDED', case.superseded
         return 'GREEN', ('the mutation changed nothing the test could see. '
                          'Either the test is asleep, or what was mutated is '
                          'no longer load-bearing; if the second, mark the '
-                         'entry superseded= rather than deleting it.'), None
+                         'entry superseded= rather than deleting it.')
     if not failed_on(case, result.output):
         said = [line for _, text in failure_sections(result.output)
                 for line in text.splitlines() if line.strip()]
         return 'RED?', ('failed, but not on %r%s: got %s' % (
             case.expect, ' in subtest %r' % case.subtest if case.subtest
-            else '', said[0].strip() if said else '?')), None
-    kept = None
-    if audit is not None:
-        if why is None and baseline_reads is not None:
-            kept = {'mutated': reads, 'baseline': baseline_reads}
-    return 'PROVEN', '', kept
+            else '', said[0].strip() if said else '?'))
+    return 'PROVEN', ''
 
 
 def main(argv):
@@ -1264,8 +624,6 @@ def main(argv):
     parser.add_argument('--name', action='append', default=[],
                         help='only entries whose name contains this '
                         '(repeatable)')
-    parser.add_argument('--all', action='store_true',
-                        help='run every selected entry, kept or not')
     parser.add_argument('--jobs', type=int,
                         help='entries at once (default: every usable core '
                         'with REDPROOF_JOBS_ALL=1, two otherwise)')
@@ -1297,7 +655,7 @@ def shard_arg(text):
 
 def in_shard(name, shard):
     '''Whether the entry named `name` is in slice (K, N). By the name alone,
-    so the answer does not depend on which entries are stale or selected.'''
+    so the answer does not depend on which entries are selected.'''
     k, n = shard
     return int(sha(name.encode('utf-8')), 16) % n == k - 1
 
@@ -1329,62 +687,25 @@ def judge_all(run, args, started):
             map(repr, args.name)))
         return 2
 
-    unkept = environment_matches_lock(snapshot)
-    store = Store(STORE)
-    if unkept is None:
-        store.load()
-    keys = {c.name: entry_key(c, snapshot) for c in selected}
-
     removed = [c for c in selected if c.removed]
     live = [c for c in selected if not c.removed]
-    held = {}
-    if unkept is None:
-        for c in live:
-            records = store.under(keys[c.name])
-            if not records:
-                continue
-            original = snapshot.content.get(c.path)
-            mutated = mutate(c, original)[0] if original is not None else None
-            holding = [k for k, r in records.items()
-                       if mutated is not None and holds(
-                           r['reads'], snapshot, (c.path, mutated))]
-            if holding:
-                held[c.name] = holding
-    stale = [c for c in live if args.all or c.name not in held]
-    kept = [c for c in live if c not in stale]
-
-    print('redproof: %d selected, %d kept, %d removed, %d to run%s' % (
-        len(selected), len(kept), len(removed), len(stale),
+    # 'to run' is the count a scheduler reads off this line.
+    print('redproof: %d selected, %d removed, %d to run%s' % (
+        len(selected), len(removed), len(live),
         ' (shard %d/%d)' % args.shard if args.shard else ''), flush=True)
     if args.shard:
         print(shard_line(args.shard, len(selected),
                          len(select(cases, args.name, None))), flush=True)
-    if unkept:
-        print('redproof: verdicts are not kept or reused in this run: %s'
-              % unkept, flush=True)
-
-    when = now_iso()
-    for c in kept:
-        for k in held[c.name]:
-            r = dict(store.records[k], at=when)
-            store.put(k, r)
 
     verdicts = {}
     for c in removed:
         verdicts[c.name] = ('REMOVED', c.removed, 0.0)
-    for c in kept:
-        verdicts[c.name] = ('KEPT', '', 0.0)
-
-    if stale:
-        verdicts.update(run_stale(run, args, stale, store, keys, held, unkept))
-
-    if unkept is None:
-        store.prune()
-        store.save()
+    if live:
+        verdicts.update(run_entries(run, args, live))
 
     for c in removed:
         print('REMOVED     %s  (0 s)' % c.name)
-    accounted = ('PROVEN', 'KEPT', 'SUPERSEDED', 'REMOVED')
+    accounted = ('PROVEN', 'SUPERSEDED', 'REMOVED')
     bad = [c.name for c in selected if verdicts[c.name][0] not in accounted]
     for name, files in sorted(run.tracked_writes.items()):
         print('redproof: %s wrote to tracked files: %s' % (
@@ -1412,7 +733,7 @@ def pool_size(args, per_task):
         cpu_reason, by_memory, gib(avail), gib(FLOOR), gib(per_task))
 
 
-def run_stale(run, args, stale, store, keys, held, unkept):
+def run_entries(run, args, entries):
     snapshot = run.snapshot
 
     # The copy has to be what the tests import, or nothing below means
@@ -1426,8 +747,7 @@ def run_stale(run, args, stale, store, keys, held, unkept):
              'LANG': 'C.UTF-8'},
         capture_output=True, text=True, timeout=PREPARE_LIMIT)
     imported = where.stdout.strip()
-    if where.returncode != 0 or not Classifier.under(
-            imported, os.path.realpath(copy)):
+    if where.returncode != 0 or not under(imported, os.path.realpath(copy)):
         print('redproof: a copy imports schwaby from %r, not from the copy: '
               'every verdict would be a false GREEN, so none is judged\n%s'
               % (imported, where.stderr))
@@ -1452,11 +772,11 @@ def run_stale(run, args, stale, store, keys, held, unkept):
     # Baselines: every distinct test, unmutated. The first alone, to measure
     # what a run costs before deciding how many fit.
     distinct = []
-    for c in stale:
+    for c in entries:
         t = tuple(tests_of(c))
         if t not in distinct:
             distinct.append(t)
-    total = len(distinct) + len(stale)
+    total = len(distinct) + len(entries)
     done = [0]
     done_lock = threading.Lock()
 
@@ -1469,7 +789,6 @@ def run_stale(run, args, stale, store, keys, held, unkept):
             ('\n           ' + detail) if detail else ''), flush=True)
 
     baselines = {}
-    baseline_reads = {}
 
     def merge(task_result):
         '''What a worker learned that the run as a whole keeps.'''
@@ -1481,10 +800,9 @@ def run_stale(run, args, stale, store, keys, held, unkept):
             run.lowest_available = lowest
 
     def baseline_done(task_result):
-        t, result, reads = task_result[:3]
+        t, result = task_result[:2]
         merge(task_result)
         baselines[t] = result
-        baseline_reads[t] = reads
         if result.code == 0:
             progress('baseline', ' '.join(t), '', result.seconds)
         else:
@@ -1492,7 +810,7 @@ def run_stale(run, args, stale, store, keys, held, unkept):
                 'fails unmutated: %s' % last_lines(result.output)),
                 result.seconds)
 
-    _job.update(run=run, cases={c.name: c for c in stale})
+    _job.update(run=run, cases={c.name: c for c in entries})
     baseline_done(_baseline_task(distinct[0]))
     size, reason = pool_size(args, run.largest)
     print('redproof: %d at once: %s' % (size, reason), flush=True)
@@ -1505,44 +823,14 @@ def run_stale(run, args, stale, store, keys, held, unkept):
           flush=True)
 
     verdicts = {}
-    _job.update(baselines=baselines, baseline_reads=baseline_reads)
+    _job.update(baselines=baselines)
 
-    for task_result in parallel(_entry_task, [c.name for c in stale], size,
+    for task_result in parallel(_entry_task, [c.name for c in entries], size,
                                 _entry_failed):
-        name, verdict, detail, reads, seconds, breakdown = task_result[:6]
+        name, verdict, detail, seconds, breakdown = task_result[:5]
         merge(task_result)
-        c = _job['cases'][name]
         verdicts[name] = (verdict, detail, seconds)
         progress(verdict, name, detail, seconds, breakdown)
-        if unkept is not None:
-            continue
-        # When this verdict was reached, not when the phase began: a proof
-        # and a disproof from overlapping runs are ordered by these, and a
-        # stamp taken early made a later disproof look older than a proof.
-        when = now_iso()
-        key = keys[name]
-        if verdict == 'PROVEN':
-            # Proved again: what held is renewed.
-            for k in held.get(name, ()):
-                store.put(k, dict(store.records[k], at=when, proved=when))
-            if reads is not None:
-                digest = sha(json.dumps(reads, sort_keys=True).encode())[:16]
-                store.put('%s:%s' % (key, digest), {
-                    'at': when, 'proved': when, 'name': name,
-                    'reads': reads,
-                    # What judging the entry cost (its copy and its mutated
-                    # run), for dividing a run between machines. Metadata,
-                    # like the platform below: never part of the key.
-                    'seconds': round(seconds, 1),
-                    # Metadata only: never part of the key.
-                    'platform': {'machine': platform.machine(),
-                                 'system': platform.system(),
-                                 'python': platform.python_version()},
-                })
-        else:
-            # This run disproves every record that held.
-            for k in held.get(name, ()):
-                store.put(k, {'gone': True, 'at': when, 'name': c.name})
 
     avail = run.lowest_available
     print('redproof: memory: largest run %s, lowest available %s' % (
@@ -1584,12 +872,11 @@ def _baseline_task(t):
     # A worker is forked with whatever the parent's last run left here.
     run.timing.__dict__.clear()
     try:
-        result, reads = run_baseline(run, t)
+        result = run_baseline(run, t)
     except Exception as e:
         result = Result(None, '', 0.0, 0, 'the harness failed running it: '
                         '%s: %s' % (type(e).__name__, e))
-        reads = None
-    return (t, result, reads) + _worker_result(run)
+    return (t, result) + _worker_result(run)
 
 
 def _entry_task(name):
@@ -1601,24 +888,23 @@ def _entry_task(name):
     run.timing.__dict__.clear()
     started = time.monotonic()
     try:
-        verdict, detail, reads = judge(run, c, _job['baselines'][t],
-                                       _job['baseline_reads'].get(t))
+        verdict, detail = judge(run, c, _job['baselines'][t])
     except Exception as e:
         # A defect in the harness, reported against the entry it hit: one
         # used to end the whole run, an hour in, with nothing judged after.
-        verdict, detail, reads = 'ERROR', 'the harness failed judging it: ' \
-            '%s: %s' % (type(e).__name__, e), None
+        verdict, detail = 'ERROR', 'the harness failed judging it: ' \
+            '%s: %s' % (type(e).__name__, e)
     seconds = time.monotonic() - started
-    return (name, verdict, detail, reads, seconds,
+    return (name, verdict, detail, seconds,
             split(run, seconds)) + _worker_result(run)
 
 
 def _baseline_failed(t, why):
-    return (t, Result(None, '', 0.0, 0, why), None, {}, 0, None)
+    return (t, Result(None, '', 0.0, 0, why), {}, 0, None)
 
 
 def _entry_failed(name, why):
-    return (name, 'ERROR', why, None, 0.0, '', {}, 0, None)
+    return (name, 'ERROR', why, 0.0, '', {}, 0, None)
 
 
 #: How long a worker has to stop once told to, before it is killed

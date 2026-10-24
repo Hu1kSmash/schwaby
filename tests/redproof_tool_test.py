@@ -4,7 +4,6 @@ verdict it should not reports a guard as working after the guard broke, and
 nothing else would ever notice.'''
 
 import argparse
-import datetime
 import importlib.util
 import json
 import os
@@ -48,15 +47,6 @@ def snapshot(content):
     return s
 
 
-def record(opened=(), written=(), listed=(), probed=(), spawned=(),
-           connected=(), unresolved=()):
-    return {'opened': {**{p: False for p in opened},
-                       **{p: True for p in written}},
-            'listed': list(listed), 'probed': list(probed),
-            'spawned': list(spawned), 'connected': list(connected),
-            'unresolved': list(unresolved)}
-
-
 class MutateTest(unittest.TestCase):
 
     def test_replaces_the_one_occurrence_in_bytes(self):
@@ -84,155 +74,19 @@ class MutateTest(unittest.TestCase):
             self.assertIn('appears %d times' % count, why)
 
 
-class ClassifierTest(unittest.TestCase):
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.work = os.path.join(self.tmp.name, 'run1')
-        self.copy = os.path.join(self.work, 'copy')
-        os.makedirs(self.copy)
-        self.c = redproof.Classifier(self.copy, [self.work, self.tmp.name])
-
-    def test_names_a_copy_path_relative_to_the_copy(self):
-        self.assertEqual(('copy', 'schwaby/auth.py'), self.c.classify(
-            os.path.join(self.copy, 'schwaby', 'auth.py')))
-        self.assertEqual(('copy', ''), self.c.classify(self.copy))
-
-    def test_a_path_that_cannot_be_resolved_is_named_so(self):
-        # A test probed a path with a NUL in it; realpath raised, and the
-        # whole red-proof ended there.
-        self.assertEqual(('unresolved',), self.c.classify('/tmp/x\0y'))
-
-    def test_the_runs_own_files_and_the_interpreter_key_nothing(self):
-        self.assertEqual(('own',), self.c.classify(
-            os.path.join(self.work, 'tmp', 'pytest-1', 'x')))
-        self.assertEqual(('interpreter',), self.c.classify(
-            os.path.join(self.c.interpreter[0], 'x.py')))
-
-    def test_a_secret_holding_file_is_named_as_one(self):
-        for path in ('/home/u/.env', '/home/u/token.json',
-                     '/home/u/.config/gh/hosts.yml', '/srv/server.key'):
-            self.assertEqual(('secret',), self.c.classify(path), path)
-        self.assertEqual(('outside', '/etc/hosts'),
-                         self.c.classify('/etc/hosts'))
-
-    def test_directories_above_a_root_are_above_and_others_are_not(self):
-        self.assertTrue(self.c.above(self.tmp.name))
-        self.assertTrue(self.c.above('/'))
-        self.assertFalse(self.c.above('/etc/hosts'))
-        self.assertFalse(self.c.above(os.path.join(self.copy, 'schwaby')))
-
-
-class ReadsTest(unittest.TestCase):
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.copy = os.path.join(self.tmp.name, 'run1', 'copy')
-        os.makedirs(self.copy)
-        self.c = redproof.Classifier(self.copy, [self.tmp.name])
-        self.s = snapshot({'schwaby/x.py': b'a = 1\n',
-                           'schwaby/__init__.py': b''})
-        self.mutated = ('schwaby/x.py', b'a = 2\n')
-
-    def path(self, rel):
-        return os.path.join(self.copy, rel)
-
-    def reads(self, rec):
-        return redproof.reads_from(rec, self.c, self.s, self.mutated,
-                                   self.s.tracked)
-
-    def test_keys_a_copy_file_by_the_bytes_the_run_found(self):
-        keyed, why, _ = self.reads(record(opened=[self.path('schwaby/x.py')]))
-        self.assertIsNone(why)
-        self.assertEqual(
-            {'copy:schwaby/x.py': ('read', 'file:' + redproof.sha(b'a = 2\n'))},
-            keyed)
-
-    def test_keys_a_listing_by_names_and_a_probe_by_kind(self):
-        keyed, why, _ = self.reads(record(
-            listed=[self.path('schwaby')],
-            probed=[self.path('schwaby/missing.py'),
-                    os.path.dirname(self.tmp.name)]))
-        self.assertIsNone(why)
-        self.assertEqual({'copy:schwaby', 'copy:schwaby/missing.py'},
-                         set(keyed))
-        self.assertEqual(('probe', 'absent'), keyed['copy:schwaby/missing.py'])
-
-    def test_a_run_that_started_a_process_or_read_a_secret_is_not_kept(self):
-        for rec, reason in (
-                (record(spawned=['subprocess.Popen']), 'started a process'),
-                (record(connected=["('8.8.8.8', 53)"]), 'beyond loopback'),
-                (record(unresolved=['open']), 'could not work out'),
-                (record(opened=['/proc/self/status']), 'read /proc'),
-                (record(opened=['/home/u/.env']), 'secret'),
-                (record(probed=['/tmp/x\0y']), 'cannot be resolved')):
-            keyed, why, _ = self.reads(rec)
-            self.assertIsNone(keyed, reason)
-            self.assertIn(reason, why)
-
-    def test_a_secret_is_not_digested_alongside_other_reads(self):
-        keyed, why, _ = self.reads(record(
-            opened=['/home/u/token.json', self.path('schwaby/x.py')]))
-        self.assertIsNone(keyed)
-        self.assertIn('secret', why)
-
-    def test_a_write_to_a_tracked_file_is_reported(self):
-        _, why, writes = self.reads(record(
-            written=[self.path('schwaby/__init__.py')]))
-        self.assertEqual(['schwaby/__init__.py'], writes)
-        self.assertIn('wrote', why)
-
-    def test_a_record_holds_until_what_it_read_changes(self):
-        keyed, _, _ = self.reads(record(
-            opened=[self.path('schwaby/x.py')],
-            listed=[self.path('schwaby')]))
-        kept = {'mutated': keyed, 'baseline': {}}
-        self.assertTrue(redproof.holds(kept, self.s, self.mutated))
-        # The same file with a different mutation is a different read.
-        self.assertFalse(redproof.holds(
-            kept, self.s, ('schwaby/x.py', b'a = 3\n')))
-        grown = snapshot({**self.s.content, 'schwaby/new.py': b''})
-        self.assertFalse(redproof.holds(kept, grown, self.mutated))
-
-    def test_what_only_the_baseline_read_keys_the_record_too(self):
-        # The mutated run failed before reading the fixture; the passing
-        # baseline read it. Change the fixture so the test fails unmutated,
-        # and the record must stop holding.
-        s = snapshot({**self.s.content, 'tests/data.txt': b'1\n'})
-        mutated, _, _ = self.reads(record(opened=[self.path('schwaby/x.py')]))
-        baseline, why, _ = redproof.reads_from(
-            record(opened=[self.path('schwaby/x.py'),
-                           self.path('tests/data.txt')]),
-            self.c, s, None, s.tracked)
-        self.assertIsNone(why)
-        kept = {'mutated': mutated, 'baseline': baseline}
-        self.assertTrue(redproof.holds(kept, s, self.mutated))
-        broken = snapshot({**s.content, 'tests/data.txt': b'2\n'})
-        self.assertFalse(redproof.holds(kept, broken, self.mutated),
-                         'a record held after a file only the baseline read '
-                         'had changed')
-
-    def test_a_secret_outside_the_copy_never_holds(self):
-        self.assertFalse(redproof.holds(
-            {'mutated': {'/home/u/.env': ('read', 'file:x')}, 'baseline': {}},
-            self.s, self.mutated))
-
-
 class FakeRun:
     '''Stands in for redproof.Run in judge(): a snapshot, and run() handing
-    back a canned result.'''
+    back a canned result and the tracked files it wrote.'''
 
-    def __init__(self, content, result, audit=None, classifier=None):
+    def __init__(self, content, result, changed=()):
         self.snapshot = snapshot(content)
-        self.result, self.audit, self.classifier = result, audit, classifier
+        self.result, self.changed = result, list(changed)
         self.tracked_writes = {}
         self.ran = []
 
-    def run(self, nodes, mutation=None, record=False):
+    def run(self, nodes, mutation=None):
         self.ran.append((nodes, mutation))
-        return self.result, self.audit, self.classifier, []
+        return self.result, self.changed
 
 
 def result(code, output='', killed=None):
@@ -263,7 +117,7 @@ class JudgeTest(unittest.TestCase):
         return redproof.judge(run, c, baseline)
 
     def test_expect_must_be_in_what_the_failure_says(self):
-        verdict, detail, _ = self.judge(self.ECHOED)
+        verdict, detail = self.judge(self.ECHOED)
         self.assertEqual('RED?', verdict,
                          'a failure on another assertion was PROVEN because '
                          'the expect text was in the echoed source')
@@ -354,7 +208,7 @@ class JudgeTest(unittest.TestCase):
                          'captured output was taken for what failed')
 
     def test_a_baseline_that_fails_is_not_judged(self):
-        verdict, detail, _ = self.judge(self.ECHOED,
+        verdict, detail = self.judge(self.ECHOED,
                                         baseline=result(1, 'FAILED'))
         self.assertEqual('SPEC', verdict, 'an entry was judged on a test that '
                          'fails unmutated')
@@ -363,7 +217,7 @@ class JudgeTest(unittest.TestCase):
     def test_a_run_with_no_exit_status_proves_nothing(self):
         # Killed after printing the very failure the entry expects: still no
         # verdict, because a run that did not finish proves nothing.
-        verdict, detail, _ = self.judge('E   AssertionError: expected',
+        verdict, detail = self.judge('E   AssertionError: expected',
                                         code=None)
         self.assertEqual('RED?', verdict, 'a timed-out run was judged')
 
@@ -372,49 +226,135 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual('SUPERSEDED', self.judge(
             '1 passed', code=0, superseded='covered elsewhere')[0])
 
-    def test_a_record_needs_both_runs_to_be_keepable(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        copy = os.path.join(tmp.name, 'run1', 'copy')
-        os.makedirs(copy)
-        c = case()
-        audit = record(opened=[os.path.join(copy, 'schwaby', 'x.py')])
-        run = FakeRun(self.CONTENT, result(1, 'E   expected'), audit,
-                      redproof.Classifier(copy, [tmp.name]))
-        self.assertIsNone(redproof.judge(run, c, self.PASSED, None)[2],
-                          'kept without the baseline being keepable')
-        kept = redproof.judge(run, c, self.PASSED, {})[2]
-        self.assertEqual({'mutated', 'baseline'}, set(kept))
-
-    def test_a_restored_write_to_a_tracked_file_is_reported(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        copy = os.path.join(tmp.name, 'run1', 'copy')
-        os.makedirs(copy)
-        audit = record(written=[os.path.join(copy, 'schwaby', 'x.py')])
-        run = FakeRun(self.CONTENT, result(1, 'E   expected'), audit,
-                      redproof.Classifier(copy, [tmp.name]))
-        redproof.judge(run, case(), self.PASSED, {})
+    def test_a_tracked_write_is_reported_against_the_entry(self):
+        run = FakeRun(self.CONTENT, result(1, 'E   expected'),
+                      changed=['schwaby/x.py'])
+        self.assertEqual('PROVEN', redproof.judge(run, case(), self.PASSED)[0])
         self.assertEqual({'x/y': ['schwaby/x.py']}, run.tracked_writes,
-                         'a write the run restored went unreported')
+                         'a tracked write went unreported')
+
+
+class TrackedWritesTest(unittest.TestCase):
+
+    def test_a_write_the_run_put_back_is_found(self):
+        # The comparison after the run cannot see it: only the record can.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        copy = os.path.join(tmp.name, 'run1', 'copy')
+        os.makedirs(copy)
+        record = {'written': [os.path.join(copy, 'schwaby', 'x.py'),
+                              os.path.join(copy, 'untracked.log'),
+                              os.path.join(tmp.name, 'run1', 'home', 'x.py')],
+                  'unresolved': []}
+        self.assertEqual(['schwaby/x.py'], redproof.tracked_writes_in(
+            record, copy, {'schwaby/x.py'}),
+            'a write the run restored went unreported')
+
+    def test_a_write_through_a_linked_path_is_found(self):
+        # A copy under a linked temporary directory is written under either
+        # spelling.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        real = os.path.join(tmp.name, 'real')
+        os.makedirs(os.path.join(real, 'copy'))
+        os.symlink(real, os.path.join(tmp.name, 'link'))
+        copy = os.path.join(tmp.name, 'link', 'copy')
+        record = {'written': [os.path.join(real, 'copy', 'schwaby', 'x.py')]}
+        self.assertEqual(['schwaby/x.py'], redproof.tracked_writes_in(
+            record, copy, {'schwaby/x.py'}),
+            'a write by the copy\'s real path went unreported')
+
+
+class AuditTest(unittest.TestCase):
+    '''The audit hook itself, under a real pytest: the one thing that sees
+    a tracked file written and put back before the run ended.'''
+
+    TEST = '''
+import os
+
+def test_writes_and_puts_back():
+    with open('tracked.py', 'rb') as f:
+        old = f.read()
+    with open('tracked.py', 'wb') as f:
+        f.write(b'changed')
+    with open('tracked.py', 'wb') as f:
+        f.write(old)
+    os.rename('moved.py', 'moved2.py')
+    os.rename('moved2.py', 'moved.py')
+    with open('only_read.py') as f:
+        f.read()
+'''
+
+    def test_a_write_put_back_is_recorded_and_a_read_is_not(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = os.path.realpath(tmp.name)
+        for name, data in (('test_x.py', self.TEST), ('tracked.py', 'a = 1\n'),
+                           ('moved.py', ''), ('only_read.py', '')):
+            with open(os.path.join(root, name), 'w') as f:
+                f.write(data)
+        out = os.path.join(root, 'record.json')
+        env = dict(os.environ, REDPROOF_AUDIT=out)
+        run = subprocess.run(
+            [sys.executable, '-I', '-B',
+             os.path.join(ROOT, redproof.AUDIT), '-q', '-p',
+             'no:cacheprovider', 'test_x.py'], cwd=root, env=env,
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(0, run.returncode, run.stdout + run.stderr)
+        with open(out) as f:
+            written = set(json.load(f)['written'])
+        for name in ('tracked.py', 'moved.py', 'moved2.py'):
+            self.assertIn(os.path.join(root, name), written,
+                          'a write the test put back was not recorded '
+                          '(%s)' % name)
+        # The positive control: what was only read is not a write.
+        self.assertNotIn(os.path.join(root, 'only_read.py'), written,
+                         'a read was recorded as a write')
+
+
+class RunRecordTest(unittest.TestCase):
+
+    def test_a_write_the_record_names_is_one_the_run_made(self):
+        # Run.run merges what the hook saw with the comparison after the
+        # run, which cannot see a file put back.
+        import threading
+        from unittest import mock
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        content = {'schwaby/x.py': b'a = 1\n'}
+        snap = snapshot(content)
+        snap.copy = lambda dest: [
+            os.makedirs(os.path.join(dest, 'schwaby'), exist_ok=True),
+            open(os.path.join(dest, 'schwaby', 'x.py'), 'wb').write(b'a = 1\n')]
+        run = redproof.Run.__new__(redproof.Run)
+        run.tmp, run.snapshot, run.audit = tmp.name, snap, 'audit.py'
+        run.locks_dir, run.groups = tmp.name, {}
+        run.largest, run.lowest_available = 0, None
+        run.timing = threading.local()
+
+        def run_tests(work, copy, nodes, audit, record):
+            with open(record, 'w') as f:
+                json.dump({'written': [os.path.join(copy, 'schwaby', 'x.py')],
+                           'unresolved': []}, f)
+            return result(1, 'E   expected')
+
+        with mock.patch.object(redproof, 'run_tests', run_tests):
+            _, changed = run.run(['tests/x_test.py'])
+        self.assertEqual(['schwaby/x.py'], changed,
+                         'a write the hook recorded was dropped')
 
 
 class BaselineTest(unittest.TestCase):
 
-    def test_a_baselines_restored_write_is_reported(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        copy = os.path.join(tmp.name, 'run1', 'copy')
-        os.makedirs(copy)
-        audit = record(written=[os.path.join(copy, 'schwaby', 'x.py')])
-        run = FakeRun(JudgeTest.CONTENT, result(0, '1 passed'), audit,
-                      redproof.Classifier(copy, [tmp.name]))
-        _, reads = redproof.run_baseline(run, ['tests/x_test.py'])
+    def test_a_baselines_tracked_write_is_reported(self):
+        run = FakeRun(JudgeTest.CONTENT, result(0, '1 passed'),
+                      changed=['schwaby/x.py'])
+        self.assertEqual(0, redproof.run_baseline(
+            run, ['tests/x_test.py']).code)
         self.assertEqual(
             {'the baseline of tests/x_test.py': ['schwaby/x.py']},
-            run.tracked_writes, 'a baseline that wrote a tracked file and '
-            'restored it went unreported')
-        self.assertIsNone(reads)
+            run.tracked_writes, 'a baseline that wrote a tracked file went '
+            'unreported')
 
 
 class SnapshotTest(unittest.TestCase):
@@ -433,255 +373,6 @@ class SnapshotTest(unittest.TestCase):
             ['.env.local', 'docs/api-credentials.rst', 'notes/token-notes.md'],
             redproof.secret_untracked(files, tracked),
             'an untracked secret-named file would be copied and digested')
-
-
-class KeyTest(unittest.TestCase):
-
-    def content(self, **changes):
-        import platform
-        content = {'tools/redproof.py': b'harness', redproof.AUDIT: b'audit',
-                   'requirements.lock': b'a==1\n',
-                   '.python-versions': (platform.python_version() + '\n')
-                   .encode()}
-        content.update(changes)
-        return content
-
-    def test_the_key_names_the_lock_the_harness_and_the_pinned_build(self):
-        import platform
-        key = redproof.entry_key(case(), snapshot(self.content()))
-        major, minor, patch = platform.python_version().split('.')[:3]
-        bumped = '%s.%s.%d\n' % (major, minor, int(patch) + 1)
-        for what, changes in (
-                ('lock', {'requirements.lock': b'a==2\n'}),
-                ('harness', {'tools/redproof.py': b'harness, edited'}),
-                ('audit hook', {redproof.AUDIT: b'audit, edited'}),
-                ('pin', {'.python-versions': bumped.encode()})):
-            self.assertNotEqual(
-                key, redproof.entry_key(case(), snapshot(self.content(
-                    **changes))), 'the key ignores the %s' % what)
-        # Nothing installs the standard library, so no RECORD holds it.
-        from unittest import mock
-        with mock.patch.object(redproof, 'stdlib_digest',
-                               return_value='edited'):
-            self.assertNotEqual(key, redproof.entry_key(case(), snapshot(
-                self.content())), 'the key ignores the standard library')
-        # The positive control: nothing changed, the same key.
-        self.assertEqual(key, redproof.entry_key(case(), snapshot(
-            self.content())))
-
-    def test_a_set_other_than_the_lock_keeps_nothing(self):
-        import platform
-        why = redproof.environment_matches_lock(snapshot({
-            '.python-versions': (platform.python_version() + '\n').encode(),
-            'requirements.lock': b'no-such-package-anywhere==1.0\n'}))
-        if sys.version_info >= (3, 11):
-            self.assertIn('differ from requirements.lock', why or '',
-                          'an environment unlike the lock was accepted')
-
-
-class InstalledFilesTest(unittest.TestCase):
-
-    class File:
-        def __init__(self, rel, mode, value):
-            self.rel, self.name = rel, rel.rsplit('/', 1)[-1]
-            self.hash = types.SimpleNamespace(mode=mode, value=value) \
-                if mode else None
-
-        def __str__(self):
-            return self.rel
-
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = tmp.name
-
-    def dist(self, name, files, mode='sha256', direct_url=None):
-        '''files: (rel, bytes on disk or None for absent, bytes recorded or
-        None for no hash).'''
-        import base64
-        import hashlib
-        recorded = []
-        for rel, data, recorded_data in files:
-            if data is not None:
-                os.makedirs(os.path.dirname(os.path.join(self.root, rel)),
-                            exist_ok=True)
-                with open(os.path.join(self.root, rel), 'wb') as f:
-                    f.write(data)
-            value = None if recorded_data is None else \
-                base64.urlsafe_b64encode(hashlib.new(
-                    mode, recorded_data).digest()).rstrip(b'=').decode()
-            recorded.append(self.File(rel, recorded_data is not None and mode,
-                                      value))
-        return types.SimpleNamespace(
-            metadata={'Name': name}, files=recorded,
-            locate_file=lambda f: os.path.join(self.root, f.rel),
-            read_text=lambda f: direct_url if f == 'direct_url.json' else None)
-
-    def differ(self, *dists):
-        return redproof.installed_files_differ(dists, roots=[self.root])
-
-    def test_a_file_edited_at_the_same_version_is_caught(self):
-        intact = self.dist('intact', [('a.py', b'x', b'x')])
-        self.assertIsNone(self.differ(intact))
-        edited = self.dist('edited', [('b.py', b'y = 2', b'y = 1')])
-        why = self.differ(intact, edited)
-        self.assertEqual('edited: b.py differs from its RECORD', why,
-                         'an installed file edited in place was not noticed')
-
-    def test_pip_is_held_to_its_record(self):
-        # Neither pip nor schwaby is skipped: schwaby's editable finder and
-        # .pth run at every interpreter start.
-        self.assertIsNone(self.differ(self.dist('pip', [('c.py', b'z', b'z')])))
-        self.assertEqual('pip: d.py differs from its RECORD', self.differ(
-            self.dist('pip', [('d.py', b'z = 2', b'z = 1')])),
-            'an edited pip file was not checked')
-
-    def test_schwaby_is_held_to_its_record(self):
-        self.assertEqual('schwaby: e.pth differs from its RECORD', self.differ(
-            self.dist('schwaby', [('e.pth', b'import x', b'import y')])),
-            'an edited schwaby file was not checked')
-
-    def test_a_dependency_installed_from_a_directory_keeps_nothing(self):
-        # Its RECORD lists the finder, not the tree the finder imports from,
-        # so an edit there was invisible.
-        editable = '{"url": "file:///src/blinker", "dir_info": {"editable": true}}'
-        self.assertEqual(
-            'blinker is installed from a directory or a repository, whose '
-            'files its RECORD does not list', self.differ(self.dist(
-                'blinker', [('f.pth', b'x', b'x')], direct_url=editable)),
-            'a dependency installed from a directory was taken as intact')
-        # schwaby is the code under test, and may be.
-        os.remove(os.path.join(self.root, 'f.pth'))
-        self.assertIsNone(self.differ(self.dist(
-            'schwaby', [('g.pth', b'x', b'x')], direct_url=editable)))
-
-    def test_a_missing_file_is_caught(self):
-        self.assertEqual('gone: e.py is missing', self.differ(
-            self.dist('gone', [('e.py', None, b'x')])),
-            'an installed file that is gone was not noticed')
-
-    def test_a_distribution_with_no_record_keeps_nothing(self):
-        bare = types.SimpleNamespace(metadata={'Name': 'bare'}, files=None)
-        self.assertEqual('bare has no RECORD, so its files cannot be checked',
-                         self.differ(bare), 'a distribution with no RECORD '
-                         'was taken as intact')
-
-    def test_only_record_and_pyc_may_go_unhashed(self):
-        self.assertIsNone(self.differ(self.dist('ok', [
-            ('f.py', b'x', b'x'), ('ok-1.dist-info/RECORD', b'', None),
-            ('__pycache__/f.cpython-314.pyc', b'', None)])))
-        self.assertEqual('unhashed: h.py has no hash in its RECORD',
-                         self.differ(self.dist('unhashed', [
-                             ('h.py', b'x', None)])),
-                         'a source file listed without a hash was not '
-                         'refused')
-        # Only bytecode where Python caches it, and only the dist-info's
-        # own RECORD: a sourceless .pyc imports, and is not cache.
-        for rel in ('sourceless.pyc', 'RECORD'):
-            os.remove(os.path.join(self.root, 'h.py'))
-            with self.subTest(rel):
-                self.assertEqual(
-                    'loose: %s has no hash in its RECORD' % rel,
-                    self.differ(self.dist('loose', [(rel, b'', None)])),
-                    'an unhashed %s outside its place was not refused' % rel)
-            os.remove(os.path.join(self.root, rel))
-            open(os.path.join(self.root, 'h.py'), 'w').close()
-
-    def test_a_hash_it_does_not_check_keeps_nothing(self):
-        self.assertIsNone(self.differ(self.dist(
-            'strong', [('i.py', b'x', b'x')], mode='sha512')))
-        self.assertEqual('weak: j.py is hashed with sha1, which is not '
-                         'checked', self.differ(self.dist(
-                             'weak', [('j.py', b'x', b'x')], mode='sha1')),
-                         'a file hashed with an unchecked algorithm was '
-                         'taken as intact')
-
-    def test_a_file_no_record_lists_is_caught(self):
-        owned = self.dist('owned', [('k.py', b'x', b'x')])
-        self.assertIsNone(self.differ(owned))
-        with open(os.path.join(self.root, 'zz_stray.pth'), 'w') as f:
-            f.write('import os\n')
-        self.assertIn('zz_stray.pth is in ', self.differ(owned) or '',
-                      'a file no RECORD lists went unnoticed')
-        # Except compiled bytecode, which nothing hashes.
-        os.remove(os.path.join(self.root, 'zz_stray.pth'))
-        os.mkdir(os.path.join(self.root, '__pycache__'))
-        open(os.path.join(self.root, '__pycache__', 'k.pyc'), 'wb').close()
-        self.assertIsNone(self.differ(owned), 'bytecode in __pycache__ was '
-                          'refused')
-
-    def test_a_link_no_record_lists_is_caught_though_its_target_is(self):
-        owned = self.dist('owned', [('k.py', b'x', b'x')])
-        os.symlink(os.path.join(self.root, 'k.py'),
-                   os.path.join(self.root, 'sitecustomize.py'))
-        self.assertEqual('sitecustomize.py is in %s but no RECORD lists it'
-                         % self.root, self.differ(owned),
-                         'a new name for a listed file went unnoticed')
-
-    def test_a_linked_directory_is_caught(self):
-        owned = self.dist('owned', [('k.py', b'x', b'x')])
-        outside = tempfile.TemporaryDirectory()
-        self.addCleanup(outside.cleanup)
-        os.symlink(outside.name, os.path.join(self.root, 'sitecustomize'))
-        self.assertEqual('sitecustomize in %s is a link to a directory'
-                         % self.root, self.differ(owned),
-                         'a linked directory was not looked at')
-
-    def test_a_directory_with_nothing_listed_is_caught(self):
-        # An uninstall's leftovers: a directory of bytecode alone imports as
-        # a namespace package where there was an ImportError.
-        owned = self.dist('owned', [('pkg/k.py', b'x', b'x')])
-        self.assertIsNone(self.differ(owned))
-        os.makedirs(os.path.join(self.root, 'gone', '__pycache__'))
-        self.assertEqual('gone in %s holds nothing any RECORD lists'
-                         % self.root, self.differ(owned),
-                         'a leftover directory went unnoticed')
-
-    def test_an_archive_on_the_path_is_caught(self):
-        archive = os.path.join(self.root, 'python314.zip')
-        open(archive, 'wb').close()
-        self.assertEqual('%s is on the import path and is not a directory'
-                         % archive, redproof.installed_files_differ(
-                             [], roots=[archive]),
-                         'an archive on the import path went unnoticed')
-        self.assertIsNone(redproof.installed_files_differ(
-            [], roots=[os.path.join(self.root, 'absent.zip')]))
-
-    @unittest.skipIf(sys.version_info < (3, 11), 'kept verdicts need 3.11')
-    def test_the_gate_holds_installed_files_to_their_records(self):
-        # The gate itself, not only the function: a pin and a lock this
-        # environment matches, made from it so the test holds wherever it
-        # runs, reach the check.
-        import platform
-        from importlib import metadata
-        from unittest import mock
-        installed = {redproof.normalize(d.metadata['Name']): d.version
-                     for d in metadata.distributions()
-                     if d.metadata['Name']}
-        for own in ('pip', 'schwaby'):
-            installed.pop(own, None)
-        pinned = snapshot({'.python-versions': (
-            platform.python_version() + '\n').encode()})
-        with mock.patch.object(redproof, 'lock_pins', return_value=installed):
-            with mock.patch.object(redproof, 'installed_files_differ',
-                                   return_value='x: y.py differs'):
-                why = redproof.environment_matches_lock(pinned)
-            self.assertEqual('an installed file is not what was installed: '
-                             'x: y.py differs', why,
-                             'the gate does not check installed files')
-            with mock.patch.object(redproof, 'installed_files_differ',
-                                   return_value=None), \
-                    mock.patch.object(redproof, 'stdlib_differs',
-                                      return_value='a stdlib link'):
-                self.assertEqual('a stdlib link', redproof.
-                                 environment_matches_lock(pinned),
-                                 'the gate does not check the standard '
-                                 'library')
-            # The positive control: the same gate, this environment as it
-            # is, passes the check.
-            with mock.patch.object(redproof, 'installed_files_differ',
-                                   return_value=None):
-                self.assertIsNone(redproof.environment_matches_lock(pinned))
 
 
 class WorkerTest(unittest.TestCase):
@@ -890,81 +581,11 @@ for first in ('busy', 'wedged'):
         with mock.patch.object(redproof, '_job', {
                 'run': run, 'cases': {entry.name: entry},
                 'baselines': {tuple(redproof.tests_of(entry)): None},
-                'baseline_reads': {}}):
+                }):
             result = redproof._entry_task(entry.name)
         self.assertEqual('SPEC', result[1])
-        self.assertEqual('', result[5], 'an entry that never ran printed '
+        self.assertEqual('', result[4], 'an entry that never ran printed '
                          'another run\'s time split')
-
-
-class StdlibTest(unittest.TestCase):
-    '''The standard library's digest, on a tree of its own.'''
-
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = os.path.join(tmp.name, 'python3.14')
-        for rel, data in (('unittest/case.py', b'def assertIn(): pass\n'),
-                          ('tomllib/py.typed', b''),
-                          ('lib-dynload/_ssl.so', b'aarch64'),
-                          ('config-3.14-aarch64-linux-gnu/Makefile', b'aarch64'),
-                          ('_sysconfigdata__linux_aarch64-linux-gnu.py', b'/b'),
-                          ('build-details.json', b'{"arch": "aarch64"}'),
-                          ('site-packages/pip/__init__.py', b''),
-                          ('unittest/__pycache__/case.cpython-314.pyc', b'1')):
-            self.write(rel, data)
-
-    def write(self, rel, data):
-        path = os.path.join(self.root, rel)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'wb') as f:
-            f.write(data)
-
-    def digest(self):
-        redproof._stdlib_digests.clear()
-        return redproof.stdlib_digest(self.root)
-
-    def test_every_file_but_the_per_build_ones_counts(self):
-        before = self.digest()
-        for rel in ('unittest/case.py', 'tomllib/py.typed'):
-            with self.subTest(rel):
-                with open(os.path.join(self.root, rel), 'rb') as f:
-                    kept = f.read()
-                self.write(rel, kept + b'# edited\n')
-                self.assertNotEqual(before, self.digest(),
-                                    'the digest ignores %s' % rel)
-                self.write(rel, kept)
-        self.write('sitecustomize.pyc', b'sourceless')
-        self.assertNotEqual(before, self.digest(),
-                            'the digest ignores a sourceless .pyc')
-        os.remove(os.path.join(self.root, 'sitecustomize.pyc'))
-        # The positive control: the per-build files and bytecode do not.
-        for rel in ('lib-dynload/_ssl.so', 'config-3.14-aarch64-linux-gnu/'
-                    'Makefile', '_sysconfigdata__linux_aarch64-linux-gnu.py',
-                    'build-details.json', 'site-packages/pip/__init__.py',
-                    'unittest/__pycache__/case.cpython-314.pyc'):
-            self.write(rel, b'x86_64')
-        self.assertEqual(before, self.digest(), 'a per-build file is in '
-                         'the digest, so the key names the machine')
-
-    def test_a_link_or_a_stray_compiled_module_is_refused(self):
-        self.assertIsNone(redproof.stdlib_differs(self.root))
-        os.symlink(os.path.join(self.root, 'unittest'),
-                   os.path.join(self.root, 'unittest2'))
-        self.assertEqual("the standard library's unittest2 is a link",
-                         redproof.stdlib_differs(self.root),
-                         'a link in the standard library was not refused')
-        os.remove(os.path.join(self.root, 'unittest2'))
-        self.write('_evil.so', b'')
-        self.assertEqual("the standard library's _evil.so is a compiled "
-                         "module outside lib-dynload",
-                         redproof.stdlib_differs(self.root),
-                         'a compiled module outside lib-dynload was not '
-                         'refused')
-
-    def test_the_real_standard_library_passes(self):
-        # A build as shipped: refusing it would keep nothing anywhere.
-        self.assertIsNone(redproof.stdlib_differs())
 
 
 class GroupLockTest(unittest.TestCase):
@@ -1020,19 +641,6 @@ class ChangedTrackedTest(unittest.TestCase):
             run, tmp.name, ('b.py', b'two\n')))
 
 
-class LockTest(unittest.TestCase):
-
-    def test_only_the_pins_whose_marker_holds_here_count(self):
-        s = snapshot({'requirements.lock': (
-            "# a comment\n"
-            "a==2 ; python_version >= '3.0'\n"
-            "a==1 ; python_version < '3.0'\n"
-            "B_c==3\n"
-            "    # via a\n").encode()})
-        self.assertEqual({'a': '2', 'b-c': '3'}, redproof.lock_pins(s),
-                         'a pin for another Python was counted')
-
-
 class ShardTest(unittest.TestCase):
 
     def cases(self):
@@ -1077,133 +685,6 @@ class ShardTest(unittest.TestCase):
                          'matching nothing')
         self.assertEqual([0, 0, 1], sorted(len(f) for f in found))
         self.assertIsNone(redproof.select(one, ['nothing-like-it'], (1, 3)))
-
-
-class PinTest(unittest.TestCase):
-
-    def test_only_the_pinned_build_keeps_verdicts(self):
-        import platform
-        running = platform.python_version()
-        major, minor, patch = running.split('.')[:3]
-        other = '%s.%s.%d' % (major, minor, int(patch) + 1)
-        why = redproof.environment_matches_lock(
-            snapshot({'.python-versions': ('3.9.1\n%s\n' % other).encode()}))
-        self.assertIn('is not the pinned %s' % other, why or '',
-                      'a build other than the pinned one was accepted')
-        # The pinned build gets past the pin and is stopped by a later check
-        # (no lock here; on 3.10, pathlib): the positive control that the pin
-        # is what refused the other.
-        why = redproof.environment_matches_lock(
-            snapshot({'.python-versions': ('%s\n' % running).encode()}))
-        self.assertIsNotNone(why)
-        self.assertNotIn('pinned', why)
-
-
-class StoreTest(unittest.TestCase):
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.path = os.path.join(self.tmp.name, 'cache', 'redproof.json')
-
-    def at(self, days_ago):
-        return (datetime.datetime.now(datetime.timezone.utc)
-                - datetime.timedelta(days=days_ago)).isoformat()
-
-    def test_prunes_by_last_use_and_skips_tombstones(self):
-        store = redproof.Store(self.path)
-        store.put('k:1', {'at': self.at(61), 'reads': {}})
-        store.put('k:2', {'at': self.at(1), 'reads': {}})
-        store.put('k:3', {'at': self.at(1), 'gone': True})
-        store.prune()
-        self.assertEqual({'k:2', 'k:3'}, set(store.records))
-        self.assertEqual({'k:2'}, set(store.under('k')))
-        self.assertEqual({'k:1'}, store.removed)
-
-    def test_a_pruned_record_is_gone_from_the_file(self):
-        store = redproof.Store(self.path)
-        store.put('k:old', {'at': self.at(61), 'reads': {}})
-        store.put('k:new', {'at': self.at(1), 'reads': {}})
-        store.save()
-        again = redproof.Store(self.path)
-        again.load()
-        again.prune()
-        again.save()
-        with open(self.path, 'rb') as f:
-            self.assertEqual({'k:new'}, set(json.loads(f.read())['records']),
-                             'a pruned record was saved again')
-
-    def test_a_renewal_does_not_undo_a_tombstone(self):
-        first, second = redproof.Store(self.path), redproof.Store(self.path)
-        first.load()
-        second.load()
-        first.put('k:1', {'gone': True, 'at': self.at(1)})
-        first.save()
-        # Saved later, by a run that only found the record still holding.
-        second.put('k:1', {'at': self.at(0), 'proved': self.at(5),
-                           'reads': {}})
-        second.save()
-        third = redproof.Store(self.path)
-        third.load()
-        self.assertEqual({}, third.under('k'),
-                         'a renewal brought back a retired record')
-        # A proof made after the tombstone does bring it back.
-        third.put('k:1', {'at': self.at(0), 'proved': self.at(0),
-                          'reads': {}})
-        third.save()
-        fourth = redproof.Store(self.path)
-        fourth.load()
-        self.assertEqual({'k:1'}, set(fourth.under('k')))
-
-    def test_a_tombstone_retires_a_record_already_saved(self):
-        # The ordinary case: the file holds the record when the run that
-        # disproved it saves.
-        seed = redproof.Store(self.path)
-        seed.put('k:1', {'at': self.at(2), 'proved': self.at(2), 'reads': {}})
-        seed.save()
-        disprover = redproof.Store(self.path)
-        disprover.load()
-        disprover.put('k:1', {'gone': True, 'at': self.at(0)})
-        disprover.save()
-        after = redproof.Store(self.path)
-        after.load()
-        self.assertEqual({}, after.under('k'),
-                         'a tombstone did not retire the record it named')
-
-    def test_a_record_missing_a_runs_reads_does_not_hold(self):
-        s = snapshot({'a.py': b''})
-        self.assertFalse(redproof.holds({'mutated': {}}, s, None))
-        self.assertTrue(redproof.holds({'mutated': {}, 'baseline': {}}, s,
-                                       None))
-
-    def test_a_record_renewed_elsewhere_survives_a_prune(self):
-        old = {'at': self.at(61), 'reads': {}}
-        seed = redproof.Store(self.path)
-        seed.put('k:1', old)
-        seed.save()
-        pruner = redproof.Store(self.path)
-        pruner.load()
-        renewer = redproof.Store(self.path)
-        renewer.load()
-        renewer.put('k:1', dict(old, at=self.at(0)))
-        renewer.save()
-        pruner.prune()
-        pruner.save()
-        with open(self.path, 'rb') as f:
-            self.assertIn('k:1', json.loads(f.read())['records'],
-                          'a prune dropped a record another run had just used')
-
-    def test_saving_merges_onto_what_another_run_saved(self):
-        first, second = redproof.Store(self.path), redproof.Store(self.path)
-        first.load()
-        second.load()
-        first.put('a:1', {'at': self.at(0), 'reads': {}})
-        first.save()
-        second.put('b:1', {'at': self.at(0), 'reads': {}})
-        second.save()
-        with open(self.path, 'rb') as f:
-            records = json.loads(f.read())['records']
-        self.assertEqual({'a:1', 'b:1'}, set(records))
 
 
 class PoolSizeTest(unittest.TestCase):
