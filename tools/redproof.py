@@ -145,7 +145,7 @@ DEVICES = ('/dev/null', '/dev/zero', '/dev/full', '/dev/random',
 SECRET_PATH = re.compile(
     r'(^|/)(\.env[^/]*|\.netrc|\.pypirc|\.git-credentials|[^/]*token[^/]*'
     r'|[^/]*secret[^/]*|[^/]*credential[^/]*|[^/]*password[^/]*'
-    r'|[^/]*\.(pem|key|p12|pfx)|id_[a-z0-9]+)$|/\.config/|/\.ssh/|/\.gnupg/',
+    r'|[^/]*\.(pem|key|p12|pfx)|id_[a-z0-9]+)$|(^|/)\.(config|ssh|gnupg)/',
     re.IGNORECASE)
 
 _live = set()
@@ -209,16 +209,23 @@ def pairs_of(case):
     return [(old.encode('utf-8'), new.encode('utf-8')) for old, new in pairs]
 
 
-# A line of pytest's short summary: FAILED / ERROR / SUBFAILED(...) <node> - <message>
-_SUMMARY = re.compile(r'^(?:SUB)?(?:FAILED|ERROR)(?:\([^)]*\))? \S+ - (.*)$')
+# A line of pytest's short summary: FAILED, ERROR or SUBFAILED with a subtest's
+# [message] and (params), then the node id, then " - message" if any.
+_SUMMARY = re.compile(
+    r'^(?:SUB)?(?:FAILED|ERROR)(?P<label>\[.*?\])?\s*(?P<params>\(.*\))?'
+    r'\s+\S*\.py\S*(?: - (?P<msg>.*))?$')
+# A failure's header: underscores, the test, a subtest's label, underscores.
+_HEADER = re.compile(r'^_{3,} \S+ (?P<sub>.+?) _{3,}$')
 
 
 def failure_text(output):
     '''What pytest says the failures were: the `E` lines of each traceback,
-    and each short-summary message without its node id. Not the source lines
-    pytest echoes around a failure, and not node ids: either can contain an
-    entry's `expect` whatever actually failed, which made a failure on the
-    wrong assertion read as PROVEN.'''
+    each short-summary message, and the label and params of each failing
+    subTest, which pytest builds from the subtest itself and which are all
+    that tells apart subtests failing with the same message. Not the source
+    lines pytest echoes around a failure, and not node ids: either can
+    contain an entry's `expect` whatever actually failed, which made a
+    failure on the wrong assertion read as PROVEN.'''
     lines = []
     for line in output.splitlines():
         if line.startswith('E '):
@@ -226,7 +233,12 @@ def failure_text(output):
             continue
         m = _SUMMARY.match(line)
         if m:
-            lines.append(m.group(1))
+            lines.extend(part for part in m.group('label', 'params', 'msg')
+                         if part)
+            continue
+        m = _HEADER.match(line)
+        if m:
+            lines.append(m.group('sub'))
     return '\n'.join(lines)
 
 
@@ -655,6 +667,8 @@ def holds(reads, snapshot, mutated):
     mutated run's with the mutation applied, the unmutated baseline's
     without it. A record keyed on the mutated run alone stayed KEPT when
     something only the passing branch reads had changed.'''
+    if not isinstance(reads, dict) or not {'mutated', 'baseline'} <= set(reads):
+        return False
     return (holds_one(reads['mutated'], snapshot, mutated)
             and holds_one(reads['baseline'], snapshot, None))
 
@@ -866,6 +880,22 @@ class Run:
                 pass
             changed.append(f)
         return changed
+
+
+def run_baseline(run, nodes):
+    '''Runs nodes unmutated, under the audit. (Result, keyed reads or None
+    when the run cannot be kept); a tracked file it wrote, restored or not,
+    is noted against it.'''
+    result, audit, classifier, changed = run.run(list(nodes), record=True)
+    reads = None
+    if audit is not None:
+        keyed, why, writes = reads_from(audit, classifier, run.snapshot, None,
+                                        run.snapshot.tracked)
+        reads = keyed if why is None else None
+        changed = sorted(set(changed) | set(writes))
+    if changed:
+        run.tracked_writes['the baseline of ' + ' '.join(nodes)] = changed
+    return result, reads
 
 
 def judge(run, case, baseline, baseline_reads=None):
@@ -1116,15 +1146,8 @@ def run_stale(run, args, stale, store, keys, held, unkept):
     baseline_reads = {}
 
     def baseline(t):
-        result, audit, classifier, changed = run.run(list(t), record=True)
+        result, baseline_reads[t] = run_baseline(run, t)
         baselines[t] = result
-        if audit is not None:
-            reads, why, writes = reads_from(audit, classifier, snapshot, None,
-                                            snapshot.tracked)
-            baseline_reads[t] = reads if why is None else None
-            changed = sorted(set(changed) | set(writes))
-        if changed:
-            run.tracked_writes['the baseline of ' + ' '.join(t)] = changed
         if result.code == 0:
             progress('baseline', ' '.join(t), '', result.seconds)
         else:
@@ -1142,7 +1165,6 @@ def run_stale(run, args, stale, store, keys, held, unkept):
           flush=True)
 
     verdicts = {}
-    when = now_iso()
 
     def one(c):
         t0 = time.monotonic()
@@ -1154,6 +1176,10 @@ def run_stale(run, args, stale, store, keys, held, unkept):
         progress(verdict, c.name, detail, seconds)
         if unkept is not None:
             return
+        # When this verdict was reached, not when the phase began: a proof
+        # and a disproof from overlapping runs are ordered by these, and a
+        # stamp taken early made a later disproof look older than a proof.
+        when = now_iso()
         key = keys[c.name]
         if verdict == 'PROVEN':
             # Proved again: what held is renewed.

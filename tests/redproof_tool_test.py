@@ -263,6 +263,26 @@ class JudgeTest(unittest.TestCase):
                                    "'expected' not found in")
         self.assertEqual('PROVEN', self.judge(said)[0])
 
+    def test_a_failing_subtests_label_counts(self):
+        # Every subtest fails with the same message; only the label pytest
+        # builds from the subtest says which one.
+        same = "E       AssertionError: '7521' unexpectedly found in 'xxx'"
+        for label in ("SUBFAILED(helper='_safe_str', offset=188) "
+                      'tests/redact_test.py::T::test_x',
+                      'SUBFAILED[_safe_str] (i=1) tests/redact_test.py::T::'
+                      'test_x - AssertionError'):
+            self.assertEqual('PROVEN', self.judge(
+                '\n'.join([same, label, '1 failed']), expect='_safe_str')[0],
+                'a subtest label was not counted as what failed')
+        header = ("____ T.test_x (helper='_safe_str', offset=188) ____")
+        self.assertEqual('PROVEN', self.judge(
+            '\n'.join([header, same, '1 failed']), expect="helper='_safe_str'"
+        )[0], 'a failure header was not counted')
+        # The positive control's other half: the node id is still not.
+        self.assertEqual('RED?', self.judge(
+            '\n'.join([same, 'FAILED tests/x_test.py::T::test_safe_str']),
+            expect='safe_str')[0])
+
     def test_a_subtest_failure_message_counts(self):
         out = ('SUBFAILED(i=1) tests/x_test.py::T::test_x - AssertionError: '
                'expected 3\n1 failed')
@@ -314,7 +334,31 @@ class JudgeTest(unittest.TestCase):
                          'a write the run restored went unreported')
 
 
+class BaselineTest(unittest.TestCase):
+
+    def test_a_baselines_restored_write_is_reported(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        copy = os.path.join(tmp.name, 'run1', 'copy')
+        os.makedirs(copy)
+        audit = record(written=[os.path.join(copy, 'schwaby', 'x.py')])
+        run = FakeRun(JudgeTest.CONTENT, result(0, '1 passed'), audit,
+                      redproof.Classifier(copy, [tmp.name]))
+        _, reads = redproof.run_baseline(run, ['tests/x_test.py'])
+        self.assertEqual(
+            {'the baseline of tests/x_test.py': ['schwaby/x.py']},
+            run.tracked_writes, 'a baseline that wrote a tracked file and '
+            'restored it went unreported')
+        self.assertIsNone(reads)
+
+
 class SnapshotTest(unittest.TestCase):
+
+    def test_secret_directories_at_the_root_are_left_out(self):
+        files = ['.config/gh/hosts.yml', '.ssh/known_hosts',
+                 '.gnupg/pubring.kbx', 'docs/config.rst']
+        self.assertEqual(files[:3], redproof.secret_untracked(files, set()),
+                         'a secret directory at the root was copied')
 
     def test_untracked_secret_names_are_left_out(self):
         files = ['README.md', '.env.local', 'docs/api-credentials.rst',
@@ -523,6 +567,27 @@ class StoreTest(unittest.TestCase):
         fourth = redproof.Store(self.path)
         fourth.load()
         self.assertEqual({'k:1'}, set(fourth.under('k')))
+
+    def test_a_tombstone_retires_a_record_already_saved(self):
+        # The ordinary case: the file holds the record when the run that
+        # disproved it saves.
+        seed = redproof.Store(self.path)
+        seed.put('k:1', {'at': self.at(2), 'proved': self.at(2), 'reads': {}})
+        seed.save()
+        disprover = redproof.Store(self.path)
+        disprover.load()
+        disprover.put('k:1', {'gone': True, 'at': self.at(0)})
+        disprover.save()
+        after = redproof.Store(self.path)
+        after.load()
+        self.assertEqual({}, after.under('k'),
+                         'a tombstone did not retire the record it named')
+
+    def test_a_record_missing_a_runs_reads_does_not_hold(self):
+        s = snapshot({'a.py': b''})
+        self.assertFalse(redproof.holds({'mutated': {}}, s, None))
+        self.assertTrue(redproof.holds({'mutated': {}, 'baseline': {}}, s,
+                                       None))
 
     def test_a_record_renewed_elsewhere_survives_a_prune(self):
         old = {'at': self.at(61), 'reads': {}}
