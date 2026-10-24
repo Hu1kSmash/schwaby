@@ -74,7 +74,8 @@ bytes as the run found them (the mutation applied), the directories it listed
 by their names, and the paths it only checked by what they were (file,
 directory or absent). The interpreter counts as its implementation and
 major.minor version, and the installed libraries as requirements.lock, so a
-verdict is kept or reused only when the installed set is exactly the lock.
+verdict is kept or reused only when the interpreter is the exact build
+.python-versions pins and the installed set is exactly the lock.
 Never the machine: one store serves every rig. Never kept: a run that started a
 process (what a child reads is not recorded), connected beyond loopback, read
 /proc or /sys, read a file that may hold a secret (whose bytes are never
@@ -110,6 +111,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CASES = 'tools/redproof_cases.py'
 AUDIT = 'tools/redproof_audit.py'
 LOCK = 'requirements.lock'
+PYTHONS = '.python-versions'
 STORE = os.path.join(ROOT, 'cache', 'redproof.json')
 STORE_VERSION = 1
 KEEP_DAYS = 60
@@ -397,10 +399,30 @@ def normalize(name):
     return re.sub(r'[-_.]+', '-', name).lower()
 
 
+def pinned_python(snapshot):
+    '''The exact release .python-versions pins for this interpreter's minor
+    version, or None.'''
+    minor = '%d.%d.' % sys.version_info[:2]
+    for line in snapshot.content.get(PYTHONS, b'').decode('utf-8').split():
+        if line.startswith(minor):
+            return line
+    return None
+
+
 def environment_matches_lock(snapshot):
-    '''None when the installed distributions are exactly the lock, otherwise
-    why not. A verdict is keyed on the lock, so one measured against anything
-    else must not be kept, nor stand in for a run.'''
+    '''None when the interpreter is the pinned build and the installed
+    distributions are exactly the lock, otherwise why not. A verdict is keyed
+    on the interpreter's minor version and on the lock, so one measured
+    against anything else must not be kept, nor stand in for a run. The key
+    stays loose and the environment is held to the pin, so every rig on the
+    pin shares verdicts.'''
+    pinned = pinned_python(snapshot)
+    running = platform.python_version()
+    if sys.implementation.name != 'cpython' or pinned != running:
+        return 'Python %s %s is not the pinned %s' % (
+            sys.implementation.name, running, pinned or 'build (none for '
+            '%d.%d in %s)' % (sys.version_info[0], sys.version_info[1],
+                               PYTHONS))
     if sys.version_info < (3, 11):
         # 3.11's pathlib calls os.stat at each call, which is what lets the
         # audit see its checks; earlier versions were not checked.

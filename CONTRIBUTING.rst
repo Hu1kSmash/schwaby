@@ -26,6 +26,18 @@ failure you see is one CI would see:
 
   pip install -c requirements.lock -e ".[dev]"
 
+CI runs each Python as the exact build ``.python-versions`` pins, which
+`uv <https://github.com/astral-sh/uv>`__ downloads and checks the hash of. To test
+on the same build, create the virtualenv from it instead:
+
+.. code-block:: shell
+
+  uv python install --no-bin 3.14.8      # a version from .python-versions
+  "$(uv python find 3.14.8)" -m venv venv
+
+``--no-bin`` keeps uv from putting ``python3.14`` on your ``PATH``, where it
+would quietly replace the system's for everything else you run.
+
 The ``-e`` matters: without it you edit the source tree and test the copy in
 ``site-packages``, and the two drift the moment you change anything.
 

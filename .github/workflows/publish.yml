@@ -31,10 +31,30 @@ jobs:
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      # The exact build .python-versions pins for this minor version, which
+      # uv downloads and checks the hash of: the build every machine that
+      # runs this suite runs. A minor version with no pin fails here, by name.
+      - name: Pinned Python ${{ matrix.python }}
+        id: pin
+        shell: bash
+        run: |
+          version=$(tr -d '\r' < .python-versions | grep -E "^${MINOR//./\\.}\.[0-9]+$") || {
+            echo "no pin for $MINOR in .python-versions"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+        env:
+          MINOR: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@v10
         with:
-          python-version: ${{ matrix.python }}
-      - run: pip install -c requirements.lock ".[dev]"
+          version: "0.13.4"
+          python-version: ${{ steps.pin.outputs.version }}
+          activate-environment: true
+      - name: The interpreter is the pinned build
+        shell: bash
+        run: >-
+          python -c "import platform, sys; v = platform.python_version();
+          sys.exit(0 if v == sys.argv[1] else 'running %s, pinned %s' % (v, sys.argv[1]))"
+          ${{ steps.pin.outputs.version }}
+      - run: uv pip install -c requirements.lock ".[dev]"
       - run: pytest tests/ -q
 
   build:
@@ -42,15 +62,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - name: Pinned Python "3.12"
+        id: pin
+        shell: bash
+        run: |
+          version=$(tr -d '\r' < .python-versions | grep -E "^${MINOR//./\\.}\.[0-9]+$") || {
+            echo "no pin for $MINOR in .python-versions"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+        env:
+          MINOR: "3.12"
+      - uses: astral-sh/setup-uv@v10
         with:
-          python-version: "3.12"
+          version: "0.13.4"
+          python-version: ${{ steps.pin.outputs.version }}
+          activate-environment: true
+      - name: The interpreter is the pinned build
+        shell: bash
+        run: >-
+          python -c "import platform, sys; v = platform.python_version();
+          sys.exit(0 if v == sys.argv[1] else 'running %s, pinned %s' % (v, sys.argv[1]))"
+          ${{ steps.pin.outputs.version }}
       # readme_renderer[md] is not optional. Measured: with a markdown
       # long_description and without that extra, `twine check --strict` prints
       # PASSED for both artifacts having rendered nothing -- it warns on import
       # and moves on. So the gate does not fail loudly when it stops working,
       # it just stops working.
-      - run: pip install -c requirements.lock build twine "readme_renderer[md]"
+      - run: uv pip install -c requirements.lock build twine "readme_renderer[md]"
       - run: python -m build
 
       # twine check verifies the long_description renders at all. Note it is a

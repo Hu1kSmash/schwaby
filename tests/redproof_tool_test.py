@@ -232,6 +232,25 @@ class ShardTest(unittest.TestCase):
         self.assertIsNone(redproof.select(one, ['nothing-like-it'], (1, 3)))
 
 
+class PinTest(unittest.TestCase):
+
+    def test_only_the_pinned_build_keeps_verdicts(self):
+        import platform
+        running = platform.python_version()
+        major, minor, patch = running.split('.')[:3]
+        other = '%s.%s.%d' % (major, minor, int(patch) + 1)
+        why = redproof.environment_matches_lock(
+            snapshot({'.python-versions': ('3.9.1\n%s\n' % other).encode()}))
+        self.assertIn('is not the pinned %s' % other, why or '',
+                      'a build other than the pinned one was accepted')
+        # The pinned build gets past the pin, and stops at the missing lock:
+        # the positive control that the pin is what refused the other.
+        why = redproof.environment_matches_lock(
+            snapshot({'.python-versions': ('%s\n' % running).encode()}))
+        self.assertNotIn('pinned', why)
+        self.assertIn('requirements.lock', why)
+
+
 class StoreTest(unittest.TestCase):
 
     def setUp(self):

@@ -6205,3 +6205,40 @@ SHARD_CASES = [
 ]
 
 CASES += SHARD_CASES
+
+
+# The interpreter pins (.python-versions). A verdict is keyed on the minor
+# version only, so it is the pin that makes every rig's build the same one;
+# a rig on another patch release sharing verdicts is what the pin prevents.
+PIN_CASES = [
+    Case('harness/only-the-pinned-build-keeps-verdicts',
+         'tools/redproof.py',
+         "    if sys.implementation.name != 'cpython' or pinned != running:",
+         '    if False:',
+         'tests/redproof_tool_test.py::PinTest'
+         '::test_only_the_pinned_build_keeps_verdicts',
+         'a build other than the pinned one was accepted'),
+    Case('suite/every-supported-python-is-pinned',
+         '.python-versions',
+         '3.12.15\n',
+         '',
+         'tests/suite_config_test.py::PythonPinsTest'
+         '::test_every_supported_python_is_pinned_exactly_once',
+         'the pinned Pythons are not the supported ones'),
+    Case('suite/ci-tests-every-pinned-python',
+         '.github/workflows/python.yml',
+         'python: ["3.10", "3.11", "3.12", "3.13", "3.14"]',
+         'python: ["3.10", "3.11", "3.12", "3.14"]',
+         'tests/suite_config_test.py::PythonPinsTest'
+         '::test_ci_tests_the_pinned_pythons',
+         'does not test every pinned Python'),
+    Case('suite/ci-installs-no-unpinned-python',
+         '.github/workflows/python.yml',
+         "came from the job's own setup either way,",
+         'came from setup-python either way,',
+         'tests/suite_config_test.py::PythonPinsTest'
+         '::test_ci_tests_the_pinned_pythons',
+         'installs a Python the pin does not choose'),
+]
+
+CASES += PIN_CASES
