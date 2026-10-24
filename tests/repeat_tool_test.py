@@ -27,6 +27,17 @@ class FailuresTest(unittest.TestCase):
             ['tests/auth_test.py::T::test_a', 'tests/auth_test.py::T::test_b'],
             repeat.failures(output), 'a failed test was not named')
 
+    def test_a_failing_subtest_and_a_spaced_id_are_named(self):
+        output = '\n'.join([
+            'SUBFAILED(i=1) tests/auth_test.py::T::test_c - AssertionError',
+            'FAILED tests/x_test.py::test_p[two words] - AssertionError: no',
+            'FAILED tests/x_test.py::test_q[a b]',
+        ])
+        self.assertEqual(
+            ['tests/auth_test.py::T::test_c', 'tests/x_test.py::test_p[two words]',
+             'tests/x_test.py::test_q[a b]'],
+            repeat.failures(output), 'a failing subtest was not named')
+
     def test_a_passing_run_names_nothing(self):
         # The positive case above is what makes this one mean anything.
         self.assertEqual([], repeat.failures('.....\n5 passed in 0.10s\n'))

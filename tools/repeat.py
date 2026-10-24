@@ -34,7 +34,14 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN_LIMIT = 900
 
-_FAILED = re.compile(r'^(?:FAILED|ERROR) (\S+)', re.MULTILINE)
+# A short-summary line: FAILED, ERROR or SUBFAILED(...) (a failing subTest),
+# the node id, which a parametrize id can put spaces in, and an optional
+# " - message"
+_FAILED = re.compile(
+    r'^(?:SUB)?(?:FAILED|ERROR)(?:\([^)]*\))? (.+?)(?: - .*)?$', re.MULTILINE)
+# The pytest run under way, so a signal can stop it too: it is in a session
+# of its own, so neither a terminal's Ctrl-C nor the load's cleanup reaches it.
+_running = []
 
 
 def usable_cpus():
@@ -47,7 +54,7 @@ def usable_cpus():
 
 def failures(output):
     '''The node ids pytest's short summary names as failed or erroring.'''
-    return sorted(set(m.split(' - ')[0] for m in _FAILED.findall(output)))
+    return sorted(set(_FAILED.findall(output)))
 
 
 def run_once(nodes):
@@ -59,6 +66,7 @@ def run_once(nodes):
     proc = subprocess.Popen(argv, cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             start_new_session=True)
+    _running[:] = [proc]
     expired = threading.Event()
 
     def expire():
@@ -126,6 +134,11 @@ def main(argv):
         flush=True)
 
     def stop(signum, frame):
+        for proc in _running:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         stop_load(load)
         raise SystemExit(128 + signum)
 

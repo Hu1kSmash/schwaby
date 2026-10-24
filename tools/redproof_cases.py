@@ -6189,20 +6189,34 @@ CASES += LOCK_CASES
 REPEAT_CASES = [
     Case('repeat/failures-are-named',
          'tools/repeat.py',
-         "    return sorted(set(m.split(' - ')[0] for m in "
-         "_FAILED.findall(output)))",
+         '    return sorted(set(_FAILED.findall(output)))',
          '    return []',
          'tests/repeat_tool_test.py::FailuresTest'
          '::test_names_every_failed_and_erroring_test_once',
          'a failed test was not named'),
     Case('repeat/errors-count-as-failures',
          'tools/repeat.py',
-         "_FAILED = re.compile(r'^(?:FAILED|ERROR) (\\S+)', re.MULTILINE)",
-         "_FAILED = re.compile(r'^FAILED (\\S+)', re.MULTILINE)",
+         "    r'^(?:SUB)?(?:FAILED|ERROR)(?:\\([^)]*\\))? (.+?)(?: - .*)?$', "
+         "re.MULTILINE)",
+         "    r'^(?:SUB)?FAILED(?:\\([^)]*\\))? (.+?)(?: - .*)?$', "
+         "re.MULTILINE)",
          'tests/repeat_tool_test.py::FailuresTest'
          '::test_names_every_failed_and_erroring_test_once',
          'a failed test was not named'),
 ]
+
+REPEAT_CASES.append(
+    # pytest reports a failing subTest as SUBFAILED(...), which a pattern for
+    # FAILED alone never named: the flake vanished from the counts.
+    Case('repeat/a-failing-subtest-is-named',
+         'tools/repeat.py',
+         "    r'^(?:SUB)?(?:FAILED|ERROR)(?:\\([^)]*\\))? (.+?)(?: - .*)?$', "
+         "re.MULTILINE)",
+         "    r'^(?:FAILED|ERROR)(?:\\([^)]*\\))? (.+?)(?: - .*)?$', "
+         "re.MULTILINE)",
+         'tests/repeat_tool_test.py::FailuresTest'
+         '::test_a_failing_subtest_and_a_spaced_id_are_named',
+         'a failing subtest was not named'))
 
 CASES += REPEAT_CASES
 
