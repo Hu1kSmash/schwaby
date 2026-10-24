@@ -411,8 +411,10 @@ def _token_endpoint_answer(error):
     authlib error reports, with its HTTP status; ``(False, None)`` when the
     error was raised before anything was asked. Read from the status the
     token response hook puts on every refusal it raises, which is every
-    refusal the endpoint sends. Not from the error's class, which says what
-    went wrong rather than whether anything was sent.'''
+    endpoint refusal that reaches the caller as ``TokenRefreshError`` or
+    ``LoginExchangeError``; a server error is ``HTTPStatusError`` instead.
+    Not from the error's class, which says what went wrong rather than
+    whether anything was sent.'''
     if '_token_endpoint_status' in vars(error):
         return True, error._token_endpoint_status
     return False, None

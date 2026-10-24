@@ -1808,9 +1808,12 @@ class LoginExchangeErrorTest(unittest.TestCase):
     def test_a_refused_exchange_carries_the_endpoints_status(self):
         cases = ((429, None, 'http_429'),
                  (401, None, 'http_401'),
-                 # The case authlib raises itself, with no status on it.
+                 # The case that used to be left to authlib, which puts no
+                 # status on it.
                  (400, {'error': 'invalid_grant'}, 'invalid_grant'),
                  (429, {'error': 'slow_down'}, 'slow_down'),
+                 # Above 429, so a range is not mistaken for 429.
+                 (431, None, 'http_431'),
                  (200, {'message': 'Unauthorized'},
                   'unusable_token_response'))
         for status, body, error in cases:

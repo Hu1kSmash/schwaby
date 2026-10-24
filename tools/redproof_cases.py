@@ -2505,7 +2505,7 @@ CASES = [
          'False is not true'),
 
     # Each refusal the hook raises carries the response's status, one case
-    # per branch. The JSON-bodied one is the case authlib raises itself, with
+    # per branch. The JSON-bodied one used to be left to authlib, which puts
     # no status on it, so leaving it to authlib is a case of its own.
     Case('auth/a-bodyless-refusal-carries-its-status',
          'schwaby/auth.py',
@@ -2631,6 +2631,33 @@ CASES = [
          "        self.rate_limited = status_code is not None\n",
          'tests/utils_test.py::TokenEndpointStatusTest'
          '::test_only_a_429_is_rate_limited',
+         'False != True'),
+
+    # Not a range: a 431 or a 499 is not rate limited.
+    Case('refresh/a-status-above-429-is-not-rate-limited',
+         'schwaby/utils.py',
+         "        #: nothing was sent.\n        self.status_code = status_code\n"
+         "\n        #: ``True`` for a 429: the endpoint asked for fewer requests.\n"
+         "        self.rate_limited = status_code == 429\n",
+         "        #: nothing was sent.\n        self.status_code = status_code\n"
+         "\n        #: ``True`` for a 429: the endpoint asked for fewer requests.\n"
+         "        self.rate_limited = (status_code is not None\n"
+         "                             and status_code >= 429)\n",
+         'tests/utils_test.py::TokenEndpointStatusTest'
+         '::test_only_a_429_is_rate_limited',
+         'False != True'),
+
+    Case('auth/a-status-above-429-is-not-rate-limited',
+         'schwaby/utils.py',
+         "        #: the code was never sent.\n        self.status_code = status_code\n"
+         "\n        #: ``True`` for a 429: the endpoint asked for fewer requests.\n"
+         "        self.rate_limited = status_code == 429\n",
+         "        #: the code was never sent.\n        self.status_code = status_code\n"
+         "\n        #: ``True`` for a 429: the endpoint asked for fewer requests.\n"
+         "        self.rate_limited = (status_code is not None\n"
+         "                             and status_code >= 429)\n",
+         'tests/auth_test.py::LoginExchangeErrorTest'
+         '::test_a_refused_exchange_carries_the_endpoints_status',
          'False != True'),
 
     Case('auth/only-a-429-is-rate-limited',

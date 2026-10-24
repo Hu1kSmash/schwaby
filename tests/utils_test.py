@@ -439,8 +439,9 @@ class TokenEndpointStatusTest(unittest.TestCase):
 
     @no_duplicates
     def test_a_refusal_with_a_json_body_carries_its_status(self):
-        # The case left to authlib, which carries no status on its error, so
-        # an implementation reading it from there leaves this None.
+        # The case that used to be left to authlib, which puts no status on
+        # its error, so an implementation reading it from there leaves this
+        # None.
         for asynchronous in (False, True):
             for status in (400, 429):
                 with self.subTest(status=status, asynchronous=asynchronous):
@@ -470,7 +471,8 @@ class TokenEndpointStatusTest(unittest.TestCase):
     @no_duplicates
     def test_only_a_429_is_rate_limited(self):
         import httpx2
-        for status in (429, 400, 401, 403):
+        # Above 429 as well as below it, so a range is not mistaken for 429.
+        for status in (429, 400, 401, 403, 431, 499):
             for json_body in (False, True):
                 with self.subTest(status=status, json_body=json_body):
                     error, _ = self.refused(
@@ -483,8 +485,9 @@ class TokenEndpointStatusTest(unittest.TestCase):
 
     @no_duplicates
     def test_a_token_that_fails_before_anything_is_sent_says_so(self):
-        # authlib refuses a stored token with no refresh token before asking
-        # the endpoint anything.
+        # authlib refuses a stored token with no access token of a type it
+        # can send, UnsupportedTokenTypeError, before asking the endpoint
+        # anything.
         import httpx2
         from schwaby.auth import client_from_access_functions
         from schwaby.utils import TokenRefreshError
@@ -530,8 +533,11 @@ class TokenEndpointStatusTest(unittest.TestCase):
                                       endpoint_answered=True),
                     LoginExchangeError('http_429', 'd', status_code=429,
                                        endpoint_answered=True)):
-            for rebuilt in (copy.copy(exc), pickle.loads(pickle.dumps(exc))):
-                with self.subTest(exception=type(exc).__name__):
+            for how, rebuild in (
+                    ('copy', copy.copy), ('deepcopy', copy.deepcopy),
+                    ('pickle', lambda e: pickle.loads(pickle.dumps(e)))):
+                rebuilt = rebuild(exc)
+                with self.subTest(exception=type(exc).__name__, how=how):
                     self.assertEqual(429, rebuilt.status_code)
                     self.assertTrue(rebuilt.rate_limited)
                     self.assertTrue(rebuilt.endpoint_answered)
