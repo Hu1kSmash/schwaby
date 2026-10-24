@@ -32,9 +32,13 @@ on the same build, create the virtualenv from it instead:
 
 .. code-block:: shell
 
-  uv python install --no-bin 3.14.8      # a version from .python-versions
-  "$(uv python find 3.14.8)" -m venv venv
+  export UV_PYTHON_INSTALL_DIR="$PWD/.uv-python"   # this checkout's own
+  uv python install --no-bin 3.14.8                # a version from .python-versions
+  "$(uv python find --no-python-downloads 3.14.8)" -m venv venv
 
+Both settings keep the build to this checkout. ``.uv-python/`` is gitignored,
+and uv's shared directory re-points its ``cpython-3.14`` link to whatever it
+installed last, which moves every other virtualenv built through that link.
 ``--no-bin`` keeps uv from putting ``python3.14`` on your ``PATH``, where it
 would quietly replace the system's for everything else you run.
 

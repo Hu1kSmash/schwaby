@@ -161,3 +161,8 @@ docs-build/
 
 # tools/redproof.py's kept verdicts: a verdict is never shipped
 cache/
+
+# Interpreters provisioned by uv for this checkout alone (UV_PYTHON_INSTALL_DIR):
+# a shared install directory re-points its minor-version links, which moves
+# every other project's virtualenv built through them.
+.uv-python/
