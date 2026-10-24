@@ -194,6 +194,44 @@ class LockTest(unittest.TestCase):
                          'a pin for another Python was counted')
 
 
+class ShardTest(unittest.TestCase):
+
+    def cases(self):
+        return [cases.Case('area/entry-%d' % i, 'schwaby/x.py', 'a', 'b',
+                           'tests/x_test.py', 'e') for i in range(200)]
+
+    def test_the_slices_of_a_run_cover_every_entry_once(self):
+        everything = self.cases()
+        for n in (1, 2, 3, 7):
+            seen = []
+            for k in range(1, n + 1):
+                seen += [c.name for c in redproof.select(everything, [], (k, n))]
+            self.assertEqual(sorted(c.name for c in everything), sorted(seen),
+                             'the slices of %d missed or repeated an entry' % n)
+
+    def test_an_entry_keeps_its_slice_whatever_else_is_selected(self):
+        everything = self.cases()
+        for name in [c.name for c in everything]:
+            # --name matches by substring, so entry-1 also selects entry-1x:
+            # the narrowing is what varies here, and the answer must not.
+            narrow = redproof.select(everything, [name], (2, 3))
+            among = redproof.select(everything, [], (2, 3))
+            self.assertEqual(
+                name in [c.name for c in among],
+                name in [c.name for c in narrow],
+                'which slice %s is in depends on the others' % name)
+
+    def test_an_empty_slice_is_not_a_failed_name(self):
+        # One entry, three slices: two of them hold nothing.
+        one = self.cases()[:1]
+        found = [redproof.select(one, ['area/entry-0'], (k, 3))
+                 for k in (1, 2, 3)]
+        self.assertNotIn(None, found, 'an empty slice was reported as a name '
+                         'matching nothing')
+        self.assertEqual([0, 0, 1], sorted(len(f) for f in found))
+        self.assertIsNone(redproof.select(one, ['nothing-like-it'], (1, 3)))
+
+
 class StoreTest(unittest.TestCase):
 
     def setUp(self):

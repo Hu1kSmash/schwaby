@@ -5,6 +5,7 @@ to arrive on the assertion you named.
     .venv/bin/python -I -B tools/redproof.py --name auth/    # names containing it
     .venv/bin/python -I -B tools/redproof.py --all           # every entry, kept or not
     .venv/bin/python -I -B tools/redproof.py --jobs 4        # entries at once
+    .venv/bin/python -I -B tools/redproof.py --shard 2/3     # one slice of three
 
 A test that passes whether or not the fix is there is worse than none, because
 it looks like protection. So revert the fix and watch the test fail. Doing that
@@ -41,7 +42,14 @@ VERDICTS
                 the mutation is a no-op, or the test fails unmutated.
 
 Exit status 0 only when every selected entry is PROVEN, KEPT, SUPERSEDED or
-REMOVED, and no run wrote to a tracked file.
+REMOVED, and no run wrote to a tracked file; 2 when --name matches nothing.
+
+SHARDS. `--shard K/N` judges one slice of N, so N machines can share one
+run: the selected entries (after --name) are divided by a hash of each name,
+and only the stale entries in slice K run. Every entry is in exactly one
+slice, whichever entries are stale, so the slices of one run never overlap
+and never miss one, and an entry stays in its slice from run to run. An empty
+slice is not an error: it has nothing to run and exits 0.
 
 THE WORKING TREE IS NEVER TOUCHED. The run snapshots the repository's own files
 (tracked, plus untracked and not ignored) into a temporary directory, reads the
@@ -778,6 +786,8 @@ def main(argv):
     parser.add_argument('--jobs', type=int,
                         help='entries at once (default: every usable core '
                         'with REDPROOF_JOBS_ALL=1, two otherwise)')
+    parser.add_argument('--shard', type=shard_arg, metavar='K/N',
+                        help='judge only slice K of N (K from 1)')
     args = parser.parse_args(argv)
 
     started = time.monotonic()
@@ -788,12 +798,39 @@ def main(argv):
         shutil.rmtree(run.tmp, ignore_errors=True)
 
 
+def shard_arg(text):
+    try:
+        k, n = (int(x) for x in text.split('/'))
+    except ValueError:
+        raise argparse.ArgumentTypeError('%r is not K/N' % text)
+    if not 1 <= k <= n:
+        raise argparse.ArgumentTypeError('%r: K must be 1 to N' % text)
+    return k, n
+
+
+def in_shard(name, shard):
+    '''Whether the entry named `name` is in slice (K, N). By the name alone,
+    so the answer does not depend on which entries are stale or selected.'''
+    k, n = shard
+    return int(sha(name.encode('utf-8')), 16) % n == k - 1
+
+
+def select(cases, names, shard):
+    '''The entries this run judges, or None when --name matches nothing.'''
+    selected = [c for c in cases
+                if not names or any(n in c.name for n in names)]
+    if not selected:
+        return None
+    if shard:
+        selected = [c for c in selected if in_shard(c.name, shard)]
+    return selected
+
+
 def judge_all(run, args, started):
     snapshot = run.snapshot
     cases = load_cases(snapshot.path)
-    selected = [c for c in cases
-                if not args.name or any(n in c.name for n in args.name)]
-    if not selected:
+    selected = select(cases, args.name, args.shard)
+    if selected is None:
         print('redproof: no entry name contains %s' % ' or '.join(
             map(repr, args.name)))
         return 2
@@ -822,8 +859,9 @@ def judge_all(run, args, started):
     stale = [c for c in live if args.all or c.name not in held]
     kept = [c for c in live if c not in stale]
 
-    print('redproof: %d selected, %d kept, %d removed, %d to run' % (
-        len(selected), len(kept), len(removed), len(stale)), flush=True)
+    print('redproof: %d selected, %d kept, %d removed, %d to run%s' % (
+        len(selected), len(kept), len(removed), len(stale),
+        ' (shard %d/%d)' % args.shard if args.shard else ''), flush=True)
     if unkept:
         print('redproof: verdicts are not kept or reused in this run: %s'
               % unkept, flush=True)
@@ -977,6 +1015,10 @@ def run_stale(run, args, stale, store, keys, held, unkept):
                 store.put('%s:%s' % (key, digest), {
                     'at': when, 'name': c.name,
                     'reads': reads,
+                    # What judging the entry cost (its copy and its mutated
+                    # run), for dividing a run between machines. Metadata,
+                    # like the platform below: never part of the key.
+                    'seconds': round(seconds, 1),
                     # Metadata only: never part of the key.
                     'platform': {'machine': platform.machine(),
                                  'system': platform.system(),

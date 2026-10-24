@@ -6170,3 +6170,38 @@ REPEAT_CASES = [
 ]
 
 CASES += REPEAT_CASES
+
+
+# --shard divides one run between machines. A slice that depends on which
+# entries are selected, or on anything but the name, misses some entries and
+# runs others twice, and the union of the shards still reads as complete.
+SHARD_CASES = [
+    Case('harness/slices-cover-every-entry-once',
+         'tools/redproof.py',
+         "    return int(sha(name.encode('utf-8')), 16) % n == k - 1",
+         "    return int(sha(name.encode('utf-8')), 16) % n <= k - 1",
+         'tests/redproof_tool_test.py::ShardTest'
+         '::test_the_slices_of_a_run_cover_every_entry_once',
+         'missed or repeated an entry'),
+    Case('harness/a-slice-is-chosen-by-name-alone',
+         'tools/redproof.py',
+         '        selected = [c for c in selected if in_shard(c.name, shard)]',
+         '        selected = [c for i, c in enumerate(selected)\n'
+         '                    if i % shard[1] == shard[0] - 1]',
+         'tests/redproof_tool_test.py::ShardTest'
+         '::test_an_entry_keeps_its_slice_whatever_else_is_selected',
+         'depends on the others'),
+    Case('harness/an-empty-slice-is-not-a-missing-name',
+         'tools/redproof.py',
+         '    if not selected:\n        return None\n'
+         '    if shard:\n'
+         '        selected = [c for c in selected if in_shard(c.name, shard)]\n',
+         '    if shard:\n'
+         '        selected = [c for c in selected if in_shard(c.name, shard)]\n'
+         '    if not selected:\n        return None\n',
+         'tests/redproof_tool_test.py::ShardTest'
+         '::test_an_empty_slice_is_not_a_failed_name',
+         'reported as a name matching nothing'),
+]
+
+CASES += SHARD_CASES
