@@ -458,6 +458,12 @@ class KeyTest(unittest.TestCase):
             self.assertNotEqual(
                 key, redproof.entry_key(case(), snapshot(self.content(
                     **changes))), 'the key ignores the %s' % what)
+        # Nothing installs the standard library, so no RECORD holds it.
+        from unittest import mock
+        with mock.patch.object(redproof, 'stdlib_digest',
+                               return_value='edited'):
+            self.assertNotEqual(key, redproof.entry_key(case(), snapshot(
+                self.content())), 'the key ignores the standard library')
         # The positive control: nothing changed, the same key.
         self.assertEqual(key, redproof.entry_key(case(), snapshot(
             self.content())))
@@ -474,34 +480,127 @@ class KeyTest(unittest.TestCase):
 
 class InstalledFilesTest(unittest.TestCase):
 
-    def dist(self, root, name, files):
+    class File:
+        def __init__(self, rel, mode, value):
+            self.rel, self.name = rel, rel.rsplit('/', 1)[-1]
+            self.hash = types.SimpleNamespace(mode=mode, value=value) \
+                if mode else None
+
+        def __str__(self):
+            return self.rel
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = tmp.name
+
+    def dist(self, name, files, mode='sha256'):
+        '''files: (rel, bytes on disk or None for absent, bytes recorded or
+        None for no hash).'''
         import base64
         import hashlib
         recorded = []
         for rel, data, recorded_data in files:
-            with open(os.path.join(root, rel), 'wb') as f:
-                f.write(data)
-            digest = base64.urlsafe_b64encode(hashlib.sha256(
-                recorded_data).digest()).rstrip(b'=').decode()
-            recorded.append(types.SimpleNamespace(
-                hash=types.SimpleNamespace(mode='sha256', value=digest),
-                __str__=lambda self: rel, rel=rel))
+            if data is not None:
+                with open(os.path.join(self.root, rel), 'wb') as f:
+                    f.write(data)
+            value = None if recorded_data is None else \
+                base64.urlsafe_b64encode(hashlib.new(
+                    mode, recorded_data).digest()).rstrip(b'=').decode()
+            recorded.append(self.File(rel, recorded_data is not None and mode,
+                                      value))
         return types.SimpleNamespace(
             metadata={'Name': name}, files=recorded,
-            locate_file=lambda f: os.path.join(root, f.rel))
+            locate_file=lambda f: os.path.join(self.root, f.rel))
+
+    def differ(self, *dists):
+        return redproof.installed_files_differ(dists, roots=[self.root])
 
     def test_a_file_edited_at_the_same_version_is_caught(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        intact = self.dist(tmp.name, 'intact', [('a.py', b'x', b'x')])
-        self.assertIsNone(redproof.installed_files_differ([intact]))
-        edited = self.dist(tmp.name, 'edited', [('b.py', b'y = 2', b'y = 1')])
-        why = redproof.installed_files_differ([intact, edited])
-        self.assertIn('edited:', why or '',
-                      'an installed file edited in place was not noticed')
-        # pip and schwaby are not the tests' dependencies.
-        self.assertIsNone(redproof.installed_files_differ([self.dist(
-            tmp.name, 'pip', [('c.py', b'z = 2', b'z = 1')])]))
+        intact = self.dist('intact', [('a.py', b'x', b'x')])
+        self.assertIsNone(self.differ(intact))
+        edited = self.dist('edited', [('b.py', b'y = 2', b'y = 1')])
+        why = self.differ(intact, edited)
+        self.assertEqual('edited: b.py differs from its RECORD', why,
+                         'an installed file edited in place was not noticed')
+
+    def test_pip_is_held_to_its_record(self):
+        # Neither pip nor schwaby is skipped: schwaby's editable finder and
+        # .pth run at every interpreter start.
+        self.assertIsNone(self.differ(self.dist('pip', [('c.py', b'z', b'z')])))
+        self.assertEqual('pip: d.py differs from its RECORD', self.differ(
+            self.dist('pip', [('d.py', b'z = 2', b'z = 1')])),
+            'an edited pip file was not checked')
+
+    def test_a_missing_file_is_caught(self):
+        self.assertEqual('gone: e.py is missing', self.differ(
+            self.dist('gone', [('e.py', None, b'x')])),
+            'an installed file that is gone was not noticed')
+
+    def test_a_distribution_with_no_record_keeps_nothing(self):
+        bare = types.SimpleNamespace(metadata={'Name': 'bare'}, files=None)
+        self.assertEqual('bare has no RECORD, so its files cannot be checked',
+                         self.differ(bare), 'a distribution with no RECORD '
+                         'was taken as intact')
+
+    def test_only_record_and_pyc_may_go_unhashed(self):
+        self.assertIsNone(self.differ(self.dist('ok', [
+            ('f.py', b'x', b'x'), ('RECORD', b'', None),
+            ('g.cpython-314.pyc', b'', None)])))
+        self.assertEqual('unhashed: h.py has no hash in its RECORD',
+                         self.differ(self.dist('unhashed', [
+                             ('h.py', b'x', None)])),
+                         'a source file listed without a hash was not '
+                         'refused')
+
+    def test_a_hash_it_does_not_check_keeps_nothing(self):
+        self.assertIsNone(self.differ(self.dist(
+            'strong', [('i.py', b'x', b'x')], mode='sha512')))
+        self.assertEqual('weak: j.py is hashed with sha1, which is not '
+                         'checked', self.differ(self.dist(
+                             'weak', [('j.py', b'x', b'x')], mode='sha1')),
+                         'a file hashed with an unchecked algorithm was '
+                         'taken as intact')
+
+    def test_a_file_no_record_lists_is_caught(self):
+        owned = self.dist('owned', [('k.py', b'x', b'x')])
+        self.assertIsNone(self.differ(owned))
+        with open(os.path.join(self.root, 'zz_stray.pth'), 'w') as f:
+            f.write('import os\n')
+        self.assertIn('zz_stray.pth is in ', self.differ(owned) or '',
+                      'a file no RECORD lists went unnoticed')
+        # Except compiled bytecode, which nothing hashes.
+        os.remove(os.path.join(self.root, 'zz_stray.pth'))
+        os.mkdir(os.path.join(self.root, '__pycache__'))
+        open(os.path.join(self.root, '__pycache__', 'k.pyc'), 'wb').close()
+        self.assertIsNone(self.differ(owned))
+
+    @unittest.skipIf(sys.version_info < (3, 11), 'kept verdicts need 3.11')
+    def test_the_gate_holds_installed_files_to_their_records(self):
+        # The gate itself, not only the function: the real pin and lock,
+        # as installed, reach the check.
+        import platform
+        from importlib import metadata
+        from unittest import mock
+        installed = {redproof.normalize(d.metadata['Name']): d.version
+                     for d in metadata.distributions()
+                     if d.metadata['Name']}
+        for own in ('pip', 'schwaby'):
+            installed.pop(own, None)
+        pinned = snapshot({'.python-versions': (
+            platform.python_version() + '\n').encode()})
+        with mock.patch.object(redproof, 'lock_pins', return_value=installed):
+            with mock.patch.object(redproof, 'installed_files_differ',
+                                   return_value='x: y.py differs'):
+                why = redproof.environment_matches_lock(pinned)
+            self.assertEqual('an installed file is not what was installed: '
+                             'x: y.py differs', why,
+                             'the gate does not check installed files')
+            # The positive control: the same gate, this environment as it
+            # is, passes the check.
+            with mock.patch.object(redproof, 'installed_files_differ',
+                                   return_value=None):
+                self.assertIsNone(redproof.environment_matches_lock(pinned))
 
 
 class GroupLockTest(unittest.TestCase):

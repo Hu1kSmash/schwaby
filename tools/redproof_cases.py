@@ -6602,3 +6602,70 @@ CASES.append(
          'tests/redproof_tool_test.py::GroupLockTest'
          '::test_a_group_lock_holds_across_processes',
          'another process could take a held group lock'))
+
+CASES.extend([
+    # Each way a library file can differ from what was installed, one entry
+    # per branch: a check that skips a case is one that keeps a verdict
+    # measured against something else.
+    Case('harness/pip-is-held-to-its-record',
+         'tools/redproof.py',
+         '            owned.add(os.path.realpath(path))\n',
+         # After its files count as owned: a skip before that is refused by
+         # the walk for files no RECORD lists, which proves the walk, not this.
+         '            owned.add(os.path.realpath(path))\n'
+         '            if name == \'pip\':\n                continue\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_pip_is_held_to_its_record',
+         'an edited pip file was not checked'),
+    Case('harness/a-missing-installed-file-keeps-nothing',
+         'tools/redproof.py',
+         "                return '%s: %s is missing' % (name, f)\n",
+         '                continue\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_a_missing_file_is_caught',
+         'an installed file that is gone was not noticed'),
+    Case('harness/no-record-keeps-nothing',
+         'tools/redproof.py',
+         "            return '%s has no RECORD, so its files cannot be "
+         "checked' % name\n",
+         '            continue\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_a_distribution_with_no_record_keeps_nothing',
+         'a distribution with no RECORD was taken as intact'),
+    Case('harness/an-unhashed-source-keeps-nothing',
+         'tools/redproof.py',
+         "                return '%s: %s has no hash in its RECORD' % "
+         "(name, f)\n",
+         '                continue\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_only_record_and_pyc_may_go_unhashed',
+         'a source file listed without a hash was not refused'),
+    Case('harness/an-unchecked-hash-keeps-nothing',
+         'tools/redproof.py',
+         '            if f.hash.mode not in RECORD_HASHES:\n',
+         '            if False:\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_a_hash_it_does_not_check_keeps_nothing',
+         'a file hashed with an unchecked algorithm was taken as intact'),
+    Case('harness/an-unlisted-installed-file-keeps-nothing',
+         'tools/redproof.py',
+         '                if os.path.realpath(path) not in owned:\n',
+         '                if False:\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_a_file_no_record_lists_is_caught',
+         'a file no RECORD lists went unnoticed'),
+    Case('harness/the-gate-checks-installed-files',
+         'tools/redproof.py',
+         '    edited = installed_files_differ(metadata.distributions())\n',
+         '    edited = None\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_the_gate_holds_installed_files_to_their_records',
+         'the gate does not check installed files'),
+    Case('harness/the-key-names-the-standard-library',
+         'tools/redproof.py',
+         "        'stdlib': stdlib_digest(),\n",
+         '',
+         'tests/redproof_tool_test.py::KeyTest'
+         '::test_the_key_names_the_lock_the_harness_and_the_pinned_build',
+         'the key ignores the standard library'),
+])

@@ -79,10 +79,14 @@ and the unmutated baseline it depends on. The copy's files count by their bytes
 as each run found them (the mutation applied in the one, not the other), the
 directories listed by their names, and the paths only checked by what they
 were (file, directory or absent). The interpreter counts as its implementation,
-major.minor version and the build .python-versions pins for it, and the
-installed libraries as requirements.lock, so a verdict is kept or reused only
-when the interpreter is that exact build and the installed set is exactly the
-lock. Never the machine: one store serves every rig. Never kept: a run that
+major.minor version, the release .python-versions pins for it and a digest
+of its standard library's Python sources, and the installed libraries as
+requirements.lock, so a verdict is kept or reused only when the interpreter
+is that exact release and the installed set is exactly the lock, every
+installed file what its RECORD says and nothing in site-packages that no
+RECORD lists. Never the machine: one store serves every rig, and the release
+is not the build, so the compiled parts of another vendor's build of the
+same release pass. Never kept: a run that
 started a process (what a child reads is not recorded), connected beyond
 loopback, read /proc or /sys, read a file outside the copy that may hold a
 secret (whose bytes are never digested), or wrote outside its own temporary
@@ -94,7 +98,9 @@ checked.
 What the audit cannot see, a record cannot key, and these are known: files the
 C library reads for itself (time zone data under TZ, locale files), an
 os.open() relative to a directory descriptor (recorded at the wrong path), and
-a probed path's size or permissions (only its kind is keyed).
+a probed path's size or permissions (only its kind is keyed), and a compiled
+.pyc under site-packages, which no RECORD hashes, read in place of its source
+when its header matches.
 
 A selected entry with a record that still holds is KEPT without running, and
 the record's time is renewed. A record that has not held or been proved for 60
@@ -563,30 +569,90 @@ def environment_matches_lock(snapshot):
     return None
 
 
-def installed_files_differ(distributions):
-    '''The first installed file whose bytes are not what its distribution's
-    RECORD says, as text, or None. The lock pins versions, so a library file
-    edited in place at the same version passed the lock gate and could keep
-    a verdict measured against the original. pip and schwaby are not test
-    dependencies and are skipped, as in the lock comparison.'''
+#: The hashes a RECORD may name that are checked; PEP 376 asks for sha256
+#: or stronger, and a name hashlib does not know is refused, not skipped.
+RECORD_HASHES = ('sha256', 'sha384', 'sha512')
+
+
+def installed_files_differ(distributions, roots=None):
+    '''The first installed file that is not what its distribution's RECORD
+    says, as text, or None. The lock pins versions, so a library file edited
+    in place at the same version passed the lock gate and could keep a
+    verdict measured against the original.
+
+    Fails closed: a distribution with no RECORD, a hash it cannot check, a
+    file listed without a hash (other than RECORD itself and compiled .pyc
+    files, which pip never hashes), and a file under site-packages (`roots`)
+    that no RECORD lists, such as a .pth file dropped in by hand, each keep
+    nothing. pip and schwaby are held to their RECORDs too: both run at every
+    interpreter start, schwaby through its editable finder.'''
     import base64
+    owned = set()
     for dist in distributions:
         name = normalize(dist.metadata['Name'] or '')
-        if name in ('pip', 'schwaby'):
-            continue
-        for f in dist.files or ():
-            if not f.hash or f.hash.mode != 'sha256':
-                continue
+        if dist.files is None:
+            return '%s has no RECORD, so its files cannot be checked' % name
+        for f in dist.files:
+            path = dist.locate_file(f)
+            owned.add(os.path.realpath(path))
+            if not f.hash:
+                if f.name == 'RECORD' or f.name.endswith('.pyc'):
+                    continue
+                return '%s: %s has no hash in its RECORD' % (name, f)
+            if f.hash.mode not in RECORD_HASHES:
+                return '%s: %s is hashed with %s, which is not checked' % (
+                    name, f, f.hash.mode)
             try:
-                with open(dist.locate_file(f), 'rb') as fh:
+                with open(path, 'rb') as fh:
                     data = fh.read()
             except OSError:
                 return '%s: %s is missing' % (name, f)
             digest = base64.urlsafe_b64encode(
-                hashlib.sha256(data).digest()).rstrip(b'=').decode('ascii')
+                hashlib.new(f.hash.mode, data).digest()).rstrip(b'=') \
+                .decode('ascii')
             if digest != f.hash.value:
                 return '%s: %s differs from its RECORD' % (name, f)
+    if roots is None:
+        import sysconfig
+        roots = {sysconfig.get_paths()[k] for k in ('purelib', 'platlib')}
+    for root in sorted({os.path.realpath(r) for r in roots}):
+        for dirpath, dirnames, files in os.walk(root):
+            dirnames[:] = sorted(d for d in dirnames if d != '__pycache__')
+            for f in sorted(files):
+                path = os.path.join(dirpath, f)
+                if os.path.realpath(path) not in owned:
+                    return '%s is in %s but no RECORD lists it' % (
+                        os.path.relpath(path, root), root)
     return None
+
+
+_stdlib_digest = []
+
+
+def stdlib_digest():
+    '''A digest of the standard library's Python sources, for the key.
+    Nothing installs the standard library, so no RECORD holds it, and the
+    pin holds only the release: an edited unittest/case.py kept every
+    verdict. Python sources only, and not the per-architecture
+    _sysconfigdata or config-* files, so it is one value on every rig on the
+    pin (measured equal for 3.14.8's aarch64 and x86_64 builds). The
+    compiled modules are held to the release alone.'''
+    if not _stdlib_digest:
+        import sysconfig
+        root = os.path.realpath(sysconfig.get_paths()['stdlib'])
+        h = hashlib.sha256()
+        for dirpath, dirnames, files in os.walk(root):
+            dirnames[:] = sorted(
+                d for d in dirnames if d not in ('__pycache__', 'site-packages')
+                and not d.startswith('config-'))
+            for f in sorted(files):
+                if f.endswith('.py') and not f.startswith('_sysconfigdata'):
+                    path = os.path.join(dirpath, f)
+                    rel = os.path.relpath(path, root).replace(os.sep, '/')
+                    with open(path, 'rb') as fh:
+                        h.update(rel.encode() + b'\0' + fh.read() + b'\0')
+        _stdlib_digest.append(h.hexdigest())
+    return _stdlib_digest[0]
 
 
 def entry_key(case, snapshot):
@@ -601,6 +667,7 @@ def entry_key(case, snapshot):
         # the old one stands.
         'python': [sys.implementation.name, *sys.version_info[:2],
                    pinned_python(snapshot)],
+        'stdlib': stdlib_digest(),
         'lock': sha(snapshot.content.get(LOCK, b'')),
     }
     return sha(json.dumps(material, sort_keys=True).encode())
