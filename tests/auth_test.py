@@ -5,12 +5,14 @@ from .utils import (
         MockOAuthClient,
         bound_callback_socket,
         free_callback_port,
+        naming_a_port_taken_between_pick_and_bind,
         no_duplicates
 )
 from unittest.mock import patch, ANY, MagicMock
 from unittest.mock import ANY as _
 
 import asyncio
+import socket
 import gc
 import inspect
 import contextlib
@@ -92,6 +94,9 @@ class ClientFromLoginFlowTest(unittest.TestCase):
     @_skip_on_macos_runner
     def test_create_token_file(
             self, mock_webbrowser_get, async_session, sync_session, client):
+        # The exception to holding a test's port: this tests the flow binding
+        # a port by number, the default path, so the port has to be picked
+        # and let go first. A collision in that gap fails by its own name.
         port = free_callback_port()
         AUTH_URL = 'https://auth.url.com'
 
@@ -109,14 +114,43 @@ class ClientFromLoginFlowTest(unittest.TestCase):
 
         client.return_value = 'returned client'
 
-        auth.client_from_login_flow(
-                API_KEY, APP_SECRET, callback_url, self.token_path)
+        with naming_a_port_taken_between_pick_and_bind(self, port):
+            auth.client_from_login_flow(
+                    API_KEY, APP_SECRET, callback_url, self.token_path)
 
         with open(self.token_path, 'r') as f:
             self.assertEqual({
                 'creation_timestamp': MOCK_NOW,
                 'token': self.raw_token
             }, json.load(f))
+
+    @no_duplicates
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @_skip_on_macos_runner
+    def test_a_port_taken_between_pick_and_bind_is_named(
+            self, mock_webbrowser_get):
+        # The two tests above and below pick a port and let it go before the
+        # flow binds it. Something taking it in between must read as that,
+        # not as the flow failing -- and only then.
+        port = free_callback_port()
+        taker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.addCleanup(taker.close)
+        taker.bind(('127.0.0.1', port))
+
+        # A real flow, whose server finds the port taken.
+        with self.assertRaisesRegex(
+                AssertionError, 'port taken between pick and bind'):
+            with naming_a_port_taken_between_pick_and_bind(self, port):
+                auth.client_from_login_flow(
+                        API_KEY, APP_SECRET,
+                        f'https://127.0.0.1:{port}/callback', self.token_path)
+        mock_webbrowser_get.assert_not_called()
+
+        # The same failure on a port nobody holds is let through as it was.
+        taker.close()
+        with self.assertRaises(auth.RedirectServerExitedError):
+            with naming_a_port_taken_between_pick_and_bind(self, port):
+                raise auth.RedirectServerExitedError('exited')
 
     @no_duplicates
     @patch('schwaby.auth.Client')
@@ -128,6 +162,9 @@ class ClientFromLoginFlowTest(unittest.TestCase):
     @_skip_on_macos_runner
     def test_the_callback_server_has_exited_when_the_flow_returns(
             self, mock_webbrowser_get, async_session, sync_session, client):
+        # The exception to holding a test's port: this tests the flow binding
+        # a port by number, the default path, so the port has to be picked
+        # and let go first. A collision in that gap fails by its own name.
         port = free_callback_port()
         # A killed server holds the port until it has actually exited, so a
         # second flow started straight after found the port taken. Exited
@@ -155,7 +192,8 @@ class ClientFromLoginFlowTest(unittest.TestCase):
             real_start(process)
             started.append(process.pid)
 
-        with patch.object(multiprocess.Process, 'start', start):
+        with patch.object(multiprocess.Process, 'start', start), \
+                naming_a_port_taken_between_pick_and_bind(self, port):
             auth.client_from_login_flow(
                     API_KEY, APP_SECRET, f'https://127.0.0.1:{port}/callback',
                     self.token_path)

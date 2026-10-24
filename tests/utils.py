@@ -2,6 +2,7 @@ from colorama import Fore, Back, Style, init
 from unittest.mock import AsyncMock, MagicMock
 
 import asyncio
+import contextlib
 import difflib
 import inspect
 import httpx2
@@ -22,6 +23,34 @@ def free_callback_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('127.0.0.1', 0))
         return s.getsockname()[1]
+
+
+@contextlib.contextmanager
+def naming_a_port_taken_between_pick_and_bind(test, port):
+    '''For the tests of a login flow binding a port by number, which have to
+    pick a free one and let it go first. If the flow's server exits and the
+    port turns out to be held by something else, that is a collision in the
+    gap between the pick and the bind, and the test fails saying so rather
+    than as a failure of the flow. A port nobody holds lets the error through
+    as it was.'''
+    from schwaby.auth import RedirectServerExitedError
+    try:
+        yield
+    except RedirectServerExitedError:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            # A port left in TIME_WAIT by the test's own requests is not
+            # held. Not on Windows, where the option lets a bind take a port
+            # someone is listening on.
+            if os.name != 'nt':
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(('127.0.0.1', port))
+            except OSError:
+                test.fail('port taken between pick and bind: something else '
+                          'held port {} when the callback server tried to '
+                          'bind it, so this is a collision, not a failure '
+                          'of the login flow'.format(port))
+        raise
 
 
 def bound_callback_socket():

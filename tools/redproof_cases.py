@@ -130,6 +130,27 @@ CASES = [
          '::test_a_held_socket_must_be_bound_to_the_callback_port',
          "'int' object has no attribute 'family'"),
 
+    # The two tests of the flow binding a port by number pick one and let it
+    # go first. A collision in that gap fails by its own name, and only a
+    # collision does.
+    Case('tests/a-port-taken-between-pick-and-bind-is-named',
+         'tests/utils.py',
+         "            except OSError:\n"
+         "                test.fail('port taken between pick and bind: ",
+         "            except ZeroDivisionError:\n"
+         "                test.fail('port taken between pick and bind: ",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_port_taken_between_pick_and_bind_is_named',
+         'RedirectServerExitedError'),
+
+    Case('tests/a-free-port-is-not-called-taken',
+         'tests/utils.py',
+         "                s.bind(('127.0.0.1', port))\n            except OSError:",
+         "                raise OSError\n            except OSError:",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_port_taken_between_pick_and_bind_is_named',
+         'port taken between pick and bind'),
+
     # 'Invalid Service' is Schwab's error label. Reported as a new service it
     # asked for an issue, which sent a reader looking for one to support.
     Case('streaming/invalid-service-is-not-a-new-service',
