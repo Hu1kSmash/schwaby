@@ -76,6 +76,20 @@ _CHANGES = {
 }
 
 
+def _fd_path(fd):
+    '''The path a directory descriptor names: through /proc on Linux, and
+    fcntl's F_GETPATH where there is no /proc (macOS), where a write
+    relative to one went unplaced.'''
+    try:
+        return os.readlink('/proc/self/fd/%d' % fd)
+    except OSError:
+        import fcntl
+        if not hasattr(fcntl, 'F_GETPATH'):
+            raise
+        path = fcntl.fcntl(fd, fcntl.F_GETPATH, bytes(1024))
+        return os.fsdecode(path.split(b'\0', 1)[0])
+
+
 def _at(value, dir_fd=None):
     '''The absolute path an event names; None for a file descriptor, whose
     open was recorded when it was made; '' when it cannot be worked out.'''
@@ -84,7 +98,7 @@ def _at(value, dir_fd=None):
     try:
         name = os.fsdecode(os.fspath(value))
         if isinstance(dir_fd, int) and dir_fd >= 0 and not os.path.isabs(name):
-            name = os.path.join(os.readlink('/proc/self/fd/%d' % dir_fd), name)
+            name = os.path.join(_fd_path(dir_fd), name)
         return os.path.abspath(name)
     except Exception:
         return ''
@@ -104,7 +118,7 @@ def _identity(value, dir_fd=None, links=False):
             fd = dir_fd if isinstance(dir_fd, int) and dir_fd >= 0 else None
             if not links and os.path.islink(
                     value if fd is None else os.path.join(
-                        os.readlink('/proc/self/fd/%d' % fd), value)):
+                        _fd_path(fd), value)):
                 return
             st = os.stat(value, dir_fd=fd)
     except Exception:

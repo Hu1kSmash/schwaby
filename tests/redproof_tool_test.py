@@ -279,7 +279,9 @@ class TrackedWritesTest(unittest.TestCase):
         # spelling.
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        real = os.path.join(tmp.name, 'real')
+        # Resolved: the temporary directory may itself be under a link
+        # (/var is one on macOS), and the write must name the real path.
+        real = os.path.join(os.path.realpath(tmp.name), 'real')
         os.makedirs(os.path.join(real, 'copy'))
         os.symlink(real, os.path.join(tmp.name, 'link'))
         copy = os.path.join(tmp.name, 'link', 'copy')
@@ -443,6 +445,13 @@ class RunRecordTest(unittest.TestCase):
                            'unresolved': []}, f)
             return result(1, 'E   expected')
 
+
+        with mock.patch.object(redproof, 'run_tests', run_tests):
+            _, changed, unchecked = run.run(['tests/x_test.py'])
+        self.assertEqual(['schwaby/x.py'], changed,
+                         'a write the hook recorded was dropped')
+        self.assertIsNone(unchecked)
+
         def by_identity(work, copy, nodes, audit, record, **kwargs):
             # Written under another name: only the file's identity says so.
             st = os.stat(os.path.join(copy, 'schwaby', 'x.py'))
@@ -454,12 +463,6 @@ class RunRecordTest(unittest.TestCase):
         with mock.patch.object(redproof, 'run_tests', by_identity):
             self.assertEqual(['schwaby/x.py'], run.run(['tests/x_test.py'])[1],
                              'a write the hook knew by identity was dropped')
-
-        with mock.patch.object(redproof, 'run_tests', run_tests):
-            _, changed, unchecked = run.run(['tests/x_test.py'])
-        self.assertEqual(['schwaby/x.py'], changed,
-                         'a write the hook recorded was dropped')
-        self.assertIsNone(unchecked)
 
         # A run that left no record, and one whose writes the hook could
         # not all place: neither is a run with no writes.
@@ -1006,7 +1009,8 @@ with open(sys.argv[1], 'w') as f:
         print('taken')
     except BlockingIOError:
         print('held')
-''', os.readlink('/proc/self/fd/%d' % fd)], capture_output=True, text=True)
+''', os.path.join(tmp.name, redproof.sha(b'callback-port')[:16])],
+                    capture_output=True, text=True)
                 seen.append(probe.stdout.strip())
             return result(0, '1 passed')
 

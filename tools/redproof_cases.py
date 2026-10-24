@@ -6369,7 +6369,7 @@ HARNESS_REVIEW_CASES = [
          '    return []',
          'tests/redproof_tool_test.py::SnapshotTest'
          '::test_untracked_secret_names_are_left_out',
-         'would be copied and digested'),
+         'an untracked secret-named file would be copied'),
     Case('harness/a-renewal-does-not-undo-a-tombstone',
          'tools/redproof.py',
          "            return new if cls.when(new, 'proved') > cls.when(current) "
@@ -7220,8 +7220,8 @@ CASES.extend([
     # Writes known by the file they touched, not only its name.
     Case('audit/a-write-through-a-link-is-the-files',
          'tools/redproof_audit.py',
-         '            _identity(args[0], links=True)\n',
-         '            pass\n',
+         '        _identity(args[0], links=True)\n',
+         '        pass\n',
          'tests/redproof_tool_test.py::AuditTest'
          '::test_a_write_put_back_is_recorded_and_a_read_is_not',
          'a write through a symlink was not recorded'),
