@@ -602,6 +602,61 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         self.assertEqual(('127.0.0.1', self.port), self.socket.getsockname())
 
     @no_duplicates
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    @_skip_on_macos_runner
+    def test_a_redirect_for_another_login_is_ignored(
+            self, mock_webbrowser_get, async_session, sync_session, client):
+        # A held socket queues connections between flows, so a browser
+        # finishing an earlier login reaches the next one. Taken, its code
+        # would be refused for its state after this login's was spent.
+        sync_session.return_value = sync_session
+        sync_session.create_authorization_url.return_value = (
+                'https://auth.url.com', 'THIS_LOGIN')
+        sync_session.fetch_token.return_value = self.raw_token
+        base = f'https://127.0.0.1:{self.port}/callback'
+
+        def browser(auth_url):
+            requests.get(base + '?code=EARLIER&state=EARLIER_LOGIN',
+                         verify=False)
+            requests.get(base + '?code=c&state=THIS_LOGIN', verify=False)
+
+        controller = MagicMock()
+        mock_webbrowser_get.return_value = controller
+        controller.open.side_effect = browser
+
+        with self.assertLogs('schwaby.auth', level='WARNING') as logged:
+            auth.client_from_login_flow(
+                    API_KEY, APP_SECRET, base, self.token_path,
+                    callback_socket=self.socket)
+            # Inside the block, so a flow that took the earlier login's
+            # redirect fails here rather than on the missing warning.
+            exchanged = sync_session.fetch_token.call_args.kwargs[
+                    'authorization_response']
+            self.assertIn('state=THIS_LOGIN', exchanged)
+        self.assertTrue(any('belongs to a different login' in line
+                            for line in logged.output))
+
+    @no_duplicates
+    def test_only_a_redirect_naming_another_state_is_ignored(self):
+        # One naming no state is taken, so the exchange refuses it by name
+        # rather than the flow waiting until it times out.
+        base = 'https://127.0.0.1:8182/callback?code=c'
+        for url, state, ignored in (
+                (base + '&state=OTHER', 'THIS', True),
+                (base + '&state=THIS', 'THIS', False),
+                (base, 'THIS', False),
+                (base + '&state=', 'THIS', False),
+                (base + '&state=OTHER', None, False)):
+            with self.subTest(url=url, state=state):
+                self.assertEqual(
+                        ignored, auth._carries_another_state(url, state))
+
+    @no_duplicates
     @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
     def test_a_held_socket_must_be_bound_to_the_callback_port(
             self, mock_webbrowser_get):

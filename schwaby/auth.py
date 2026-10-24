@@ -741,6 +741,20 @@ def __run_client_from_login_flow_server(
 class RedirectTimeoutError(SchwabError):
     pass
 
+
+def _carries_another_state(received_url, state):
+    '''Whether a redirect names a ``state`` other than this login's. One that
+    names none is not ignored: the exchange refuses it by name, where
+    ignoring it would only time out.'''
+    if state is None:
+        return False
+    try:
+        received = urllib.parse.parse_qs(
+                urllib.parse.urlparse(received_url).query).get('state')
+    except (TypeError, ValueError):
+        return False
+    return bool(received) and received[0] != state
+
 class RedirectServerExitedError(SchwabError):
     pass
 
@@ -818,7 +832,11 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
                             moment it chooses it, so that nothing else can
                             take it before the server starts. The flow puts
                             it in the listening state, and leaves it open:
-                            closing it is the caller's.
+                            closing it is the caller's. Until it is closed it
+                            goes on queueing connections, so a browser
+                            finishing this login late reaches the next flow
+                            served on it. A redirect for a different login,
+                            told by its ``state``, is ignored, on either path.
     '''
     api_key = __normalize_credential(api_key, 'api_key')
     app_secret = __normalize_credential(app_secret, 'app_secret')
@@ -1030,9 +1048,20 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
             try:
                 received_url = output_queue.get(
                         timeout=min(timeout_time - now, 0.1))
-                break
             except queue.Empty:
-                pass
+                continue
+            # A browser finishing an earlier login reaches this server too:
+            # a held socket queues connections between flows, and a port is
+            # the same port to a retried tab. Its state is that login's, and
+            # the exchange would refuse it after spending this one.
+            if _carries_another_state(received_url, auth_context.state):
+                get_logger().warning(
+                        'Ignoring a redirect to the callback URL whose state '
+                        'belongs to a different login; still waiting for '
+                        'this one\'s.')
+                received_url = None
+                continue
+            break
 
         if not received_url:
             raise RedirectTimeoutError(

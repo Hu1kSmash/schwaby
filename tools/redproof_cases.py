@@ -151,6 +151,35 @@ CASES = [
          '::test_a_port_taken_between_pick_and_bind_is_named',
          'port taken between pick and bind'),
 
+    # A redirect for another login reaching the flow, which a held socket
+    # makes ordinary, is skipped rather than exchanged; one naming no state
+    # is still exchanged, and refused there by name.
+    Case('auth/a-redirect-for-another-login-is-skipped',
+         'schwaby/auth.py',
+         "            if _carries_another_state(received_url, auth_context.state):",
+         "            if False:",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_redirect_for_another_login_is_ignored',
+         "'state=THIS_LOGIN' not found"),
+
+    Case('auth/a-redirect-naming-no-state-is-not-skipped',
+         'schwaby/auth.py',
+         "    return bool(received) and received[0] != state\n",
+         "    return not received or received[0] != state\n",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_only_a_redirect_naming_another_state_is_ignored',
+         'False != True'),
+
+    Case('auth/a-login-with-no-state-skips-nothing',
+         'schwaby/auth.py',
+         "    if state is None:\n        return False\n    try:\n"
+         "        received = urllib.parse.parse_qs(",
+         "    try:\n"
+         "        received = urllib.parse.parse_qs(",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_only_a_redirect_naming_another_state_is_ignored',
+         'False != True'),
+
     # 'Invalid Service' is Schwab's error label. Reported as a new service it
     # asked for an issue, which sent a reader looking for one to support.
     Case('streaming/invalid-service-is-not-a-new-service',
