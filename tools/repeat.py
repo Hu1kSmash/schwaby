@@ -24,21 +24,40 @@ name, as having run out of time. Exit status 0 only when every run passed.
 
 import argparse
 import os
-import re
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN_LIMIT = 900
 
-# A short-summary line: FAILED, ERROR or SUBFAILED(...) (a failing subTest),
-# the node id, which a parametrize id can put spaces in, and an optional
-# " - message"
-_FAILED = re.compile(
-    r'^(?:SUB)?(?:FAILED|ERROR)(?:\([^)]*\))? (.+?)(?: - .*)?$', re.MULTILINE)
+# Loaded into each pytest run with -p: it writes the node id of every failing
+# report, collection errors and failing subTests included, to the file
+# REPEAT_FAILURES names. Asked of pytest rather than read from its summary,
+# whose lines a subTest label, a parametrize id or a test's own captured
+# output can each make ambiguous.
+PLUGIN = '''import os
+
+
+def _note(report):
+    if report.failed:
+        with open(os.environ['REPEAT_FAILURES'], 'a', encoding='utf-8') as f:
+            f.write(report.nodeid + '\\n')
+
+
+def pytest_runtest_logreport(report):
+    _note(report)
+
+
+def pytest_collectreport(report):
+    _note(report)
+'''
+PLUGIN_NAME = '_repeat_failures'
+
 # The pytest run under way, so a signal can stop it too: it is in a session
 # of its own, so neither a terminal's Ctrl-C nor the load's cleanup reaches it.
 _running = []
@@ -52,16 +71,27 @@ def usable_cpus():
     return os.cpu_count() or 1
 
 
-def failures(output):
-    '''The node ids pytest's short summary names as failed or erroring.'''
-    return sorted(set(_FAILED.findall(output)))
+def failures(path):
+    '''The node ids the plugin wrote: every failing test once.'''
+    try:
+        with open(path, encoding='utf-8') as f:
+            return sorted(set(line.rstrip('\n') for line in f if line.strip()))
+    except FileNotFoundError:
+        return []
 
 
-def run_once(nodes):
-    '''(passed, failed node ids, seconds, peak bytes, why it has no status)'''
-    argv = [sys.executable, '-m', 'pytest', '-q', '-rfE',
-            '-p', 'no:cacheprovider'] + nodes
-    env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1')
+def run_once(nodes, workdir):
+    '''(passed, failed node ids, seconds, peak bytes, why it has no status).
+    workdir holds the plugin and this run's list of failures.'''
+    found = os.path.join(workdir, 'failures.txt')
+    if os.path.exists(found):
+        os.remove(found)
+    argv = [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider',
+            '-p', PLUGIN_NAME] + nodes
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', REPEAT_FAILURES=found,
+               PYTHONPATH=os.pathsep.join(
+                   [workdir] + ([os.environ['PYTHONPATH']]
+                                if os.environ.get('PYTHONPATH') else [])))
     started = time.monotonic()
     proc = subprocess.Popen(argv, cwd=ROOT, env=env, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -80,6 +110,8 @@ def run_once(nodes):
         _, status, usage = os.wait4(proc.pid, 0)
     finally:
         timer.cancel()
+        # Reaped: its pid may be reused, so a signal must not be sent to it.
+        _running.clear()
     proc.returncode = os.waitstatus_to_exitcode(status)
     try:
         os.killpg(proc.pid, signal.SIGKILL)
@@ -92,7 +124,7 @@ def run_once(nodes):
     if proc.returncode < 0:
         return False, nodes, seconds, peak, 'killed by %s' % (
             signal.Signals(-proc.returncode).name)
-    failed = failures(output)
+    failed = failures(found)
     if proc.returncode != 0 and not failed:
         # Failed without naming a test: a collection error, a crash. Counted,
         # and the end of the output says what it was.
@@ -126,15 +158,9 @@ def main(argv):
     args = parser.parse_args(argv)
 
     load = []
-    if args.load:
-        load = start_load(usable_cpus())
-    print('repeat: %d runs of %s on Python %s, %s' % (
-        args.runs, ' '.join(args.nodes), sys.version.split()[0],
-        '%d cores kept busy' % len(load) if load else 'no added load'),
-        flush=True)
 
     def stop(signum, frame):
-        for proc in _running:
+        for proc in list(_running):
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
             except ProcessLookupError:
@@ -142,15 +168,28 @@ def main(argv):
         stop_load(load)
         raise SystemExit(128 + signum)
 
+    # Before the load starts: a signal while it starts must stop what has.
     for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(s, stop)
+
+    workdir = tempfile.mkdtemp(prefix='schwaby-repeat-')
+    with open(os.path.join(workdir, PLUGIN_NAME + '.py'), 'w',
+              encoding='utf-8') as f:
+        f.write(PLUGIN)
+    if args.load:
+        for _ in range(usable_cpus()):
+            load.extend(start_load(1))
+    print('repeat: %d runs of %s on Python %s, %s' % (
+        args.runs, ' '.join(args.nodes), sys.version.split()[0],
+        '%d cores kept busy' % len(load) if load else 'no added load'),
+        flush=True)
 
     counts = {}
     failed_runs = 0
     peak = 0
     try:
         for i in range(1, args.runs + 1):
-            ok, failed, seconds, run_peak, why = run_once(args.nodes)
+            ok, failed, seconds, run_peak, why = run_once(args.nodes, workdir)
             peak = max(peak, run_peak)
             if ok:
                 print('[%d/%d] passed  (%.1f s)' % (i, args.runs, seconds),
@@ -164,6 +203,7 @@ def main(argv):
                 ('  [%s]' % why) if why else ''), flush=True)
     finally:
         stop_load(load)
+        shutil.rmtree(workdir, ignore_errors=True)
 
     print('repeat: largest run %d MiB' % (peak >> 20))
     print('repeat: %d of %d runs failed%s' % (
