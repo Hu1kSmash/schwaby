@@ -152,6 +152,23 @@ class ClientFromLoginFlowTest(unittest.TestCase):
             with naming_a_port_taken_between_pick_and_bind(self, port):
                 raise auth.RedirectServerExitedError('exited')
 
+        # And on one a process this test started holds, which is the flow's
+        # own server outliving it: a defect, not a collision.
+        import subprocess
+        import sys
+        child = subprocess.Popen(
+                [sys.executable, '-c',
+                 'import socket, sys; s = socket.socket(); '
+                 's.bind(("127.0.0.1", {})); s.listen(); print("bound"); '
+                 'sys.stdout.flush(); sys.stdin.read()'.format(port)],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        self.addCleanup(child.wait)
+        self.addCleanup(child.stdin.close)
+        self.assertEqual('bound', child.stdout.readline().strip())
+        with self.assertRaises(auth.RedirectServerExitedError):
+            with naming_a_port_taken_between_pick_and_bind(self, port):
+                raise auth.RedirectServerExitedError('exited')
+
     @no_duplicates
     @patch('schwaby.auth.Client')
     @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)

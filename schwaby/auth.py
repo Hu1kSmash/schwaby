@@ -963,10 +963,12 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
                 # self-signed certificate. httpx2 says nothing about that; the
                 # suppression which used to sit here was for a urllib3 warning
                 # that never reached this code.
-                # A short connect timeout: a held socket is listening
-                # before the server is, so a probe gets into its queue and
-                # waits for a handshake nobody answers, five seconds by
-                # default, which also ran past the startup deadline.
+                # A short connect timeout. A socket can be listening before
+                # its server answers -- a held one from before the server
+                # starts, and werkzeug's own while it builds the certificate
+                # -- so a probe gets into its queue and waits for a handshake
+                # nobody answers: five seconds by default, which also ran
+                # past the startup deadline. A timeout is retried.
                 resp = httpx2.get(
                         'https://127.0.0.1:{}{}'.format(
                             callback_port, INTERNAL_STATUS_PATH),

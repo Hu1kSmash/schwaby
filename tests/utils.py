@@ -47,6 +47,10 @@ def naming_a_port_taken_between_pick_and_bind(test, port):
     try:
         yield
     except RedirectServerExitedError:
+        if _a_child_holds(port):
+            # The flow's own server, outliving the flow: a defect of the
+            # flow, which must not read as a collision.
+            raise
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             # A port left in TIME_WAIT by the test's own requests is not
             # held. Not on Windows, where the option lets a bind take a port
@@ -61,6 +65,23 @@ def naming_a_port_taken_between_pick_and_bind(test, port):
                           'bind it, so this is a collision, not a failure '
                           'of the login flow'.format(port))
         raise
+
+
+def _a_child_holds(port):
+    '''Whether a process this one started holds ``port``. A child that
+    cannot be read is taken as not holding it.'''
+    import psutil
+    for child in psutil.Process().children(recursive=True):
+        try:
+            # net_connections from psutil 6.0, connections before it.
+            connections = getattr(child, 'net_connections',
+                                  getattr(child, 'connections', None))(
+                                          kind='tcp')
+        except psutil.Error:
+            continue
+        if any(c.laddr and c.laddr.port == port for c in connections):
+            return True
+    return False
 
 
 def bound_callback_socket():

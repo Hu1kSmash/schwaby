@@ -151,7 +151,19 @@ CASES = [
          "                test.fail('port taken between pick and bind: ",
          'tests/auth_test.py::ClientFromLoginFlowTest'
          '::test_a_port_taken_between_pick_and_bind_is_named',
-         'RedirectServerExitedError'),
+         # The probe's own bind failing, uncaught: the server's error is
+         # only the context it was raised in.
+         'Address already in use'),
+
+    # The flow's own server outliving it holds the port too; that is a defect
+    # of the flow, and is not named a collision.
+    Case('tests/the-flows-own-server-is-not-called-a-collision',
+         'tests/utils.py',
+         "        if _a_child_holds(port):\n",
+         "        if False:\n",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_port_taken_between_pick_and_bind_is_named',
+         'port taken between pick and bind'),
 
     Case('tests/a-free-port-is-not-called-taken',
          'tests/utils.py',
