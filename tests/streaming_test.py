@@ -9984,6 +9984,55 @@ class StreamClientTest(IsolatedAsyncioTestCase):
 
     @no_duplicates
     @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
+    async def test_invalid_service_is_reported_as_schwabs_error(
+            self, ws_connect):
+        """`'Invalid Service'` is Schwab's error label, seen once in the
+        second before it closed a connection. The unknown-service warning
+        asked for an issue about it, which sent a reader looking for a
+        service to support.
+
+        The frame was never captured, so these fixtures are synthetic: the
+        name as it was logged, on each channel a service is routed from.
+        """
+        streaming._reported_fields.clear()
+        socket = await self.login_and_get_socket(ws_connect)
+        reported = []
+        self.client.add_error_handler(
+                lambda service, exc, msg: reported.append((service, exc)))
+        frames = [{'data': [{'service': 'Invalid Service', 'command': 'SUBS',
+                             'content': [{'key': 'F'}]}]},
+                  {'notify': [{'service': 'Invalid Service'}]},
+                  # Positive control: a name this version does not know still
+                  # gets the request for an issue, one with "invalid" in it
+                  # included -- the marker is matched exactly.
+                  {'data': [{'service': 'SVC_INVALID', 'command': 'SUBS',
+                             'content': [{'key': 'F'}]}]}]
+        socket.recv.side_effect = [json.dumps(f) for f in frames]
+        with self.assertLogs(streaming.get_logger(), level='WARNING') as got:
+            for _ in frames:
+                await self.client.handle_message()
+        await self.client._drain_pending_reports()
+
+        invalid = [line for line in got.output if 'Invalid Service' in line]
+        self.assertEqual(2, len(invalid))
+        for line in invalid:
+            with self.subTest(line=line):
+                self.assertIn("Schwab\'s error", line)
+                self.assertNotIn('open an issue', line)
+                self.assertNotIn('does not know', line)
+        self.assertTrue(any('SVC_INVALID' in line and 'open an issue' in line
+                            for line in got.output))
+
+        # Still reported, as the type a consumer already branches on, with
+        # the name as the service.
+        self.assertEqual(['Invalid Service', 'Invalid Service', 'SVC_INVALID'],
+                         [service for service, _ in reported])
+        for _, exc in reported:
+            self.assertIsInstance(exc, streaming.UnusableMessage)
+        streaming._reported_fields.clear()
+
+    @no_duplicates
+    @patch('schwaby.streaming.ws_client.connect', new_callable=AsyncMock)
     async def test_every_unknown_channel_is_named_at_least_once(
             self, ws_connect):
         streaming._reported_fields.clear()

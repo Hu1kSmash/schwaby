@@ -141,6 +141,12 @@ _KNOWN_SERVICES = frozenset((
     'SCREENER_OPTION',
 ))
 
+#: What Schwab has sent in place of a service name: an error label, not a
+#: service. Seen once, in the second before Schwab closed the connection, and
+#: documented nowhere. Matched exactly, since a real service could one day
+#: have "invalid" in its name.
+_INVALID_SERVICE = 'Invalid Service'
+
 #: The compartments a frame is made of. Anything else at the top level is a
 #: channel this version does not read, which means a whole class of message
 #: is being dropped rather than one field being unnamed.
@@ -1738,6 +1744,10 @@ class StreamClient(EnumEnforcer):
           or a frame carrying a whole channel it does not read. An unknown
           service populates ``service``; an unread channel does not, because
           a channel is not one --- its names are on ``message`` instead.
+          Schwab's ``'Invalid Service'``, which it has sent in place of a
+          service name in the second before closing a connection, arrives
+          the same way with that as ``service``, and is logged as Schwab's
+          error rather than as a service to support.
           Those last two are messages this
           client drops because Schwab added something rather than because
           anything is malformed, and they are the ones a consumer cannot see
@@ -1969,6 +1979,18 @@ class StreamClient(EnumEnforcer):
             # got hardened while the data path did not.
             self._absorb('a message whose service is not a name', service,
                          frame=msg)
+            return
+
+        if service == _INVALID_SERVICE:
+            # Not a service Schwab added, so not reported as one: the warning
+            # for a new service asks for an issue, and sent a reader looking
+            # for something to support. Dropped and reported all the same,
+            # since a handler watching the stream needs to know the venue
+            # said something was wrong.
+            self._absorb('a message naming Schwab\'s error "Invalid Service" '
+                         'in place of a service, which Schwab has sent just '
+                         'before closing the connection',
+                         service, frame=msg, service=service)
             return
 
         if service is not None and service not in _KNOWN_SERVICES:

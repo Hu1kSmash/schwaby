@@ -70,6 +70,26 @@ CASES = [
          'extra',
          removed=('schwaby/_optional.py was deleted in 3.0.0 with the extras machinery.')),
 
+    # 'Invalid Service' is Schwab's error label. Reported as a new service it
+    # asked for an issue, which sent a reader looking for one to support.
+    Case('streaming/invalid-service-is-not-a-new-service',
+         'schwaby/streaming.py',
+         '        if service == _INVALID_SERVICE:',
+         '        if False:',
+         'tests/streaming_test.py::StreamClientTest'
+         '::test_invalid_service_is_reported_as_schwabs_error',
+         '2 != 3'),
+
+    # Matched exactly: a real service could have "invalid" in its name.
+    Case('streaming/invalid-service-is-matched-exactly',
+         'schwaby/streaming.py',
+         '        if service == _INVALID_SERVICE:',
+         "        if 'invalid' in str(service).lower():",
+         'tests/streaming_test.py::StreamClientTest'
+         '::test_invalid_service_is_reported_as_schwabs_error',
+         # The control's line is logged as the marker's, a third.
+         '2 != 3'),
+
     Case('streaming/element-zero-unclaimed',
          'schwaby/streaming.py',
          '            first_unclaimed = 0',
