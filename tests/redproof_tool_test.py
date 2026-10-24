@@ -298,6 +298,32 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual('RED?', self.judge(crashed, expect='protocol=')[0],
                          'an entry matched on a label the test chose')
 
+    def test_a_rewritten_asserts_quoted_expression_is_not_what_failed(self):
+        # What pytest prints for `assert r != 0 or 'expected' == ''`: the
+        # expression, quoted from the source, with the literal in it.
+        bare = '\n'.join([
+            self.section('test_other',
+                         "E       AssertionError: assert (0 != 0 or "
+                         "'expected' == ''",
+                         'E         ',
+                         "E         + expected)"),
+            '1 failed'])
+        self.assertEqual('RED?', self.judge(bare)[0],
+                         "an assert's quoted expression was taken for what "
+                         'failed')
+        # The positive control: an assert's own message still counts, and
+        # the explanation under it does not.
+        with_message = '\n'.join([
+            self.section('test_real', 'E       AssertionError: expected',
+                         'E       assert 3 == 4'),
+            '1 failed'])
+        self.assertEqual('PROVEN', self.judge(with_message)[0])
+        other = '\n'.join([
+            self.section('test_other', 'E       AssertionError: the count',
+                         "E       assert (0 == 1 and 'expected' != '')"),
+            '1 failed'])
+        self.assertEqual('RED?', self.judge(other)[0])
+
     def test_a_subtest_failure_message_counts(self):
         out = '\n'.join([self.section('T.test_x (i=1)',
                                        'E   AssertionError: expected 3'),

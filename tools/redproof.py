@@ -222,10 +222,12 @@ _CAPTURED = re.compile(r'^-{3,} Captured ')
 def failure_sections(output):
     '''[(title, what it says)] for each failure pytest reports: the header
     naming the test (and the subtest, if one failed) and the `E` lines of its
-    traceback. Not the source lines pytest echoes, not node ids, not a
-    test's captured output: any of those can contain an entry's `expect`
-    whatever actually failed, which made a failure on the wrong assertion
-    read as PROVEN. `E` lines outside any section count, untitled.'''
+    traceback, less the explanation assertion rewriting adds. Not the source
+    lines pytest echoes, not node ids, not a test's captured output, not a
+    rewritten assert's quoted expression: any of those can contain an
+    entry's `expect` whatever actually failed, which made a failure on the
+    wrong assertion read as PROVEN. `E` lines outside any section count,
+    untitled.'''
     sections = [['', []]]
     current = sections[0]
     for line in output.splitlines():
@@ -239,7 +241,32 @@ def failure_sections(output):
             current = ['', []]      # read, and counted nowhere
         elif line.startswith('E '):
             current[1].append(line[2:])
-    return [(title, '\n'.join(said)) for title, said in sections if said]
+    return [(title, '\n'.join(without_explanation(said)))
+            for title, said in sections if said]
+
+
+def without_explanation(lines):
+    '''A failure's E lines without the explanation pytest's assertion
+    rewriting adds: the `assert <expression>` line and the more-indented
+    lines under it. That explanation quotes the failing expression from the
+    source, so an expect written as a literal in some other assert matched
+    whatever that assert's failure was. A plain `assert` with no message
+    therefore says nothing an entry can match; its message, when it has one,
+    is the line before.'''
+    kept = []
+    skipping_below = None
+    for line in lines:
+        text = line.lstrip()
+        indent = len(line) - len(text)
+        if skipping_below is not None and (not text or indent > skipping_below):
+            continue
+        skipping_below = None
+        if text.startswith('assert ') or text.startswith(
+                'AssertionError: assert '):
+            skipping_below = indent
+            continue
+        kept.append(line)
+    return kept
 
 
 def failed_on(case, output):

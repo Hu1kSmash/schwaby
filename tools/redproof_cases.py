@@ -6551,3 +6551,16 @@ CASES.append(
          'tests/light_check_test.py::LightCheckTest'
          '::test_code_that_parses_but_does_not_compile_is_refused',
          'a file Python cannot compile was let through'))
+
+CASES.append(
+    # Found in another project's harness and reproduced here: assertion
+    # rewriting quotes the failing expression, so an expect that is a literal
+    # in another assert matched that assert's failure.
+    Case('harness/a-rewritten-asserts-expression-is-not-what-failed',
+         'tools/redproof.py',
+         "        if text.startswith('assert ') or text.startswith(\n"
+         "                'AssertionError: assert '):\n",
+         '        if False:\n',
+         'tests/redproof_tool_test.py::JudgeTest'
+         '::test_a_rewritten_asserts_quoted_expression_is_not_what_failed',
+         "quoted expression was taken for what failed"))
