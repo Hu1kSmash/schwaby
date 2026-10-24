@@ -1509,12 +1509,24 @@ class StoredTokenShapeTest(unittest.TestCase):
             with self.assertRaises(TypeError):
                 self.build(dict(base, expires_at=[1], expires_in=1800))
             gc.collect()
-        self.assertEqual([], [
-            u for u in unraisable
-            if str(u.exc_value) != "'OAuth2Auth' object has no attribute "
-                                   "'client'"],
-            'building from a token authlib refuses left something else '
-            'failing in a __del__')
+        self.assertEqual([], [u for u in unraisable
+                              if not self.is_authlibs_half_built_auth(u)],
+                         'building from a token authlib refuses left '
+                         'something else failing in a __del__')
+
+    @staticmethod
+    def is_authlibs_half_built_auth(unraisable):
+        # By where it was raised, not by its message: 3.10 words this
+        # AttributeError as just 'client', and 3.14 no longer names the
+        # __del__ in the hook's `object`. The innermost frame is the same on
+        # every version.
+        tb = unraisable.exc_traceback
+        while tb is not None and tb.tb_next is not None:
+            tb = tb.tb_next
+        return (unraisable.exc_type is AttributeError and tb is not None
+                and tb.tb_frame.f_code.co_name == '__del__'
+                and tb.tb_frame.f_code.co_filename.endswith(
+                    os.path.join('authlib', 'oauth2', 'auth.py')))
 
     @no_duplicates
     def test_expires_in_without_expires_at_refreshes_on_the_first_call(self):
