@@ -7279,7 +7279,10 @@ class StreamClientTest(IsolatedAsyncioTestCase):
         await self.subscribe_and_deliver(ws_connect, slow_handler)
         await running.wait()
 
-        await asyncio.wait_for(self.client.close(), timeout=2.0)
+        try:
+            await asyncio.wait_for(self.client.close(), timeout=2.0)
+        except asyncio.TimeoutError:
+            self.fail('close() waited on a stream handler in flight')
         self.assertTrue(any(not task.done()
                             for task in self.client._handler_tasks))
 

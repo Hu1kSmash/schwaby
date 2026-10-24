@@ -6079,6 +6079,24 @@ TIMING_CASES = [
          'unwinding the cancel waited on the error handler'),
 ]
 
+TIMING_CASES.append(
+    # close() returns without waiting on handlers in flight: the guarantee
+    # that replaced the drain. Its test parked the handler on a sleep until
+    # the clock-free rewrite; this is the entry it never had.
+    Case('streaming/close-does-not-wait-for-handlers',
+         'schwaby/streaming.py',
+         '        self._absorbed_kinds.clear()\n\n'
+         '        if socket is not None:\n'
+         '            await socket.close()',
+         '        self._absorbed_kinds.clear()\n\n'
+         '        if self._handler_tasks:\n'
+         '            await asyncio.wait(self._handler_tasks)\n'
+         '        if socket is not None:\n'
+         '            await socket.close()',
+         'tests/streaming_test.py::StreamClientTest'
+         '::test_close_does_not_wait_for_in_flight_handlers',
+         'close() waited on a stream handler in flight'))
+
 CASES += TIMING_CASES
 
 
@@ -6283,8 +6301,13 @@ PIN_CASES = [
          'does not test every pinned Python'),
     Case('suite/ci-installs-no-unpinned-python',
          '.github/workflows/python.yml',
-         "came from the job's own setup either way,",
-         'came from setup-python either way,',
+         '      run: uv pip install -c requirements.lock -r '
+         'docs/requirements.txt\n',
+         '      run: uv pip install -c requirements.lock -r '
+         'docs/requirements.txt\n'
+         '    - uses: actions/setup-python@v7\n'
+         '      with:\n'
+         '        python-version: "3.12"\n',
          'tests/suite_config_test.py::PythonPinsTest'
          '::test_ci_tests_the_pinned_pythons',
          'installs a Python the pin does not choose'),
