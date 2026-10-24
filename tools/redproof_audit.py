@@ -12,18 +12,24 @@ mutated copy and an import from somewhere else look the same: every verdict a
 false GREEN.
 
 With ``REDPROOF_AUDIT`` set, an audit hook goes in before pytest is imported
-and records every path the run writes: an ``open()`` or ``os.open()`` for
-writing, and a rename, removal, ``mkdir``, permission or time change, link or
-truncation. ``os.open`` is wrapped as well as audited: its audit event does
-not carry ``dir_fd``, so a name relative to a directory descriptor was
-recorded at the wrong path. The record is written to that path when pytest
-returns. The harness compares the copy with the snapshot after the run,
-which catches a tracked file left changed; this catches one changed and put
-back. A write the hook could not place is recorded as unresolved, and the
-harness fails the run for it, as it does for a run that left no record.
-Recording never raises into the run: an exception there would fail the call
-being audited, and a test failing for that reason is a red the mutation did
-not cause. What it cannot see is a write by a process the test started.
+and records what the run writes: an ``open()`` or ``os.open()`` for writing,
+a rename, a removal, a permission or time change, a truncation. Each is
+recorded by its path and by the file it touched (its device and inode), so a
+write through a symbolic or hard link to a tracked file, or through a
+descriptor, names that file as surely as a write by its own name. A link or
+a directory made or removed is not recorded: none can be a tracked file,
+which is removed, and recorded, before anything else can stand at its path.
+``os.open`` is wrapped, since its audit event carries no ``dir_fd``; the
+wrapper records the file it opened and the event inside it records nothing.
+The record is written to that path when pytest returns. The harness
+compares the copy with the snapshot after the run, which catches a tracked
+file left changed; this catches one changed and put back. A write the hook
+could not place is recorded as unresolved, and the harness fails the run for
+it, as it does for a run that left no record. Recording never raises into
+the run: an exception there would fail the call being audited, and a test
+failing for that reason is a red the mutation did not cause. What it cannot
+see: a write by a process the test started, and an ``os.open`` a caller took
+before the hook was put in, which is recorded at the wrong path.
 
 ``--collect`` writes ``{node id: xdist group}`` for every collected test with
 an ``xdist_group`` mark. The harness reads it to keep two entries that share a
@@ -33,35 +39,34 @@ fixed port (the login flow's callback server, on 6969) from running at once.
 import json
 import os
 import sys
+import threading
 
 _OUT = os.environ.get('REDPROOF_AUDIT')
 
 _written = set()
+_inodes = set()
 _unresolved = []
+# Set while the os.open wrapper runs, so the open event it raises is left to
+# the wrapper, which knows where the file is.
+_wrapped = threading.local()
 
 _WRITE = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
 # tempfile.TemporaryFile, which pytest's output capture uses: a file with no
 # name, which nothing else can read
 _ANONYMOUS = getattr(os, 'O_TMPFILE', 0)
 
-# Events that change a path, with where the path and its directory descriptor
-# sit among the event's arguments. A rename or an unlink writes as surely as an
-# open for writing does.
+# Events that change a file, with where the path (or descriptor) and its
+# directory descriptor sit among the event's arguments, and whether the event
+# acts on a link itself rather than what it points to. A rename or an unlink
+# writes as surely as an open for writing does.
 _CHANGES = {
-    'os.rename': ((0, 2), (1, 3)),
-    'os.remove': ((0, 1),),
-    'os.rmdir': ((0, 1),),
-    'os.mkdir': ((0, 2),),
-    'os.chmod': ((0, 2),),
-    'os.chown': ((0, 3),),
-    'os.utime': ((0, 3),),
-    'os.symlink': ((1, 2),),
-    'os.link': ((1, 3),),
-    'os.truncate': ((0, None),),
-    'shutil.rmtree': ((0, 1),),
+    'os.rename': ((0, 2, False), (1, 3, False)),
+    'os.remove': ((0, 1, False),),
+    'os.chmod': ((0, 2, True),),
+    'os.chown': ((0, 3, True),),
+    'os.utime': ((0, 3, True),),
+    'os.truncate': ((0, None, True),),
 }
-# The real one, for the hook's own lookups.
-_LSTAT = os.lstat
 
 
 def _at(value, dir_fd=None):
@@ -78,12 +83,18 @@ def _at(value, dir_fd=None):
         return ''
 
 
-def _exists(path):
+def _identity(value, dir_fd=None, follow=True):
+    '''Notes the file a path or descriptor names, by device and inode: the
+    same file under any name. Nothing, for what does not exist yet.'''
     try:
-        _LSTAT(path)
-    except OSError:
-        return False
-    return True
+        if isinstance(value, int):
+            st = os.fstat(value)
+        else:
+            st = os.stat(value, dir_fd=dir_fd if isinstance(dir_fd, int)
+                         and dir_fd >= 0 else None, follow_symlinks=follow)
+    except Exception:
+        return
+    _inodes.add((st.st_dev, st.st_ino))
 
 
 def _hook(event, args):
@@ -93,34 +104,41 @@ def _hook(event, args):
         _unresolved.append(event)
 
 
+def _writes(flags):
+    return isinstance(flags, int) and bool(flags & _WRITE) and not (
+        _ANONYMOUS and (flags & _ANONYMOUS) == _ANONYMOUS)
+
+
 def _record(event, args):
     if event == 'open':
+        if getattr(_wrapped, 'active', False):
+            return
         mode = args[1] if len(args) > 1 else None
         flags = args[2] if len(args) > 2 else 0
         if isinstance(flags, int) and _ANONYMOUS and (
                 flags & _ANONYMOUS) == _ANONYMOUS:
             return
         if not ((isinstance(mode, str) and any(c in mode for c in 'wax+'))
-                or (isinstance(flags, int) and flags & _WRITE)):
+                or _writes(flags)):
             return
         path = _at(args[0])
         if path == '':
             _unresolved.append(event)
         elif path is not None:
             _written.add(path)
+        # Before the open: a file it truncates is still the same file.
+        _identity(args[0])
     elif event in _CHANGES:
-        for at, fd in _CHANGES[event]:
+        for at, fd, follow in _CHANGES[event]:
             if at >= len(args):
                 continue
             dir_fd = args[fd] if fd is not None and fd < len(args) else None
             path = _at(args[at], dir_fd)
             if path == '':
                 _unresolved.append(event)
-            # A mkdir of what already exists changes nothing; pytest makes its
-            # directories with exist_ok=True.
-            elif path is not None and not (
-                    event == 'os.mkdir' and _exists(path)):
+            elif path is not None:
                 _written.add(path)
+            _identity(args[at], dir_fd, follow)
 
 
 def _install():
@@ -131,21 +149,25 @@ def _install():
 
     def audited_open(path, flags, *args, **kwargs):
         # The audit event names a dir_fd-relative path as if relative to
-        # the working directory; this records where it really is. The event
-        # still records its own reading too, in case a caller took os.open
-        # before this was put in: a wrong path costs a false alarm, a
-        # missing one a tracked write unseen.
+        # the working directory; this records where it really is, once the
+        # call has succeeded (a call that fails wrote nothing), and the
+        # event inside it records nothing.
+        _wrapped.active = True
         try:
-            if isinstance(flags, int) and flags & _WRITE and not (
-                    _ANONYMOUS and (flags & _ANONYMOUS) == _ANONYMOUS):
+            fd = real(path, flags, *args, **kwargs)
+        finally:
+            _wrapped.active = False
+        try:
+            if _writes(flags):
                 p = _at(path, kwargs.get('dir_fd'))
                 if p == '':
                     _unresolved.append('os.open')
                 elif p is not None:
                     _written.add(p)
+                _identity(fd)
         except Exception:
             _unresolved.append('os.open')
-        return real(path, flags, *args, **kwargs)
+        return fd
 
     if real in os.supports_dir_fd:
         os.supports_dir_fd.add(audited_open)
@@ -155,6 +177,7 @@ def _install():
 def write_record(path):
     # Copies first: a thread the run left behind may still be adding.
     record = {'written': sorted(set(_written)),
+              'inodes': sorted(set(_inodes)),
               'unresolved': list(_unresolved)}
     with open(path + '.tmp', 'w', encoding='utf-8') as f:
         json.dump(record, f)

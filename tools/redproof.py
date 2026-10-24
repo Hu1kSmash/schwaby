@@ -82,8 +82,9 @@ a fixed port, 6969, and two copies of it fail each other.
 
 TRACKED WRITES. A test that writes to a tracked file fails the run, by
 name: the copy is compared with the snapshot after each run, and the audit
-hook records the run's writes, so a file written and put back before the run
-ended is caught too. A run whose writes the hook could not all place, or
+hook records the run's writes, by path and by the file each touched, so a
+file written and put back before the run ended is caught too, under its own
+name, through a link to it, or through a descriptor. A run whose writes the hook could not all place, or
 that left no record of them, fails the run the same way. What the hook
 cannot see is a write by a process the test started, unless it is left in
 place.
@@ -449,9 +450,23 @@ def under(path, root):
     return path == root or path.startswith(root.rstrip('/') + '/')
 
 
-def tracked_writes_in(record, copy, tracked):
-    '''The tracked files the audit saw a run write, by their path in the
-    copy, whether or not the run put them back.'''
+def tracked_inodes(copy, tracked):
+    '''{(device, inode): path} for the copy's tracked files, as the run is
+    about to find them.'''
+    inodes = {}
+    for rel in tracked:
+        try:
+            st = os.stat(os.path.join(copy, rel))
+        except OSError:
+            continue
+        inodes[(st.st_dev, st.st_ino)] = rel
+    return inodes
+
+
+def tracked_writes_in(record, copy, tracked, inodes=None):
+    '''The tracked files the audit saw a run write, whether or not the run
+    put them back: by their path in the copy, and by the file itself, so a
+    write through a link to one or through a descriptor counts too.'''
     found = set()
     for root in {os.path.abspath(copy), os.path.realpath(copy)}:
         for path in record.get('written', ()):
@@ -459,6 +474,10 @@ def tracked_writes_in(record, copy, tracked):
                 rel = os.path.relpath(path, root).replace(os.sep, '/')
                 if rel in tracked:
                     found.add(rel)
+    for dev, ino in record.get('inodes', ()):
+        rel = (inodes or {}).get((dev, ino))
+        if rel is not None:
+            found.add(rel)
     return sorted(found)
 
 
@@ -542,6 +561,7 @@ class Run:
             with open(os.path.join(copy, mutation[0]), 'wb') as f:
                 f.write(mutation[1])
         record_path = os.path.join(work, 'record.json')
+        inodes = tracked_inodes(copy, self.snapshot.tracked)
         copied = time.monotonic()
         locks = self.hold_groups(self.locks_for(nodes))
         locked = time.monotonic()
@@ -560,7 +580,7 @@ class Run:
             with open(record_path, 'rb') as f:
                 record = json.loads(f.read())
             changed.update(tracked_writes_in(
-                record, copy, self.snapshot.tracked))
+                record, copy, self.snapshot.tracked, inodes))
             if record.get('unresolved'):
                 unchecked = 'the audit could not place %d of its writes (%s)' % (
                     len(record['unresolved']),
@@ -729,6 +749,11 @@ def judge_all(run, args, started):
 
     for c in removed:
         print('REMOVED     %s  (0 s)' % c.name)
+    return report(run, selected, verdicts, started)
+
+
+def report(run, selected, verdicts, started):
+    '''Prints the run's summary and returns its exit status.'''
     accounted = ('PROVEN', 'SUPERSEDED', 'REMOVED')
     bad = [c.name for c in selected if verdicts[c.name][0] not in accounted]
     for name, files in sorted(run.tracked_writes.items()):
@@ -822,14 +847,7 @@ def run_entries(run, args, entries):
     baselines = {}
 
     def merge(task_result):
-        '''What a worker learned that the run as a whole keeps.'''
-        writes, unchecked, largest, lowest = task_result[-4:]
-        run.tracked_writes.update(writes)
-        run.unchecked.update(unchecked)
-        run.largest = max(run.largest, largest)
-        if lowest is not None and (run.lowest_available is None
-                                   or lowest < run.lowest_available):
-            run.lowest_available = lowest
+        _merge(run, task_result)
 
     def baseline_done(task_result):
         t, result = task_result[:2]
@@ -889,6 +907,17 @@ def split(run, seconds):
 # spawned, so nothing large is pickled on the way in; only a task's result
 # comes back.
 _job = {}
+
+
+def _merge(run, task_result):
+    '''What a worker learned that the run as a whole keeps.'''
+    writes, unchecked, largest, lowest = task_result[-4:]
+    run.tracked_writes.update(writes)
+    run.unchecked.update(unchecked)
+    run.largest = max(run.largest, largest)
+    if lowest is not None and (run.lowest_available is None
+                               or lowest < run.lowest_available):
+        run.lowest_available = lowest
 
 
 def _worker_result(run):

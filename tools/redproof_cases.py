@@ -6909,7 +6909,7 @@ CASES.extend([
          'a write the test put back was not recorded (tracked.py)'),
     Case('audit/a-rename-is-a-write',
          'tools/redproof_audit.py',
-         "    'os.rename': ((0, 2), (1, 3)),\n",
+         "    'os.rename': ((0, 2, False), (1, 3, False)),\n",
          '',
          'tests/redproof_tool_test.py::AuditTest'
          '::test_a_write_put_back_is_recorded_and_a_read_is_not',
@@ -7033,7 +7033,7 @@ CASES.extend([
     # sees its kind of write when a test puts the file back.
     Case('audit/a-removal-is-a-write',
          'tools/redproof_audit.py',
-         "    'os.remove': ((0, 1),),\n",
+         "    'os.remove': ((0, 1, False),),\n",
          '',
          'tests/redproof_tool_test.py::AuditTest'
          '::test_a_write_put_back_is_recorded_and_a_read_is_not',
@@ -7054,21 +7054,21 @@ CASES.extend([
          'a mkdir was not recorded'),
     Case('audit/a-chmod-is-a-write',
          'tools/redproof_audit.py',
-         "    'os.chmod': ((0, 2),),\n",
+         "    'os.chmod': ((0, 2, True),),\n",
          '',
          'tests/redproof_tool_test.py::AuditTest'
          '::test_a_write_put_back_is_recorded_and_a_read_is_not',
          'a chmod was not recorded'),
     Case('audit/a-chown-is-a-write',
          'tools/redproof_audit.py',
-         "    'os.chown': ((0, 3),),\n",
+         "    'os.chown': ((0, 3, True),),\n",
          '',
          'tests/redproof_tool_test.py::AuditTest'
          '::test_a_write_put_back_is_recorded_and_a_read_is_not',
          'a chown was not recorded'),
     Case('audit/a-utime-is-a-write',
          'tools/redproof_audit.py',
-         "    'os.utime': ((0, 3),),\n",
+         "    'os.utime': ((0, 3, True),),\n",
          '',
          'tests/redproof_tool_test.py::AuditTest'
          '::test_a_write_put_back_is_recorded_and_a_read_is_not',
@@ -7089,7 +7089,7 @@ CASES.extend([
          'a link was not recorded'),
     Case('audit/a-truncation-is-a-write',
          'tools/redproof_audit.py',
-         "    'os.truncate': ((0, None),),\n",
+         "    'os.truncate': ((0, None, True),),\n",
          '',
          'tests/redproof_tool_test.py::AuditTest'
          '::test_a_write_put_back_is_recorded_and_a_read_is_not',
@@ -7195,4 +7195,116 @@ CASES.extend([
          'tests/redproof_tool_test.py::PortLockTest'
          '::test_a_run_hands_its_locks_to_the_test',
          'a run kept its port lock from the test'),
+])
+
+# The hook records only what can touch a tracked file: a link or directory
+# made or removed cannot, since a tracked file at that path is removed, and
+# recorded, first.
+_NOT_A_TRACKED_WRITE = (
+    'The hook no longer records this kind of change: none can touch a '
+    'tracked file, which would be removed, and its removal recorded, before '
+    'anything else could stand at its path. Each write is recorded by the '
+    'file it touched as well as its path, which is what catches a write '
+    'through a link.')
+for _case in CASES:
+    if _case.name in ('audit/a-mkdir-is-a-write', 'audit/a-rmdir-is-a-write',
+                      'audit/a-symlink-is-a-write', 'audit/a-link-is-a-write',
+                      'audit/a-rmtree-is-a-write'):
+        _case.removed, _case.superseded = _NOT_A_TRACKED_WRITE, None
+del _case
+
+CASES.extend([
+    # Writes known by the file they touched, not only its name.
+    Case('audit/a-write-through-a-link-is-the-files',
+         'tools/redproof_audit.py',
+         '        # Before the open: a file it truncates is still the same file.\n'
+         '        _identity(args[0])\n',
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a write through a symlink was not recorded'),
+    Case('audit/a-change-by-descriptor-is-the-files',
+         'tools/redproof_audit.py',
+         '            _identity(args[at], dir_fd, follow)\n',
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a change through a read-only descriptor was not recorded'),
+    Case('audit/a-descriptor-names-its-file',
+         'tools/redproof_audit.py',
+         '        if isinstance(value, int):\n            st = os.fstat(value)\n',
+         '        if isinstance(value, int):\n            return\n',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a change through a read-only descriptor was not recorded'),
+    Case('audit/the-wrapper-alone-records-its-open',
+         'tools/redproof_audit.py',
+         "        if getattr(_wrapped, 'active', False):\n            return\n",
+         '',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a write was recorded where it was not made'),
+    Case('audit/an-open-to-read-is-not-a-write',
+         'tools/redproof_audit.py',
+         '    return isinstance(flags, int) and bool(flags & _WRITE) and not (\n',
+         '    return isinstance(flags, int) and True and not (\n',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a directory opened to read was recorded as a write'),
+    Case('audit/a-file-with-no-name-is-not-a-write',
+         'tools/redproof_audit.py',
+         '        _ANONYMOUS and (flags & _ANONYMOUS) == _ANONYMOUS)\n',
+         '        False)\n',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a file with no name was recorded as a write'),
+    Case('harness/a-tracked-file-is-known-by-identity',
+         'tools/redproof.py',
+         '        rel = (inodes or {}).get((dev, ino))\n',
+         '        rel = None\n',
+         'tests/redproof_tool_test.py::TrackedWritesTest'
+         '::test_a_write_to_the_file_under_any_name_is_found',
+         'a write to a tracked file under another name went unreported'),
+    Case('harness/the-run-hands-over-its-identities',
+         'tools/redproof.py',
+         '                record, copy, self.snapshot.tracked, inodes))\n',
+         '                record, copy, self.snapshot.tracked))\n',
+         'tests/redproof_tool_test.py::RunRecordTest'
+         '::test_a_write_the_record_names_is_one_the_run_made',
+         'a write the hook knew by identity was dropped'),
+    Case('harness/an-unchecked-run-fails-the-whole-run',
+         'tools/redproof.py',
+         '    writes = len(set(run.tracked_writes) | set(run.unchecked))\n',
+         '    writes = len(set(run.tracked_writes))\n',
+         'tests/redproof_tool_test.py::ReportTest'
+         '::test_a_run_that_could_not_be_checked_fails_the_whole_run',
+         'a run whose writes went unchecked passed'),
+    Case('harness/an-unchecked-run-is-named',
+         'tools/redproof.py',
+         '    for name, why in sorted(run.unchecked.items()):\n',
+         '    for name, why in sorted({}.items()):\n',
+         'tests/redproof_tool_test.py::ReportTest'
+         '::test_a_run_that_could_not_be_checked_fails_the_whole_run',
+         'an unchecked run was not named'),
+    Case('harness/a-workers-unchecked-run-reaches-the-run',
+         'tools/redproof.py',
+         '    run.unchecked.update(unchecked)\n',
+         '    pass\n',
+         'tests/redproof_tool_test.py::ReportTest'
+         '::test_what_a_worker_found_reaches_the_run',
+         "a worker's unchecked run did not reach the run"),
+    Case('harness/a-worker-hands-back-its-unchecked-runs',
+         'tools/redproof.py',
+         '    return writes, unchecked, run.largest, run.lowest_available\n',
+         '    return writes, {}, run.largest, run.lowest_available\n',
+         'tests/redproof_tool_test.py::ReportTest'
+         '::test_what_a_worker_found_reaches_the_run',
+         "a worker's unchecked run did not reach the run"),
+    Case('harness/a-baselines-unchecked-run-is-reported',
+         'tools/redproof.py',
+         '    if unchecked:\n        run.unchecked[name] = unchecked\n',
+         '    if False:\n        run.unchecked[name] = unchecked\n',
+         'tests/redproof_tool_test.py::BaselineTest'
+         '::test_a_baselines_unchecked_run_is_reported',
+         'a baseline whose writes went unchecked was not reported'),
 ])

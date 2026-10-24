@@ -260,6 +260,20 @@ class TrackedWritesTest(unittest.TestCase):
             record, copy, {'schwaby/x.py'}),
             'a write the run restored went unreported')
 
+    def test_a_write_to_the_file_under_any_name_is_found(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        copy = os.path.join(tmp.name, 'copy')
+        os.makedirs(os.path.join(copy, 'schwaby'))
+        open(os.path.join(copy, 'schwaby', 'x.py'), 'w').close()
+        inodes = redproof.tracked_inodes(copy, {'schwaby/x.py'})
+        st = os.stat(os.path.join(copy, 'schwaby', 'x.py'))
+        record = {'written': [os.path.join(tmp.name, 'elsewhere.py')],
+                  'inodes': [[st.st_dev, st.st_ino]]}
+        self.assertEqual(['schwaby/x.py'], redproof.tracked_writes_in(
+            record, copy, {'schwaby/x.py'}, inodes),
+            'a write to a tracked file under another name went unreported')
+
     def test_a_write_through_a_linked_path_is_found(self):
         # A copy under a linked temporary directory is written under either
         # spelling.
@@ -280,7 +294,7 @@ class AuditTest(unittest.TestCase):
     a tracked file written and put back before the run ended.'''
 
     TEST = '''
-import os, shutil
+import os
 
 def test_writes_and_puts_back():
     with open('tracked.py', 'rb') as f:
@@ -295,41 +309,57 @@ def test_writes_and_puts_back():
         f.read()
     # One path per kind of write, so each kind is seen on its own.
     os.remove('removed.py')
-    os.rmdir('emptied')
-    os.mkdir('made')
     os.chmod('chmodded.py', 0o644)
     os.chown('chowned.py', os.getuid(), os.getgid())
     os.utime('touched.py')
-    os.symlink('tracked.py', 'soft_link')
-    os.link('tracked.py', 'hard_link')
     os.truncate('truncated.py', 0)
-    shutil.rmtree('tree')
     fd = os.open('sub', os.O_RDONLY)
     try:
         os.close(os.open('inner.py', os.O_WRONLY, dir_fd=fd))
+        # Made in sub, not here: nothing may be recorded at ./decoy.py.
+        os.close(os.open('decoy.py', os.O_WRONLY | os.O_CREAT, dir_fd=fd))
     finally:
         os.close(fd)
+    # Through other names for a file, and through a descriptor opened only
+    # for reading: the file itself is what was written.
+    os.symlink('sym_target.py', 'sym_alias.py')
+    with open('sym_alias.py', 'w') as f:
+        f.write('through a symlink')
+    os.link('hard_target.py', 'hard_alias.py')
+    with open('hard_alias.py', 'w') as f:
+        f.write('through a hard link')
+    fd = os.open('fd_target.py', os.O_RDONLY)
+    try:
+        os.fchmod(fd, 0o600)
+    finally:
+        os.close(fd)
+    # What is not a write: a directory opened to read it, and a file with
+    # no name.
+    os.close(os.open('sub', os.O_RDONLY))
+    if hasattr(os, 'O_TMPFILE'):
+        os.close(os.open('.', os.O_TMPFILE | os.O_WRONLY))
 '''
 
-    KINDS = (('removed.py', 'removal'), ('emptied', 'rmdir'),
-             ('made', 'mkdir'), ('chmodded.py', 'chmod'),
+    KINDS = (('removed.py', 'removal'), ('chmodded.py', 'chmod'),
              ('chowned.py', 'chown'), ('touched.py', 'utime'),
-             ('soft_link', 'symlink'), ('hard_link', 'link'),
-             ('truncated.py', 'truncation'), ('tree', 'rmtree'),
+             ('truncated.py', 'truncation'),
              ('sub/inner.py', 'write relative to a directory descriptor'))
+    IDENTITIES = (('sym_target.py', 'write through a symlink'),
+                  ('hard_target.py', 'write through a hard link'),
+                  ('fd_target.py', 'change through a read-only descriptor'))
 
     def test_a_write_put_back_is_recorded_and_a_read_is_not(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = os.path.realpath(tmp.name)
-        for d in ('emptied', 'tree/deep', 'sub'):
-            os.makedirs(os.path.join(root, d))
+        os.makedirs(os.path.join(root, 'sub'))
         for name, data in (('test_x.py', self.TEST), ('tracked.py', 'a = 1\n'),
                            ('moved.py', ''), ('only_read.py', ''),
                            ('removed.py', ''), ('chmodded.py', ''),
                            ('chowned.py', ''), ('touched.py', ''),
-                           ('truncated.py', 'x'), ('tree/deep/x', ''),
-                           ('sub/inner.py', '')):
+                           ('truncated.py', 'x'), ('sub/inner.py', ''),
+                           ('sym_target.py', ''), ('hard_target.py', ''),
+                           ('fd_target.py', '')):
             with open(os.path.join(root, name), 'w') as f:
                 f.write(data)
         out = os.path.join(root, 'record.json')
@@ -341,7 +371,9 @@ def test_writes_and_puts_back():
             capture_output=True, text=True, timeout=120)
         self.assertEqual(0, run.returncode, run.stdout + run.stderr)
         with open(out) as f:
-            written = set(json.load(f)['written'])
+            record = json.load(f)
+        written = set(record['written'])
+        inodes = {tuple(i) for i in record['inodes']}
         for name in ('tracked.py', 'moved.py', 'moved2.py'):
             self.assertIn(os.path.join(root, name), written,
                           'a write the test put back was not recorded '
@@ -349,6 +381,17 @@ def test_writes_and_puts_back():
         for name, kind in self.KINDS:
             self.assertIn(os.path.join(root, name), written,
                           'a %s was not recorded' % kind)
+        for name, kind in self.IDENTITIES:
+            st = os.stat(os.path.join(root, name))
+            self.assertIn((st.st_dev, st.st_ino), inodes,
+                          'a %s was not recorded' % kind)
+        self.assertNotIn(os.path.join(root, 'decoy.py'), written,
+                         'a write was recorded where it was not made')
+        self.assertNotIn(os.path.join(root, 'sub'), written,
+                         'a directory opened to read was recorded as a write')
+        if hasattr(os, 'O_TMPFILE'):
+            self.assertNotIn(root, written,
+                             'a file with no name was recorded as a write')
         # The positive control: what was only read is not a write.
         self.assertNotIn(os.path.join(root, 'only_read.py'), written,
                          'a read was recorded as a write')
@@ -380,6 +423,18 @@ class RunRecordTest(unittest.TestCase):
                            'unresolved': []}, f)
             return result(1, 'E   expected')
 
+        def by_identity(work, copy, nodes, audit, record, **kwargs):
+            # Written under another name: only the file's identity says so.
+            st = os.stat(os.path.join(copy, 'schwaby', 'x.py'))
+            with open(record, 'w') as f:
+                json.dump({'written': [], 'inodes': [[st.st_dev, st.st_ino]],
+                           'unresolved': []}, f)
+            return result(1, 'E   expected')
+
+        with mock.patch.object(redproof, 'run_tests', by_identity):
+            self.assertEqual(['schwaby/x.py'], run.run(['tests/x_test.py'])[1],
+                             'a write the hook knew by identity was dropped')
+
         with mock.patch.object(redproof, 'run_tests', run_tests):
             _, changed, unchecked = run.run(['tests/x_test.py'])
         self.assertEqual(['schwaby/x.py'], changed,
@@ -406,7 +461,49 @@ class RunRecordTest(unittest.TestCase):
                                      'passed as having none')
 
 
+class ReportTest(unittest.TestCase):
+
+    def test_a_run_that_could_not_be_checked_fails_the_whole_run(self):
+        import contextlib
+        import io
+        run = types.SimpleNamespace(tracked_writes={}, unchecked={})
+        selected = [case()]
+        verdicts = {'x/y': ('PROVEN', '', 0.1)}
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, redproof.report(run, selected, verdicts, 0))
+        run.unchecked['x/y'] = 'it left no record of its writes'
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = redproof.report(run, selected, verdicts, 0)
+        self.assertEqual(1, code, 'a run whose writes went unchecked passed')
+        self.assertIn('x/y could not be checked for tracked writes: it left '
+                      'no record of its writes', out.getvalue(),
+                      'an unchecked run was not named')
+
+    def test_what_a_worker_found_reaches_the_run(self):
+        worker = types.SimpleNamespace(
+            tracked_writes={'a': ['x.py']}, unchecked={'b': 'why'},
+            largest=5, lowest_available=None)
+        handed = redproof._worker_result(worker)
+        self.assertEqual(({}, {}), (worker.tracked_writes, worker.unchecked))
+        parent = types.SimpleNamespace(tracked_writes={}, unchecked={},
+                                       largest=0, lowest_available=None)
+        redproof._merge(parent, ('result',) + handed)
+        self.assertEqual({'b': 'why'}, parent.unchecked,
+                         'a worker\'s unchecked run did not reach the run')
+        self.assertEqual({'a': ['x.py']}, parent.tracked_writes)
+
+
 class BaselineTest(unittest.TestCase):
+
+    def test_a_baselines_unchecked_run_is_reported(self):
+        run = FakeRun(JudgeTest.CONTENT, result(0, '1 passed'),
+                      unchecked='it left no record of its writes')
+        redproof.run_baseline(run, ['tests/x_test.py'])
+        self.assertEqual(
+            {'the baseline of tests/x_test.py':
+             'it left no record of its writes'}, run.unchecked,
+            'a baseline whose writes went unchecked was not reported')
 
     def test_a_baselines_tracked_write_is_reported(self):
         run = FakeRun(JudgeTest.CONTENT, result(0, '1 passed'),
