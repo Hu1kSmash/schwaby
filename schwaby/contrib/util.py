@@ -674,7 +674,7 @@ def decode_decimal(value):
     #
     # The width depends on the layout. Schwab sends the whole mantissa in
     # `lo`, as a string of digits -- measured on 5,843 objects from a
-    # production ACCT_ACTIVITY archive, none of which carried `mid` or
+    # recorded ACCT_ACTIVITY archive, none of which carried `mid` or
     # `hi` -- and a fill principal above 4294.967295 at signScale 12 needs
     # more than 32 bits to do it. This used to read `lo` as the first of a
     # .NET Decimal's three 32-bit members and refused every such object: 129
