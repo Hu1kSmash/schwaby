@@ -868,12 +868,15 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
     if callback_socket is not None:
         if not isinstance(callback_socket, socket.socket):
             raise TypeError('callback_socket must be a socket.socket')
-        # A closed socket's fileno is -1, and getsockname raises on it.
-        if (callback_socket.fileno() == -1
-                or callback_socket.family != socket.AF_INET
+        try:
+            bound_to = callback_socket.getsockname()
+        except OSError:
+            # A closed socket raises, and on Windows so does one never
+            # bound, where POSIX answers ('0.0.0.0', 0).
+            bound_to = None
+        if (callback_socket.family != socket.AF_INET
                 or callback_socket.type != socket.SOCK_STREAM
-                or callback_socket.getsockname() != (
-                    '127.0.0.1', callback_port)):
+                or bound_to != ('127.0.0.1', callback_port)):
             raise ValueError(
                     'callback_socket must be a TCP socket bound to '
                     '127.0.0.1:{}, the callback URL\'s port'.format(

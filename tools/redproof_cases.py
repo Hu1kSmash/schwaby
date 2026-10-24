@@ -101,8 +101,7 @@ CASES = [
     Case('auth/a-held-socket-must-be-on-the-callback-port',
          'schwaby/auth.py',
          "                or callback_socket.type != socket.SOCK_STREAM\n"
-         "                or callback_socket.getsockname() != (\n"
-         "                    '127.0.0.1', callback_port)):",
+         "                or bound_to != ('127.0.0.1', callback_port)):",
          "                or callback_socket.type != socket.SOCK_STREAM):",
          'tests/auth_test.py::ClientFromLoginFlowTest'
          '::test_a_held_socket_must_be_bound_to_the_callback_port',
@@ -123,9 +122,10 @@ CASES = [
 
     Case('auth/a-closed-socket-is-refused',
          'schwaby/auth.py',
-         "        if (callback_socket.fileno() == -1\n"
-         "                or callback_socket.family != socket.AF_INET\n",
-         "        if (callback_socket.family != socket.AF_INET\n",
+         "        except OSError:\n"
+         "            # A closed socket raises, and on Windows so does one never\n",
+         "        except ZeroDivisionError:\n"
+         "            # A closed socket raises, and on Windows so does one never\n",
          'tests/auth_test.py::ClientFromLoginFlowTest'
          '::test_a_held_socket_must_be_bound_to_the_callback_port',
          'Bad file descriptor',
@@ -138,7 +138,7 @@ CASES = [
          "",
          'tests/auth_test.py::ClientFromLoginFlowTest'
          '::test_a_held_socket_must_be_bound_to_the_callback_port',
-         "'int' object has no attribute 'family'"),
+         "'int' object has no attribute 'getsockname'"),
 
     # The two tests of the flow binding a port by number pick one and let it
     # go first. A collision in that gap fails by its own name, and only a
