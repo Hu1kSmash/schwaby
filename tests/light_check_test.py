@@ -118,6 +118,14 @@ class LightCheckTest(unittest.TestCase):
                          'through: ' + out)
         self.assertIn('syntax error', out)
 
+    def test_code_that_parses_but_does_not_compile_is_refused(self):
+        # pyflakes parses; the compiler refuses this, and so would import.
+        self.stage('mod.py', 'import os\n\n\ndef f():\n    await os.g()\n')
+        code, out = self.check()
+        self.assertEqual(1, code, 'a file Python cannot compile was let '
+                         'through: ' + out)
+        self.assertIn("'await' outside async function", out)
+
     def test_a_syntax_error_already_at_head_still_fails(self):
         self.write('broken.py', 'def f(:\n')
         self.git('add', 'broken.py')

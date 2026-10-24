@@ -21,7 +21,8 @@ commit will contain:
 A warning is compared by its text without its line number, as a count per
 file, so moving code does not read as adding a warning, and a renamed file is
 compared with its old path at HEAD. A syntax error is never subtracted: a
-file that does not parse fails, whatever HEAD had.
+file that does not parse, or that parses and does not compile, fails, whatever
+HEAD had.
 '''
 
 import collections
@@ -98,8 +99,25 @@ def staged_python():
     return staged
 
 
+def compile_error(source, path):
+    '''The error CPython raises compiling source, or None. pyflakes only
+    parses, and some code parses and still cannot be compiled: `await`
+    outside an async function, `nonlocal` at module level, a value returned
+    from an async generator.'''
+    try:
+        compile(source, path, 'exec', dont_inherit=True)
+    except (SyntaxError, ValueError) as e:
+        return 'syntax error: %s' % (getattr(e, 'msg', None) or e)
+    return None
+
+
 def new_warnings(path, before_path):
-    now = warnings_in(blob(':' + path) or b'', path)
+    staged = blob(':' + path) or b''
+    now = warnings_in(staged, path)
+    if not any(m.startswith(('syntax error:', 'error:')) for m in now):
+        error = compile_error(staged, path)
+        if error:
+            now[error] += 1
     before_text = blob('HEAD:' + before_path)
     before = (warnings_in(before_text, before_path)
               if before_text is not None else collections.Counter())
