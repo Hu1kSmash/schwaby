@@ -10,6 +10,7 @@ from unittest.mock import patch, ANY, MagicMock
 from unittest.mock import ANY as _
 
 import asyncio
+import gc
 import inspect
 import contextlib
 import json
@@ -1497,8 +1498,23 @@ class StoredTokenShapeTest(unittest.TestCase):
         self.assertEqual(0, sum(p.endswith('/oauth/token') for p in requests))
 
         # One int() cannot take at all is authlib's to refuse, as before.
-        with self.assertRaises(TypeError):
-            self.build(dict(base, expires_at=[1], expires_in=1800))
+        #
+        # authlib raises with its OAuth2Auth half built, and that object's
+        # __del__ then fails as well. Left to the garbage collector, pytest
+        # reports it against whichever later test the collector runs in, so
+        # it is collected here, and that one failure is the only one allowed:
+        # an unraisable error anywhere else in the suite still stands out.
+        unraisable = []
+        with patch('sys.unraisablehook', unraisable.append):
+            with self.assertRaises(TypeError):
+                self.build(dict(base, expires_at=[1], expires_in=1800))
+            gc.collect()
+        self.assertEqual([], [
+            u for u in unraisable
+            if str(u.exc_value) != "'OAuth2Auth' object has no attribute "
+                                   "'client'"],
+            'building from a token authlib refuses left something else '
+            'failing in a __del__')
 
     @no_duplicates
     def test_expires_in_without_expires_at_refreshes_on_the_first_call(self):
