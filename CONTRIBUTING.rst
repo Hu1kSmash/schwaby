@@ -27,20 +27,25 @@ failure you see is one CI would see:
   pip install -c requirements.lock -e ".[dev]"
 
 CI runs each Python as the exact build ``.python-versions`` pins, which
-`uv <https://github.com/astral-sh/uv>`__ downloads and checks the hash of. To test
-on the same build, create the virtualenv from it instead:
+`uv <https://github.com/astral-sh/uv>`__ downloads and checks the hash of. To
+test on the same build, create the virtualenv from it instead:
 
 .. code-block:: shell
 
-  export UV_PYTHON_INSTALL_DIR="$PWD/.uv-python"   # this checkout's own
-  uv python install --no-bin 3.14.8                # a version from .python-versions
+  export UV_PYTHON_INSTALL_DIR="$PWD/.uv-python"  # this checkout's own
+  uv python install --no-bin 3.14.8               # from .python-versions
   "$(uv python find --no-python-downloads 3.14.8)" -m venv venv
 
 Both settings keep the build to this checkout. ``.uv-python/`` is gitignored,
-and uv's shared directory re-points its ``cpython-3.14`` link to whatever it
-installed last, which moves every other virtualenv built through that link.
-``--no-bin`` keeps uv from putting ``python3.14`` on your ``PATH``, where it
-would quietly replace the system's for everything else you run.
+and uv's shared directory re-points its ``cpython-3.14`` link to the newest
+patch release it holds, which moves every other virtualenv built through that
+link when a newer one arrives. ``--no-bin`` keeps uv from putting
+``python3.14`` on your ``PATH``, where it would quietly replace the system's
+for everything else you run.
+
+uv reads ``.python-versions`` as well: in this checkout a bare ``uv venv`` or
+``uv run`` picks its first line, 3.10.22, and downloads it if it is missing.
+Name the version, as above.
 
 The ``-e`` matters: without it you edit the source tree and test the copy in
 ``site-packages``, and the two drift the moment you change anything.
@@ -52,8 +57,9 @@ Then turn on the commit hooks:
   git config core.hooksPath tools/hooks
 
 They run ``tools/light_check.py`` on what you are about to commit (measured at
-under a tenth of a second for an eight-file commit): every staged Python file must parse and gain no pyflakes
-warning it did not already have, and the diff must have no whitespace errors.
+under a tenth of a second for an eight-file commit): every staged Python file
+must parse and gain no pyflakes warning it did not already have, and the diff
+must have no whitespace errors.
 The full suite is not part of it; that runs below, and on every pull request.
 
 Then check the environment before you change anything, so a later failure is
