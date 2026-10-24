@@ -88,7 +88,7 @@ CASES = [
          '',
          'tests/streaming_test.py::StreamClientTest'
          '::test_both_framings_survive_a_malformed_element',
-         'ACCT_ACTIVITY'),
+         "'str' object has no attribute 'get'"),
 
     Case('streaming/validate-response-guard',
          'schwaby/streaming.py',
@@ -143,7 +143,7 @@ CASES = [
          """        for d in msg.get('notify', []):""",
          'tests/streaming_test.py::StreamClientTest'
          '::test_a_channel_of_the_wrong_shape_does_not_end_the_loop',
-         'not iterable'),
+         "argument of type 'int' is not"),
 
     Case('streaming/extra-on-routing-path-cannot-raise',
          'schwaby/streaming.py',
@@ -177,7 +177,7 @@ CASES = [
          '',
          'tests/streaming_test.py::StreamClientTest'
          '::test_a_frame_which_is_not_an_object_is_ignored',
-         'not iterable'),
+         "argument of type 'int' is not"),
 
     Case('streaming/unhashable-service',
          'schwaby/streaming.py',
@@ -364,7 +364,7 @@ CASES = [
          '',
          'tests/streaming_test.py::StreamClientTest'
          '::test_a_mismatched_request_id_is_named_as_such',
-         'UnexpectedResponse'),
+         "'unexpected requestid: 999' not found"),
 
     Case('streaming/request-id-absorbed',
          'schwaby/streaming.py',
@@ -802,7 +802,7 @@ CASES = [
          "        if False:",
          'tests/client_test.py::ClientTest'
          '::test_a_description_that_is_not_a_string_is_not_terminal',
-         'TokenRefreshError'),
+         "object has no attribute 'find'"),
 
     # warnings.warn reads 0 as "blame the frame which called warn", which is
     # this library -- the exact failure _caller_stacklevel exists to avoid.
@@ -1397,7 +1397,7 @@ CASES = [
          "            elif False:",
          'tests/streaming_test.py::StreamClientTest'
          '::test_a_channel_name_that_cannot_be_named_does_not_escape',
-         'LazyLog object'),
+         'Exceeds the limit'),
 
     # A top-level frame key is whatever the decoder produced. `str()` of a
     # wide integer raises past the digit limit, and this ran on the channel
@@ -1409,7 +1409,7 @@ CASES = [
          "        raise",
          'tests/streaming_test.py::StreamClientTest'
          '::test_a_channel_name_that_cannot_be_named_does_not_escape',
-         'no name for you'),
+         'Exceeds the limit'),
 
     # `json.loads` maps `1e999` and `Infinity` to `float('inf')`, and
     # `int(inf)` raises OverflowError -- in neither guard tuple, so an
@@ -3654,7 +3654,7 @@ CASES = [
          "    if error:\n        raise LoginExchangeError(",
          "    if False:\n        raise LoginExchangeError(",
          'tests/auth_test.py::LoginExchangeErrorTest::test_a_redirect_that_is_refused_before_any_exchange_is_one_too',
-         'a request was sent'),
+         "'access_denied' != "),
 
     Case('auth/login-wraps-what-authlib-refuses-before-asking',
          'schwaby/auth.py',
@@ -3685,7 +3685,7 @@ CASES = [
          "type.__dict__['__module__'].__get__(type(value)))",
          "type(value).__module__)",
          'tests/client_test.py::ClientTest::test_a_wrong_type_whose_module_raises_is_still_refused_by_name',
-         'metaclass raised'),
+         "got '<unknown module>.Odd'"),
 
     # execution_totals adds up in its own decimal context, refuses an overflow,
     # and reads every value through the built-in types.
@@ -4490,7 +4490,7 @@ CASES = [
          "    'NASDAQ_BOOK',\n",
          'tests/streaming_test.py::StreamClientTest'
          '::test_news_headline_handler',
-         'a message for a service this version does not know'),
+         "Expected 'mock' to have been called once"),
 
     # A field renumbered leaves it unlabelled. The JSON diff prints the raw key
     # in double quotes; the test source only has single quotes.
@@ -5704,7 +5704,7 @@ CASES = [
          "        pages.append(os.path.join(REPO_ROOT, 'CONTRIBUTING.rst'))\n",
          "",
          'tests/packaging_test.py::DocBoldLiteralTest::test_no_documentation_page_puts_a_literal_inside_bold',
-         'not greater than or equal to 11'),
+         'CONTRIBUTING.rst is not among the pages checked'),
 
     Case('docs/code-blocks-all-parse',
          'tests/packaging_test.py',
@@ -5712,7 +5712,7 @@ CASES = [
          'elif len(lines[j]) - len(lines[j].lstrip()) >= base:',
          'tests/packaging_test.py::DocExampleTest'
          '::test_every_documentation_code_block_parses',
-         'unexpected indent'),
+         'fewer code blocks were found than the pages hold'),
 
     # bad_keywords_in resolves a call only when the name came from `schwaby`,
     # so a snippet still importing `schwab` is skipped rather than failed --

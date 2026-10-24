@@ -1530,6 +1530,10 @@ class DocBoldLiteralTest(unittest.TestCase):
         pages = [p for p in DocReferenceTest.doc_files() if p.endswith('.rst')]
         pages.append(os.path.join(REPO_ROOT, 'CONTRIBUTING.rst'))
         self.assertGreaterEqual(len(pages), 11)
+        # By name: the count alone held without CONTRIBUTING, so dropping it
+        # from the scan changed nothing the test could see.
+        self.assertIn(os.path.join(REPO_ROOT, 'CONTRIBUTING.rst'), pages,
+                      'CONTRIBUTING.rst is not among the pages checked')
 
         found = []
         for path in pages:
@@ -2160,7 +2164,9 @@ class DocExampleTest(unittest.TestCase):
         """
         blocks = self.code_blocks_in(
                 DocReferenceTest.doc_files() + self.example_files())
-        self.assertGreaterEqual(len(blocks), 54)
+        self.assertGreaterEqual(len(blocks), 54,
+                                'fewer code blocks were found than the pages '
+                                'hold')
 
         unparsed = []
         for where, line, code in blocks:

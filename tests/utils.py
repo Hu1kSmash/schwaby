@@ -186,13 +186,18 @@ class AsyncMagicMock:
         self.__attr_cache.clear()
 
 def has_diff(old, new):
+    '''False when old and new are the same JSON. When they differ it raises
+    AssertionError carrying the diff, so the difference is in the failure
+    itself: it used to be printed to the test's captured output, and the
+    failure said only "True is not false". Every caller asserts it False.'''
     old_out = json.dumps(old, indent=4, sort_keys=True).splitlines()
     new_out = json.dumps(new, indent=4, sort_keys=True).splitlines()
-    diff = difflib.ndiff(old_out, new_out)
-    diff, has_diff = color_diff(diff)
+    diff = list(difflib.ndiff(old_out, new_out))
+    _, has_diff = color_diff(diff)
 
     if has_diff:
-        print('\n'.join(diff))
+        raise AssertionError('the JSON differs:\n' + '\n'.join(
+            line for line in diff if not line.startswith('?')))
     return has_diff
 
 
