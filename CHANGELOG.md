@@ -26,6 +26,101 @@ was measured, and every number, is unchanged.
 
 ---
 
+## 5.2.0
+
+*2026-10-24*
+
+Two additions -- new attributes on the two token errors, and a socket a
+login flow can serve on -- one change to what the login flow does with a
+redirect, and a change to a log line. Nothing public is removed or renamed,
+so code written for 5.1.1 runs unchanged.
+
+### A refused token request says how the token endpoint answered
+
+`TokenRefreshError`, raised from a call whose token refresh is refused, and
+`LoginExchangeError`, raised when a login's code exchange is refused, each
+gain three attributes:
+
+- `status_code`: the HTTP status the token endpoint answered with, such as
+  `429` or `401`; `None` when nothing was sent.
+- `rate_limited`: `True` for a 429 and nothing else. The endpoint is asking
+  for fewer requests, so wait longer before retrying.
+- `endpoint_answered`: `False` when the error was raised before anything was
+  sent. On a refresh, that is a stored token that cannot be used as it is.
+  On a login, it is a redirect carrying a refusal, a fragment or no code, or
+  a `state` that does not match.
+
+All three are set the same way whether or not the endpoint's answer had a
+JSON body. Telling a 429 from a 400 or a 401 used to mean matching this
+library's `http_429`-style codes or its description text. Read the
+attributes instead: the text is a message, and could change.
+
+To carry the status, this library now raises the endpoint's JSON-bodied
+refusal itself rather than leaving it to authlib. It is the same `OAuthError`
+authlib raised, with the same class, `error`, `description` and `str()`,
+under authlib 1.8 and 1.9. Compared against 5.1.1 over 450 refusals, it
+differed in nothing but the three new attributes.
+
+### A login flow can serve on a socket you already hold
+
+`client_from_login_flow(..., callback_socket=sock)` serves the callback on a
+TCP socket the caller has already bound to `127.0.0.1` at the callback
+URL's port, instead of binding the port itself. A program that picks a free
+port no longer has to let go of it before the flow binds it, which left a
+gap for something else to take it. The flow puts the socket in the
+listening state and leaves it open, and closing it is the caller's job. A
+socket that is bound elsewhere, unbound, closed, or not TCP is refused with
+`ValueError` before any server starts, and anything that is not a socket
+with `TypeError`. Measured on Linux under the fork, spawn and forkserver
+start methods, and in CI on Windows; macOS CI does not run the login-flow
+server tests.
+
+### The login flow skips a redirect that belongs to another login
+
+A redirect whose `state` names a different login is now skipped with a
+warning, and the flow goes on waiting for its own. 5.1.1 exchanged it, and
+the exchange then failed with `LoginExchangeError` on the mismatched state.
+This most often arrives from a browser tab finishing an earlier login late.
+A held `callback_socket` makes that ordinary, because it goes on queueing
+connections between flows. Measured: a retry on the same socket used to
+receive the first flow's code. A redirect that names no `state` is still
+exchanged, so it is still refused by name rather than timing out.
+
+### `'Invalid Service'` on the stream is logged as Schwab's error
+
+Schwab has once sent a stream frame whose service was the literal string
+`'Invalid Service'`, in the second before it closed the connection. 5.1.1
+logged it as a service it did not know and asked for an issue to be opened.
+It is an error label, not a service, and is now logged as Schwab's error
+without that request. It is still dropped, and still reported to
+`add_error_handler` as `UnusableMessage` with `'Invalid Service'` as the
+service, so a handler written for 5.1.1 sees it as before. Only that exact
+name is treated this way.
+
+### For contributors
+
+- Each login-flow test holds its own callback port. Most serve on a socket
+  from `bound_callback_socket()` in `tests/utils.py`. The two that test the
+  flow binding a port by number pick one with `free_callback_port()`, and a
+  collision in that gap fails as "port taken between pick and bind". A test
+  whose flow is given any other loopback port fails. Two runs of the suite
+  on one machine no longer fail each other, so the `--dist loadgroup`
+  setting and the login-flow worker group from 5.1.1 are gone.
+- Every test has a 60-second limit (`pytest-timeout`, now in `[dev]`), so a
+  hung test fails by name.
+- `requirements.lock` now pins the tested set for every supported Python,
+  with markers where versions differ. `.python-versions` pins the exact
+  interpreter builds CI runs, and a weekly workflow tests a fresh resolve
+  without the lock.
+- `git config core.hooksPath tools/hooks` turns on a light check at each
+  commit (`tools/light_check.py`, with `pyflakes`, now in `[dev]`).
+- `tools/redproof.py`, the mutation harness, is in the repository. It runs
+  every entry on every run, keeps no verdicts between runs, and fails any
+  run that writes to a tracked file. `tools/repeat.py` measures how often
+  tests fail when run repeatedly.
+
+---
+
 ## 5.1.1
 
 *2026-10-23*
