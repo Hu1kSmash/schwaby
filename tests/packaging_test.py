@@ -170,9 +170,10 @@ class SetupPyTest(unittest.TestCase):
 
     @no_duplicates
     def test_dev_has_the_plugins_setup_cfg_needs(self):
-        # setup.cfg passes `--dist loadgroup` and sets `timeout`. Without
-        # pytest-xdist the first is an unknown argument; without
-        # pytest-timeout the second is a warning and no test has a limit.
+        # CONTRIBUTING runs the suite with `-n auto`, and setup.cfg sets
+        # `timeout`. Without pytest-xdist the first is an unknown argument;
+        # without pytest-timeout the second is a warning and no test has a
+        # limit.
         dev = [package_name(r) for r in self.kwargs['extras_require']['dev']]
         for plugin in ('pytest-xdist', 'pytest-timeout'):
             self.assertIn(plugin, dev, '%s is missing from [dev]' % plugin)
@@ -2091,49 +2092,6 @@ class DocExampleTest(unittest.TestCase):
         self.assertGreater(len(classes), 20)
 
     @no_duplicates
-    def test_every_login_flow_test_is_in_the_callback_port_group(self):
-        """`pytest -n auto` must never run two login flows at once.
-
-        Each starts a real callback server on its URL's port, so two on
-        different workers collide, and the loser waits out a five-minute
-        timeout against the other's server. Keyed on the call rather than on
-        a port number, so a test that moves to another port is still caught.
-        """
-        from . import utils
-        self.assertEqual('xdist_group', utils.callback_port_group.mark.name)
-
-        import configparser
-        cfg = configparser.ConfigParser()
-        cfg.read(os.path.join(REPO_ROOT, 'setup.cfg'))
-        self.assertIn('--dist loadgroup', cfg['tool:pytest']['addopts'])
-
-
-        runs_the_flow = self.runs_the_flow
-
-        def grouped(cls):
-            return any(getattr(d, 'id', getattr(d, 'attr', None))
-                       == 'callback_port_group' for d in cls.decorator_list)
-
-        offenders, found = [], []
-        for path in self.python_files_under_tests():
-            with open(path, encoding='utf-8') as f:
-                tree = ast.parse(f.read())
-            for cls in ast.walk(tree):
-                if isinstance(cls, ast.ClassDef) and runs_the_flow(cls):
-                    found.append(cls.name)
-                    if not grouped(cls):
-                        offenders.append('%s: %s runs the login flow outside '
-                                         'callback_port_group'
-                                         % (display_path(path), cls.name))
-        self.assertEqual([], offenders)
-
-        # Named, not counted: a scan that stopped seeing calls would pass the
-        # assertion above, and these are the classes known to make them.
-        self.assertLessEqual(
-                {'ClientFromLoginFlowTest', 'ParentSideImportTest',
-                 'ConnectErrorSiblingsAreAbsorbedTest'}, set(found))
-
-    @no_duplicates
     def test_no_login_flow_test_names_a_fixed_port(self):
         """A login-flow test's callback URL takes its port from
         free_callback_port(), never a number written down.
@@ -2141,8 +2099,11 @@ class DocExampleTest(unittest.TestCase):
         A fixed port (6969, then 8182) made any two runs of the suite on one
         machine fail each other: measured, every one of six paired runs lost
         test_create_token_file or test_a_connect_timeout_is_treated_as_not_\
-listening_yet, and none of ten once each test took a free port. Nothing in
-        a single run can see a fixed port coming back, so this looks.
+listening_yet, and none of ten once each test took a free port. It also
+        kept every login-flow test on one xdist worker; without that, and on
+        the fixed port, five runs of six workers each failed four to six of
+        them, and none of twenty on free ports. A fixed port coming back would
+        fail most runs again, but only some, so this looks.
         """
         import re
         fixed = re.compile(r'^https?://(127\.0\.0\.1|localhost):\d')

@@ -5830,7 +5830,7 @@ That is the whole install.''',
          "                   == 'client_from_login_flow'\n",
          "                   == 'client_from_login_flow_'\n",
          'tests/packaging_test.py::DocExampleTest'
-         '::test_every_login_flow_test_is_in_the_callback_port_group',
+         '::test_no_login_flow_test_names_a_fixed_port',
          'not less than or equal to'),
 
     # The auth tests register tokens 'a' and 'r' in the process-wide
@@ -7367,3 +7367,26 @@ CASES.extend([
          '::test_no_login_flow_test_names_a_fixed_port',
          'a login-flow test names a fixed callback port'),
 ])
+
+# The login-flow tests' xdist group and the harness's port-group lock were
+# retired once each test took a free callback port of its own.
+_PORT_GROUP_RETIRED = (
+    'The xdist group that kept the login-flow tests on one worker, and the '
+    "harness's port-group lock, are gone: each of those tests takes a free "
+    'callback port of its own. Measured with the group removed: on the fixed '
+    'port, five runs of six workers each failed four to six login-flow '
+    'tests; on free ports, none of twenty, ten of them two runs at once.')
+for _case in CASES:
+    if _case.name in ('suite/login-flow-class-outside-port-group',
+                      'suite/port-group-is-an-xdist-group',
+                      'suite/setup-cfg-distributes-by-group',
+                      'harness/a-port-group-shares-one-lock',
+                      'harness/a-group-lock-holds-across-processes',
+                      'harness/the-port-lock-reaches-the-test',
+                      'harness/a-run-hands-its-locks-to-the-test'):
+        _case.removed = _PORT_GROUP_RETIRED
+        _PORT_GROUP_FOUND = globals().setdefault('_PORT_GROUP_FOUND', set())
+        _PORT_GROUP_FOUND.add(_case.name)
+del _case
+if len(globals().get('_PORT_GROUP_FOUND', ())) != 7:
+    raise ValueError('a retired port-group case name matches no case')

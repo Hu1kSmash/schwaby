@@ -2,7 +2,6 @@
 
     python -I -B tools/redproof_audit.py <pytest arguments>
     python -I -B tools/redproof_audit.py --where
-    python -I -B tools/redproof_audit.py --collect <out.json> <pytest arguments>
 
 Run from the root of a copy of the repository: the copy's directory goes first
 on ``sys.path``, as ``python -m pytest`` would put it, so the tests import the
@@ -36,9 +35,6 @@ symbolic link to a tracked file (its event does not say whether it followed
 the link); and an ``os.open`` a caller took before the hook was put in,
 which is recorded at the wrong path.
 
-``--collect`` writes ``{node id: xdist group}`` for every collected test with
-an ``xdist_group`` mark. The harness reads it to keep two entries that share a
-fixed port (the login flow's callback server, on 6969) from running at once.
 '''
 
 import json
@@ -220,21 +216,6 @@ def write_record(path):
     os.replace(path + '.tmp', path)
 
 
-class _Collector:
-    def __init__(self, out):
-        self.out = out
-
-    def pytest_collection_finish(self, session):
-        groups = {}
-        for item in session.items:
-            mark = item.get_closest_marker('xdist_group')
-            if mark is not None:
-                groups[item.nodeid] = (mark.args[0] if mark.args
-                                       else mark.kwargs.get('name', ''))
-        with open(self.out, 'w', encoding='utf-8') as f:
-            json.dump(groups, f)
-
-
 def main(argv):
     # As `python -m pytest` would have it: the copy first.
     sys.path.insert(0, os.getcwd())
@@ -244,13 +225,8 @@ def main(argv):
         print(os.path.realpath(schwaby.__file__))
         return 0
 
-    plugins = []
-    if argv[:1] == ['--collect']:
-        plugins.append(_Collector(argv[1]))
-        argv = ['--collect-only', '-q'] + argv[2:]
-
     import pytest
-    code = int(pytest.main(argv, plugins=plugins))
+    code = int(pytest.main(argv))
     if _OUT:
         try:
             write_record(_OUT)

@@ -116,9 +116,7 @@ setuptools.setup(
             # The commit hooks' light check (tools/light_check.py) runs it.
             'pyflakes',
             'pytest',
-            # Not optional: setup.cfg passes `--dist loadgroup`, which pytest
-            # refuses as an unknown argument without it. That is what keeps
-            # `pytest -n auto` from running two login flows on one port.
+            # For `pytest -n auto`, which CONTRIBUTING runs the suite with.
             'pytest-xdist',
             # Not optional either: setup.cfg sets `timeout`, which pytest
             # warns about as an unknown option without it, and the limit is

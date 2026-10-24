@@ -78,9 +78,9 @@ someone is using should stay modest. No more than memory holds, beyond the
 one run that always goes ahead: the pool is min(cores, (available memory -
 FLOOR) / the largest run measured so far), at least one, printed with its
 reason. The first baseline runs alone to give that
-measurement. `--jobs` overrides the core count. Entries whose tests carry the
-same xdist_group mark never run at once: the login flow's callback server binds
-a fixed port, 6969, and two copies of it fail each other.
+measurement. `--jobs` overrides the core count. Entries run side by side
+whatever their tests are: each login-flow test takes a free callback port of
+its own, so two no longer take each other's server for their own.
 
 TRACKED WRITES. A test that writes to a tracked file fails the run, by
 name: the copy is compared with the snapshot after each run, and the audit
@@ -120,8 +120,6 @@ REAP_LIMIT = 30
 #: The bounds on the steps before any entry runs
 GIT_LIMIT = 60
 PREPARE_LIMIT = 300
-#: The bound on waiting for a port group's lock, behind its other entries
-GROUP_LOCK_LIMIT = 3600
 
 #: Files that may hold a secret, which an untracked file named like one is
 #: left out of every copy for
@@ -359,7 +357,8 @@ def kill_group(pgid):
 
 def reap(pgid):
     '''Kill what the run left behind and wait until it is gone: a callback
-    server outliving its test holds port 6969 against the next one.'''
+    server outliving its test holds its port, and anything it was doing goes
+    on into the next run's time.'''
     kill_group(pgid)
     deadline = time.monotonic() + REAP_LIMIT
     while True:
@@ -385,10 +384,7 @@ class Result:
 
 
 def run_tests(workdir, copy, nodes, audit_script, record,
-              limit=RUN_LIMIT, keep_open=()):
-    '''keep_open: descriptors pytest inherits, the port groups' locks: a
-    lock the worker alone held was released the moment a worker died, while
-    its test could still be holding the port.'''
+              limit=RUN_LIMIT):
     env = {
         'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
         'HOME': os.path.join(workdir, 'home'),
@@ -411,8 +407,7 @@ def run_tests(workdir, copy, nodes, audit_script, record,
     with open(log, 'wb') as out:
         proc = subprocess.Popen(argv, cwd=copy, env=env, stdin=subprocess.DEVNULL,
                                 stdout=out, stderr=subprocess.STDOUT,
-                                start_new_session=True,
-                                pass_fds=tuple(keep_open))
+                                start_new_session=True)
     _track(proc.pid)
 
     def expire():
@@ -496,9 +491,6 @@ class Run:
             shutil.rmtree(self.tmp, ignore_errors=True)
             raise
         self.audit = os.path.join(self.snapshot.path, AUDIT)
-        self.locks_dir = os.path.join(self.tmp, 'locks')
-        os.makedirs(self.locks_dir)
-        self.groups = {}
         self.largest = 0
         self.lowest_available = available_memory()
         self.tracked_writes = {}
@@ -518,42 +510,6 @@ class Run:
                                   or avail < self.lowest_available):
             self.lowest_available = avail
 
-    def locks_for(self, nodes):
-        '''The xdist groups these nodes' tests are in, sorted: the port
-        groups whose lock a run of them must hold.'''
-        names = set()
-        for node in nodes:
-            for item, group in self.groups.items():
-                if item == node or item.startswith(node + '::'):
-                    names.add(group)
-        return sorted(names)
-
-    def hold_groups(self, names):
-        '''Holds each group's lock, a file lock, so it holds across the
-        worker processes. Bounded, and the wait that runs past it fails by
-        the group's name.'''
-        import fcntl
-        held = []
-        for name in names:
-            f = open(os.path.join(self.locks_dir, sha(name.encode())[:16]),
-                     'w')
-            deadline = time.monotonic() + GROUP_LOCK_LIMIT
-            while True:
-                try:
-                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    break
-                except BlockingIOError:
-                    if time.monotonic() > deadline:
-                        f.close()
-                        for g in held:
-                            g.close()
-                        raise RuntimeError(
-                            'waited %d s for the lock of port group %r'
-                            % (GROUP_LOCK_LIMIT, name))
-                    time.sleep(0.1)
-            held.append(f)
-        return held
-
     def run(self, nodes, mutation=None):
         '''Runs nodes in a fresh copy, with the mutation (path, bytes) if any.
         Returns (Result, the tracked files it wrote, why its writes could not
@@ -568,16 +524,9 @@ class Run:
         record_path = os.path.join(work, 'record.json')
         inodes = tracked_inodes(copy, self.snapshot.tracked)
         copied = time.monotonic()
-        locks = self.hold_groups(self.locks_for(nodes))
-        locked = time.monotonic()
-        try:
-            if _stopping.is_set():
-                raise SystemExit(1)
-            result = run_tests(work, copy, nodes, self.audit, record_path,
-                               keep_open=[lock.fileno() for lock in locks])
-        finally:
-            for lock in reversed(locks):
-                lock.close()
+        if _stopping.is_set():
+            raise SystemExit(1)
+        result = run_tests(work, copy, nodes, self.audit, record_path)
         self.note_memory(result)
         changed = set(self.changed_tracked(copy, mutation))
         unchecked = None
@@ -595,10 +544,9 @@ class Run:
             # put back is unknown.
             unchecked = 'it left no record of its writes'
         shutil.rmtree(work, ignore_errors=True)
-        # Where the time went, for the entry's line: the copy, the wait for a
-        # port group's lock, and pytest itself; the rest is the harness's.
+        # Where the time went, for the entry's line: the copy, and pytest
+        # itself; the rest is the harness's.
         self.timing.copy = copied - started
-        self.timing.lock = locked - copied
         self.timing.pytest = result.seconds
         return result, sorted(changed), unchecked
 
@@ -814,20 +762,18 @@ def run_entries(run, args, entries):
               % (imported, where.stderr))
         raise SystemExit(1)
 
-    collect = os.path.join(work, 'groups.json')
+    # A suite that cannot be collected fails every baseline, each for the
+    # same reason: say it once.
     out = subprocess.run(
-        [sys.executable, '-I', '-B', run.audit, '--collect', collect,
+        [sys.executable, '-I', '-B', run.audit, '--collect-only', '-q',
          '-p', 'no:cacheprovider', 'tests/'], cwd=copy,
         env={'PATH': os.environ.get('PATH', ''), 'HOME': work,
              'LANG': 'C.UTF-8'},
         capture_output=True, text=True, timeout=PREPARE_LIMIT)
-    if out.returncode != 0 or not os.path.exists(collect):
-        print('redproof: collecting the suite failed, so the port groups '
-              'are unknown and nothing is judged\n%s%s'
-              % (out.stdout[-2000:], out.stderr[-2000:]))
+    if out.returncode != 0:
+        print('redproof: collecting the suite failed, so nothing is judged'
+              '\n%s%s' % (out.stdout[-2000:], out.stderr[-2000:]))
         raise SystemExit(1)
-    with open(collect, 'rb') as f:
-        run.groups = json.loads(f.read())
     shutil.rmtree(work, ignore_errors=True)
 
     # Baselines: every distinct test, unmutated. The first alone, to measure
@@ -895,15 +841,14 @@ def run_entries(run, args, entries):
 
 
 def split(run, seconds):
-    '''`: copy a, lock b, pytest c, harness d` for the run this task just
+    '''`: copy a, pytest c, harness d` for the run this task just
     made, or '' when it made none (an entry judged without running).'''
     t = run.timing
     if not hasattr(t, 'pytest'):
         return ''
-    own = max(0.0, seconds - t.copy - t.lock - t.pytest)
-    text = ': copy %.1f, lock %.1f, pytest %.1f, harness %.1f' % (
-        t.copy, t.lock, t.pytest, own)
-    del t.copy, t.lock, t.pytest
+    own = max(0.0, seconds - t.copy - t.pytest)
+    text = ': copy %.1f, pytest %.1f, harness %.1f' % (t.copy, t.pytest, own)
+    del t.copy, t.pytest
     return text
 
 
@@ -977,10 +922,10 @@ def _entry_failed(name, why):
 
 #: How long a worker has to stop once told to, before it is killed
 WORKER_STOP_LIMIT = 10
-#: The longest one task may take, seen from the parent: a port group's wait,
-#: its one run and that run's reap, and five minutes for copying and the rest.
-#: Past it, the worker is killed and the item fails.
-TASK_LIMIT = GROUP_LOCK_LIMIT + RUN_LIMIT + REAP_LIMIT + 300
+#: The longest one task may take, seen from the parent: its one run and that
+#: run's reap, and five minutes for copying and the rest. Past it, the worker
+#: is killed and the item fails.
+TASK_LIMIT = RUN_LIMIT + REAP_LIMIT + 300
 
 
 def parallel(fn, items, size, failed):
@@ -1030,11 +975,7 @@ def parallel(fn, items, size, failed):
                 w = key.data
                 frames = w.frames()
                 if frames is None:
-                    # Gone: what it left running dies with it. Its port
-                    # group's lock stays held by its pytest, which inherited
-                    # it, until every holder of it is gone: the group, killed
-                    # here, and anything the test started outside it, which
-                    # may hold the port as well.
+                    # Gone: what it left running dies with it.
                     w.reap_groups()
                     selector.unregister(w.results)
                     workers.remove(w)
@@ -1191,7 +1132,7 @@ class _Worker:
 
     def reap_groups(self):
         '''Kills what it reported running and waits for it to go: a
-        callback server left behind holds port 6969 against the next run.'''
+        callback server left behind holds its port, and runs on.'''
         for pgid in sorted(self.groups):
             try:
                 reap(pgid)

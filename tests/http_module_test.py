@@ -33,7 +33,7 @@ from schwaby.orders import generic
 from schwaby.orders.generic import OrderBuilder
 
 from .utils import (MockAsyncOAuthClient, MockOAuthClient,
-                    callback_port_group, free_callback_port,
+                    free_callback_port,
                     no_duplicates)
 
 
@@ -144,7 +144,6 @@ class ChildOrderStrategyGuardTest(unittest.TestCase):
             OrderBuilder().add_child_order_strategy(response)
 
 
-@callback_port_group
 class ConnectErrorSiblingsAreAbsorbedTest(unittest.TestCase):
     '''The readiness wait in the login flow catches ConnectError and
     ConnectTimeout, which are siblings rather than parent and child. Both are

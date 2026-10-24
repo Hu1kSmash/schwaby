@@ -435,7 +435,6 @@ class RunRecordTest(unittest.TestCase):
             open(os.path.join(dest, 'schwaby', 'x.py'), 'wb').write(b'a = 1\n')]
         run = redproof.Run.__new__(redproof.Run)
         run.tmp, run.snapshot, run.audit = tmp.name, snap, 'audit.py'
-        run.locks_dir, run.groups = tmp.name, {}
         run.largest, run.lowest_available = 0, None
         run.timing = threading.local()
 
@@ -906,7 +905,7 @@ print('dies-after', sorted(got), flush=True)
         run = types.SimpleNamespace(
             snapshot=types.SimpleNamespace(content={}), timing=threading.local(),
             tracked_writes={}, unchecked={}, largest=0, lowest_available=None)
-        run.timing.copy, run.timing.lock, run.timing.pytest = 0.1, 0.0, 0.5
+        run.timing.copy, run.timing.pytest = 0.1, 0.5
         entry = case()
         with mock.patch.object(redproof, '_job', {
                 'run': run, 'cases': {entry.name: entry},
@@ -916,108 +915,6 @@ print('dies-after', sorted(got), flush=True)
         self.assertEqual('SPEC', result[1])
         self.assertEqual('', result[4], 'an entry that never ran printed '
                          'another run\'s time split')
-
-
-class GroupLockTest(unittest.TestCase):
-
-    def test_entries_sharing_an_xdist_group_share_a_lock(self):
-        run = types.SimpleNamespace(groups={
-            'tests/a_test.py::Flow::test_one': 'callback-port',
-            'tests/a_test.py::Flow::test_two': 'callback-port'})
-        whole_file = redproof.Run.locks_for(run, ['tests/a_test.py'])
-        one_test = redproof.Run.locks_for(
-            run, ['tests/a_test.py::Flow::test_two'])
-        self.assertEqual(['callback-port'], whole_file, 'a test in the port '
-                         'group ran without its lock')
-        self.assertEqual(whole_file, one_test)
-        self.assertEqual([], redproof.Run.locks_for(
-            run, ['tests/a_test.py::Other::test_one']))
-
-    def test_a_group_lock_holds_across_processes(self):
-        # The entries run in worker processes, so a thread lock would hold
-        # nothing: two workers would bind port 6969 at once.
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        run = types.SimpleNamespace(locks_dir=tmp.name)
-        held = redproof.Run.hold_groups(run, ['callback-port'])
-        self.addCleanup(lambda: [f.close() for f in held])
-        probe = subprocess.run([sys.executable, '-c', '''
-import fcntl, os, sys
-f = open(os.path.join(sys.argv[1], sys.argv[2]), 'w')
-try:
-    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    print('taken')
-except BlockingIOError:
-    print('held')
-''', tmp.name, os.path.basename(held[0].name)], capture_output=True, text=True)
-        self.assertEqual('held', probe.stdout.strip(),
-                         'another process could take a held group lock')
-
-
-class PortLockTest(unittest.TestCase):
-    '''A port group's lock is held by the test process itself, not only by
-    the worker: a worker that died released it while its callback server
-    could still hold the port.'''
-
-    def test_the_lock_reaches_the_test(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        work, copy = os.path.join(tmp.name, 'work'), os.path.join(tmp.name, 'c')
-        os.makedirs(work)
-        os.makedirs(copy)
-        script = os.path.join(tmp.name, 'fake_audit.py')
-        # The test process checks the descriptor it was handed is the lock
-        # file itself, not merely that some descriptor has that number.
-        with open(script, 'w') as f:
-            f.write('import os, sys\n'
-                    'fd, path = int(sys.argv[-2]), sys.argv[-1]\n'
-                    'if os.fstat(fd).st_ino == os.stat(path).st_ino:\n'
-                    '    open(os.path.join(os.environ["HOME"], "held"), "w")\n')
-        run = types.SimpleNamespace(locks_dir=tmp.name)
-        held = redproof.Run.hold_groups(run, ['callback-port'])
-        self.addCleanup(lambda: [f.close() for f in held])
-        fd = held[0].fileno()
-        redproof.run_tests(work, copy, [str(fd), held[0].name], script,
-                           os.path.join(work, 'record.json'), keep_open=[fd])
-        self.assertTrue(os.path.exists(os.path.join(work, 'home', 'held')),
-                        'the port lock did not reach the test')
-
-    def test_a_run_hands_its_locks_to_the_test(self):
-        import threading
-        from unittest import mock
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        snap = snapshot({})
-        snap.copy = lambda dest: os.makedirs(dest)
-        run = redproof.Run.__new__(redproof.Run)
-        run.tmp, run.snapshot, run.audit = tmp.name, snap, 'audit.py'
-        run.locks_dir = tmp.name
-        run.groups = {'tests/x_test.py::T::test_x': 'callback-port'}
-        run.largest, run.lowest_available = 0, None
-        run.timing = threading.local()
-        seen = []
-
-        def run_tests(work, copy, nodes, audit, record, keep_open=()):
-            # Each descriptor handed over is a lock another process cannot
-            # take while the test runs.
-            for fd in keep_open:
-                probe = subprocess.run([sys.executable, '-c', '''
-import fcntl, os, sys
-with open(sys.argv[1], 'w') as f:
-    try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        print('taken')
-    except BlockingIOError:
-        print('held')
-''', os.path.join(tmp.name, redproof.sha(b'callback-port')[:16])],
-                    capture_output=True, text=True)
-                seen.append(probe.stdout.strip())
-            return result(0, '1 passed')
-
-        with mock.patch.object(redproof, 'run_tests', run_tests):
-            run.run(['tests/x_test.py'])
-        self.assertEqual(['held'], seen, 'a run kept its port lock from the '
-                         'test')
 
 
 class ChangedTrackedTest(unittest.TestCase):

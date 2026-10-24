@@ -10,8 +10,8 @@ same count before and after, on the same tests, under the same load.
 
 Each run is a fresh `python -m pytest` in one process, from the repository
 root, with the interpreter this runs under. The runs are one after another,
-never side by side: the login flow's tests bind port 6969, and two copies of
-them fail each other, which would be a measurement of this tool.
+never side by side, so each failure belongs to one run and the only other
+thing on the machine is what --load puts there.
 
 --load keeps every usable core busy for the whole measurement with spinning
 processes, one per core, started before the first run and stopped after the

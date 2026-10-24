@@ -7,17 +7,7 @@ import inspect
 import httpx2
 import json
 import os
-import pytest
 import socket
-
-
-#: Put on every test class which runs ``client_from_login_flow``. The flow
-#: starts its callback server on the port its URL names, in a child process, so
-#: no test can hold that port, and two of them running at once on different
-#: workers take each other's server for their own. This keeps them on one
-#: worker under ``pytest -n auto``; setup.cfg's ``--dist loadgroup`` is what
-#: makes xdist honour it. packaging_test checks no such class goes without it.
-callback_port_group = pytest.mark.xdist_group('callback-port')
 
 
 def free_callback_port():
@@ -25,7 +15,9 @@ def free_callback_port():
     callback URL: a fixed one (6969) made any two runs of the suite on one
     machine fail each other. The port is free when this returns and the flow
     binds it a moment later, so another process could take it between the
-    two; the flow cannot be handed a socket already bound.'''
+    two; the flow cannot be handed a socket already bound. With a port of
+    its own, a login-flow test needs no worker or run to itself: two flows
+    side by side no longer take each other's server for their own.'''
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('127.0.0.1', 0))
         return s.getsockname()[1]
