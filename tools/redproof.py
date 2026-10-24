@@ -379,7 +379,10 @@ class Result:
 
 
 def run_tests(workdir, copy, nodes, audit_script, record,
-              limit=RUN_LIMIT):
+              limit=RUN_LIMIT, keep_open=()):
+    '''keep_open: descriptors pytest inherits, the port groups' locks: a
+    lock the worker alone held was released the moment a worker died, while
+    its test could still be holding the port.'''
     env = {
         'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
         'HOME': os.path.join(workdir, 'home'),
@@ -402,7 +405,8 @@ def run_tests(workdir, copy, nodes, audit_script, record,
     with open(log, 'wb') as out:
         proc = subprocess.Popen(argv, cwd=copy, env=env, stdin=subprocess.DEVNULL,
                                 stdout=out, stderr=subprocess.STDOUT,
-                                start_new_session=True)
+                                start_new_session=True,
+                                pass_fds=tuple(keep_open))
     _track(proc.pid)
 
     def expire():
@@ -544,7 +548,8 @@ class Run:
         try:
             if _stopping.is_set():
                 raise SystemExit(1)
-            result = run_tests(work, copy, nodes, self.audit, record_path)
+            result = run_tests(work, copy, nodes, self.audit, record_path,
+                               keep_open=[lock.fileno() for lock in locks])
         finally:
             for lock in reversed(locks):
                 lock.close()
@@ -991,8 +996,9 @@ def parallel(fn, items, size, failed):
                 w = key.data
                 frames = w.frames()
                 if frames is None:
-                    # Gone: what it left running dies with it, and is gone
-                    # before another worker can take its port group's lock.
+                    # Gone: what it left running dies with it. Its port
+                    # group's lock stays held by its pytest, which inherited
+                    # it, until that pytest dies here with its group.
                     w.reap_groups()
                     selector.unregister(w.results)
                     workers.remove(w)
@@ -1046,9 +1052,11 @@ def parallel(fn, items, size, failed):
                 w.drain()
             except BaseException as e:
                 failures.append(e)
-            finally:
+            try:
                 w.reap_groups()
                 os.close(w.results)
+            except BaseException as e:
+                failures.append(e)
         selector.close()
         if failures:
             raise failures[0]
@@ -1190,8 +1198,12 @@ def _worker_main(fn, items, tasks, results):
             data = data[os.write(results, data):]
 
     def stopped(signum, frame):
-        # Leaves: no exception, which task code or cleanup could catch and
-        # carry on from. The parent kills the groups it reported.
+        # Kills its own groups and leaves: no exception, which task code or
+        # cleanup could catch and carry on from. The parent reaps what it
+        # reported as well, but not a group started a moment before its
+        # report, nor any after its own cleanup was cut short.
+        for pid in list(_live):
+            kill_group(pid)
         os._exit(128 + signum)
 
     for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):

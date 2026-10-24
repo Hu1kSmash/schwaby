@@ -374,7 +374,7 @@ class RunRecordTest(unittest.TestCase):
         run.largest, run.lowest_available = 0, None
         run.timing = threading.local()
 
-        def run_tests(work, copy, nodes, audit, record):
+        def run_tests(work, copy, nodes, audit, record, **kwargs):
             with open(record, 'w') as f:
                 json.dump({'written': [os.path.join(copy, 'schwaby', 'x.py')],
                            'unresolved': []}, f)
@@ -388,10 +388,10 @@ class RunRecordTest(unittest.TestCase):
 
         # A run that left no record, and one whose writes the hook could
         # not all place: neither is a run with no writes.
-        def no_record(work, copy, nodes, audit, record):
+        def no_record(work, copy, nodes, audit, record, **kwargs):
             return result(1, 'E   expected')
 
-        def unresolved(work, copy, nodes, audit, record):
+        def unresolved(work, copy, nodes, audit, record, **kwargs):
             with open(record, 'w') as f:
                 json.dump({'written': [], 'unresolved': ['os.rename']}, f)
             return result(1, 'E   expected')
@@ -515,7 +515,7 @@ def task(item):
         return lambda: None
     if item == 'hangs':
         time.sleep(20)
-    if item in ('busy', 'wedged'):
+    if item in ('busy', 'wedged', 'own'):
         if item == 'wedged':
             # Stuck: told to stop, it starts more tests instead, which it
             # reports after the parent has stopped reading.
@@ -556,6 +556,26 @@ for first in ('busy', 'wedged'):
         break
     print('abandoned-' + first, round(time.monotonic() - started, 1),
           flush=True)
+# As if the parent's cleanup were cut short before it reaped: a stopped
+# worker's own kill is then all there is.
+real_reap = rp.reap
+rp.reap = lambda pgid: None
+for result in rp.parallel(task, ['own', 'quick-own'], 2, failed):
+    break
+rp.reap = real_reap
+# A cleanup that fails says so, not silently.
+real_wait_gone = rp._wait_gone
+def broken(pid, deadline):
+    raise ValueError('cleanup broke')
+rp._wait_gone = broken
+pool = rp.parallel(task, ['a', 'b'], 2, failed)
+next(pool)
+try:
+    pool.close()
+    print('cleanup-error swallowed', flush=True)
+except ValueError:
+    print('cleanup-error raised', flush=True)
+rp._wait_gone = real_wait_gone
 got = []
 for result in rp.parallel(task, ['dies-after', 'b', 'c'], 1, failed):
     got.append(result)
@@ -581,6 +601,7 @@ print('dies-after', sorted(got), flush=True)
         except subprocess.TimeoutExpired:
             os.killpg(proc.pid, 9)
             proc.wait()
+            self.stderr = ''
             self.fail('the pool waited on a dead or overdue worker')
         try:
             os.killpg(proc.pid, 0)
@@ -595,8 +616,20 @@ print('dies-after', sorted(got), flush=True)
         with open(os.path.join(tmp, 'out')) as f:
             return dict(line.split(' ', 1) for line in f.read().splitlines())
 
+    def say(self, message):
+        # The script's own error, when it crashed, is the first thing a
+        # reader of any failure here needs.
+        return message + ('\nthe scenario script said:\n' + self.stderr[-2000:]
+                          if self.stderr.strip() else '')
+
     def test_a_dead_worker_is_reported_and_its_tests_killed(self):
         lines = self.run_script()
+        # Whatever the script started is killed however the test ends: an
+        # assertion failing first left them running for two minutes.
+        for name in ('orphan', 'stopped-orphan', 'busy-group', 'wedged-group',
+                     'late-group', 'own-group', 'reaped-group', 'slow-group'):
+            if lines.get(name, '').strip().isdigit():
+                self.addCleanup(redproof.kill_group, int(lines[name]))
         # The positive control: workers that live return what they made.
         self.assertEqual("[('done', 'a'), ('done', 'b')]", lines.get('a'))
         self.assertEqual("[('done', 'slow', True), ('failed', 'dies', 'its "
@@ -617,10 +650,16 @@ print('dies-after', sorted(got), flush=True)
                          r"\('failed', 'unpicklable', .the harness failed: ",
                          'a result that cannot '
                          'cross to the parent was not reported as such')
-        reaped = lines['reaped-group']
-        self.assertNotIn(reaped, lines.get('killed', '').replace(
-            '[', ' ').replace(']', ' ').replace(',', ' ').split(),
-            'a reaped group was killed again')
+        killed = lines.get('killed', '').replace('[', ' ').replace(
+            ']', ' ').replace(',', ' ').split()
+        # The positive control: the spy saw the dead worker's group killed,
+        # so its silence about the reaped one means something.
+        self.assertIn(lines.get('orphan'), killed, self.say(
+            'the kill spy saw nothing, so it cannot say what was not killed'))
+        self.assertIn('reaped-group', lines, self.say('the scenario never '
+                      'reaped a group'))
+        self.assertNotIn(lines['reaped-group'], killed,
+                         self.say('a reaped group was killed again'))
         self.assertEqual("[('big', 300000)]", lines.get('big'),
                          'a result larger than one read was lost')
         self.assertEqual("[('failed', 'hangs', 'its worker process ran past "
@@ -628,18 +667,22 @@ print('dies-after', sorted(got), flush=True)
                          'a task past its bound was not stopped')
         # Told to stop, a busy worker stops at once; one that cannot is
         # killed at the bound, 1 s here.
-        self.assertLess(float(lines['abandoned-busy']), 0.9,
+        self.assertLess(float(lines.get('abandoned-busy', 99)), 0.9,
                         'an abandoned pool\'s busy worker was not told to '
                         'stop')
         # Left alive, a stuck worker keeps its killed tests as zombies, so
         # reaping them waits out REAP_LIMIT: 30 s, not about 1.
-        self.assertLess(float(lines['abandoned-wedged']), 5,
-                        'a stuck worker was not killed at the bound')
+        self.assertLess(float(lines.get('abandoned-wedged', 99)), 5,
+                        self.say('a stuck worker was not killed at the bound'))
+        self.assertEqual('raised', lines.get('cleanup-error'),
+                         self.say('a failing cleanup was swallowed'))
         self.assertEqual("[('done', 'b'), ('done', 'c'), ('done', "
                          "'dies-after')]", lines.get('dies-after'),
                          'a worker that died after its result lost the run')
         for name in ('orphan', 'stopped-orphan', 'busy-group',
-                     'wedged-group', 'late-group'):
+                     'wedged-group', 'late-group', 'own-group'):
+            self.assertIn(name, lines, self.say('the scenario never started '
+                          '%s' % name))
             pid = int(lines[name])
             deadline = time.monotonic() + 10
             while time.monotonic() < deadline and self.alive(pid):
@@ -732,6 +775,56 @@ except BlockingIOError:
 ''', tmp.name, os.path.basename(held[0].name)], capture_output=True, text=True)
         self.assertEqual('held', probe.stdout.strip(),
                          'another process could take a held group lock')
+
+
+class PortLockTest(unittest.TestCase):
+    '''A port group's lock is held by the test process itself, not only by
+    the worker: a worker that died released it while its callback server
+    could still hold the port.'''
+
+    def test_the_lock_reaches_the_test(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        work, copy = os.path.join(tmp.name, 'work'), os.path.join(tmp.name, 'c')
+        os.makedirs(work)
+        os.makedirs(copy)
+        script = os.path.join(tmp.name, 'fake_audit.py')
+        with open(script, 'w') as f:
+            f.write('import os, sys\n'
+                    'os.fstat(int(sys.argv[-1]))\n'
+                    'open(os.path.join(os.environ["HOME"], "held"), "w")\n')
+        run = types.SimpleNamespace(locks_dir=tmp.name)
+        held = redproof.Run.hold_groups(run, ['callback-port'])
+        self.addCleanup(lambda: [f.close() for f in held])
+        fd = held[0].fileno()
+        redproof.run_tests(work, copy, [str(fd)], script,
+                           os.path.join(work, 'record.json'), keep_open=[fd])
+        self.assertTrue(os.path.exists(os.path.join(work, 'home', 'held')),
+                        'the port lock did not reach the test')
+
+    def test_a_run_hands_its_locks_to_the_test(self):
+        import threading
+        from unittest import mock
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        snap = snapshot({})
+        snap.copy = lambda dest: os.makedirs(dest)
+        run = redproof.Run.__new__(redproof.Run)
+        run.tmp, run.snapshot, run.audit = tmp.name, snap, 'audit.py'
+        run.locks_dir = tmp.name
+        run.groups = {'tests/x_test.py::T::test_x': 'callback-port'}
+        run.largest, run.lowest_available = 0, None
+        run.timing = threading.local()
+        seen = []
+
+        def run_tests(work, copy, nodes, audit, record, keep_open=()):
+            seen.extend(keep_open)
+            return result(0, '1 passed')
+
+        with mock.patch.object(redproof, 'run_tests', run_tests):
+            run.run(['tests/x_test.py'])
+        self.assertEqual(1, len(seen), 'a run kept its port lock from the '
+                         'test')
 
 
 class ChangedTrackedTest(unittest.TestCase):

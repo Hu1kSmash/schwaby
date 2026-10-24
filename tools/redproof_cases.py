@@ -6680,7 +6680,7 @@ CASES.extend([
          '                    selector.unregister(w.results)\n',
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
-         "a dead worker's tests were left running (orphan)"),
+         'the kill spy saw nothing, so it cannot say what was not killed'),
     Case('harness/a-dead-workers-item-is-reported',
          'tools/redproof.py',
          '                        yield failed(items[w.item], (',
@@ -6698,10 +6698,8 @@ CASES.extend([
          'the pool waited on a dead or overdue worker'),
     Case('harness/a-stopped-worker-leaves-rather-than-raising',
          'tools/redproof.py',
-         '        # carry on from. The parent kills the groups it reported.\n'
-         '        os._exit(128 + signum)\n',
-         '        # carry on from. The parent kills the groups it reported.\n'
-         '        raise SystemExit(128 + signum)\n',
+         '            kill_group(pid)\n        os._exit(128 + signum)\n',
+         '            kill_group(pid)\n        raise SystemExit(128 + signum)\n',
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
          'the work after a stopped worker did not go on'),
@@ -7137,4 +7135,64 @@ CASES.extend([
          'tests/redproof_tool_test.py::JudgeTest'
          '::test_a_run_that_could_not_be_checked_is_reported',
          'a run whose writes went unchecked was not reported'),
+])
+
+CASES.extend([
+    # The pool's second review: a case for each branch it found without one.
+    Case('harness/a-stopped-worker-kills-its-own-tests',
+         'tools/redproof.py',
+         '        for pid in list(_live):\n            kill_group(pid)\n'
+         '        os._exit(128 + signum)\n',
+         '        os._exit(128 + signum)\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         "a dead worker's tests were left running (own-group)"),
+    Case('harness/each-workers-reap-runs-on-its-own',
+         'tools/redproof.py',
+         '            try:\n                w.reap_groups()\n'
+         '                os.close(w.results)\n',
+         '            try:\n                os.close(w.results)\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         "a dead worker's tests were left running (wedged-group)"),
+    Case('harness/a-failing-cleanup-is-raised',
+         'tools/redproof.py',
+         '        if failures:\n            raise failures[0]\n',
+         '        if failures:\n            pass\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'a failing cleanup was swallowed'),
+    Case('harness/an-item-not-taken-goes-back',
+         'tools/redproof.py',
+         '            pending.append(index)\n',
+         '            pass\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'the pool waited on a dead or overdue worker'),
+    Case('harness/an-item-is-the-workers-only-once-taken',
+         'tools/redproof.py',
+         "        try:\n            os.write(self.tasks, struct.pack('>q', index))\n",
+         "        self.item, self.since = index, time.monotonic()\n"
+         "        try:\n            os.write(self.tasks, struct.pack('>q', index))\n",
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'a worker that died after its result lost the run',
+         also=('        self.item, self.since = index, time.monotonic()\n'
+               '        return True\n',
+               '        return True\n')),
+    Case('harness/the-port-lock-reaches-the-test',
+         'tools/redproof.py',
+         '                                pass_fds=tuple(keep_open))\n',
+         '                                )\n',
+         'tests/redproof_tool_test.py::PortLockTest'
+         '::test_the_lock_reaches_the_test',
+         'the port lock did not reach the test'),
+    Case('harness/a-run-hands-its-locks-to-the-test',
+         'tools/redproof.py',
+         '                               keep_open=[lock.fileno() for lock in '
+         'locks])\n',
+         '                               keep_open=[])\n',
+         'tests/redproof_tool_test.py::PortLockTest'
+         '::test_a_run_hands_its_locks_to_the_test',
+         'a run kept its port lock from the test'),
 ])
