@@ -1,14 +1,16 @@
 # The exact dependency set this project's suite is tested against, on every
 # Python it supports: one file, with markers where a version differs by
 # Python (httpx2 2.16 needs 3.11, so 3.10 gets 2.14). CI installs with it as
-# a constraint (`pip install -c requirements.lock ".[dev]"`), and so does the
-# shared test queue (as PIP_CONSTRAINT), so every machine tests the same
-# versions. It is not what schwaby requires: setup.py's floors are that, and
-# installing schwaby never reads this file.
+# a constraint (`uv pip install -c requirements.lock ".[dev]"`), so every
+# machine tests the same versions; the fresh-resolve workflow tests without
+# it. It is not what schwaby requires: setup.py's floors are that, and
+# installing schwaby never reads this file. It pins what is installed, not
+# the build backends an isolated build fetches.
 #
-# Resolved 2026-10-23 by uv for Python 3.10 and newer. On 3.14 it is exactly
-# the set 5.1.1 was tested against, whose runtime packages are the set 5.1.0
-# was certified against on 2026-10-22.
+# Resolved 2026-10-23 by uv for Python 3.10 and newer. On 3.14 it is the set
+# 5.1.1 was tested against plus pyflakes and pytest-timeout, which [dev]
+# gained after it; the runtime packages are the set 5.1.0 was certified
+# against on 2026-10-22.
 #
 # To regenerate, keeping every pin that still resolves:
 #   uv pip compile setup.py --extra dev --universal --python-version 3.10 \

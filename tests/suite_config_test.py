@@ -93,7 +93,7 @@ class PythonPinsTest(unittest.TestCase):
     def test_ci_tests_the_pinned_pythons(self):
         import re
         minors = [p.rsplit('.', 1)[0] for p in self.pins()]
-        for workflow in ('python.yml', 'publish.yml'):
+        for workflow in ('python.yml', 'publish.yml', 'fresh.yml'):
             text = self.read('.github', 'workflows', workflow)
             matrices = re.findall(r'python: \[([^\]]*)\]', text)
             self.assertTrue(matrices, workflow)
@@ -104,6 +104,6 @@ class PythonPinsTest(unittest.TestCase):
             self.assertEqual(
                 minors, re.findall(r'"([0-9.]+)"', matrices[0]),
                 '%s does not test every pinned Python' % workflow)
-            self.assertNotIn('setup-python', text,
+            self.assertNotIn('uses: actions/setup-python', text,
                              '%s installs a Python the pin does not '
                              'choose' % workflow)
