@@ -6578,3 +6578,15 @@ CASES.append(
          'tests/redproof_tool_test.py::ShardTest'
          '::test_the_shard_line_names_the_slice_and_the_whole',
          'the shard line misstates the slice or the whole'))
+
+CASES.append(
+    # The lock pins versions; a library file edited at the same version kept
+    # every verdict measured against the original until each file was held
+    # to its RECORD.
+    Case('harness/an-edited-installed-file-keeps-nothing',
+         'tools/redproof.py',
+         '            if digest != f.hash.value:\n',
+         '            if False:\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_a_file_edited_at_the_same_version_is_caught',
+         'an installed file edited in place was not noticed'))

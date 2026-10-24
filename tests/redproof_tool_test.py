@@ -471,6 +471,38 @@ class KeyTest(unittest.TestCase):
                           'an environment unlike the lock was accepted')
 
 
+class InstalledFilesTest(unittest.TestCase):
+
+    def dist(self, root, name, files):
+        import base64
+        import hashlib
+        recorded = []
+        for rel, data, recorded_data in files:
+            with open(os.path.join(root, rel), 'wb') as f:
+                f.write(data)
+            digest = base64.urlsafe_b64encode(hashlib.sha256(
+                recorded_data).digest()).rstrip(b'=').decode()
+            recorded.append(types.SimpleNamespace(
+                hash=types.SimpleNamespace(mode='sha256', value=digest),
+                __str__=lambda self: rel, rel=rel))
+        return types.SimpleNamespace(
+            metadata={'Name': name}, files=recorded,
+            locate_file=lambda f: os.path.join(root, f.rel))
+
+    def test_a_file_edited_at_the_same_version_is_caught(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        intact = self.dist(tmp.name, 'intact', [('a.py', b'x', b'x')])
+        self.assertIsNone(redproof.installed_files_differ([intact]))
+        edited = self.dist(tmp.name, 'edited', [('b.py', b'y = 2', b'y = 1')])
+        why = redproof.installed_files_differ([intact, edited])
+        self.assertIn('edited:', why or '',
+                      'an installed file edited in place was not noticed')
+        # pip and schwaby are not the tests' dependencies.
+        self.assertIsNone(redproof.installed_files_differ([self.dist(
+            tmp.name, 'pip', [('c.py', b'z = 2', b'z = 1')])]))
+
+
 class GroupLockTest(unittest.TestCase):
 
     def test_entries_sharing_an_xdist_group_share_a_lock(self):

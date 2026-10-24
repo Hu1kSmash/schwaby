@@ -553,6 +553,35 @@ def environment_matches_lock(snapshot):
                           for n in differ[:3])
         return '%d installed distributions differ from %s: %s%s' % (
             len(differ), LOCK, shown, ', ...' if len(differ) > 3 else '')
+    edited = installed_files_differ(metadata.distributions())
+    if edited:
+        return 'an installed file is not what was installed: %s' % edited
+    return None
+
+
+def installed_files_differ(distributions):
+    '''The first installed file whose bytes are not what its distribution's
+    RECORD says, as text, or None. The lock pins versions, so a library file
+    edited in place at the same version passed the lock gate and could keep
+    a verdict measured against the original. pip and schwaby are not test
+    dependencies and are skipped, as in the lock comparison.'''
+    import base64
+    for dist in distributions:
+        name = normalize(dist.metadata['Name'] or '')
+        if name in ('pip', 'schwaby'):
+            continue
+        for f in dist.files or ():
+            if not f.hash or f.hash.mode != 'sha256':
+                continue
+            try:
+                with open(dist.locate_file(f), 'rb') as fh:
+                    data = fh.read()
+            except OSError:
+                return '%s: %s is missing' % (name, f)
+            digest = base64.urlsafe_b64encode(
+                hashlib.sha256(data).digest()).rstrip(b'=').decode('ascii')
+            if digest != f.hash.value:
+                return '%s: %s differs from its RECORD' % (name, f)
     return None
 
 
