@@ -97,6 +97,11 @@ class ClassifierTest(unittest.TestCase):
             os.path.join(self.copy, 'schwaby', 'auth.py')))
         self.assertEqual(('copy', ''), self.c.classify(self.copy))
 
+    def test_a_path_that_cannot_be_resolved_is_named_so(self):
+        # A test probed a path with a NUL in it; realpath raised, and the
+        # whole red-proof ended there.
+        self.assertEqual(('unresolved',), self.c.classify('/tmp/x\0y'))
+
     def test_the_runs_own_files_and_the_interpreter_key_nothing(self):
         self.assertEqual(('own',), self.c.classify(
             os.path.join(self.work, 'tmp', 'pytest-1', 'x')))
@@ -159,7 +164,8 @@ class ReadsTest(unittest.TestCase):
                 (record(connected=["('8.8.8.8', 53)"]), 'beyond loopback'),
                 (record(unresolved=['open']), 'could not work out'),
                 (record(opened=['/proc/self/status']), 'read /proc'),
-                (record(opened=['/home/u/.env']), 'secret')):
+                (record(opened=['/home/u/.env']), 'secret'),
+                (record(probed=['/tmp/x\0y']), 'cannot be resolved')):
             keyed, why, _ = self.reads(rec)
             self.assertIsNone(keyed, reason)
             self.assertIn(reason, why)

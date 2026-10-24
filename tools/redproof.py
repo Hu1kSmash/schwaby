@@ -38,6 +38,8 @@ VERDICTS
     REMOVED     the code the entry mutates was deleted, and the entry says so.
     RED?        it failed, but not on `expect`, or ran out of time, or was
                 killed: proves nothing.
+    ERROR       the harness itself failed while judging it: a defect in the
+                harness, named against the entry, and the run goes on.
     SPEC        the entry cannot be judged: its text is missing or ambiguous,
                 the mutation is a no-op, or the test fails unmutated.
 
@@ -428,7 +430,11 @@ def run_tests(workdir, copy, nodes, audit_script, record=None,
     os.makedirs(env['TMPDIR'], exist_ok=True)
     if record:
         env['REDPROOF_AUDIT'] = record
-    argv = [sys.executable, '-I', '-B', audit_script, '-q',
+    # --tb=short: pytest's long form prints each frame's arguments through
+    # repr, and a test object whose repr or type name raises (several here
+    # exist to) then crashed pytest itself, with an INTERNALERROR and no
+    # failure reported. The short form prints the same E lines.
+    argv = [sys.executable, '-I', '-B', audit_script, '-q', '--tb=short',
             '-p', 'no:cacheprovider'] + list(nodes)
     log = os.path.join(workdir, 'output.log')
     started = time.monotonic()
@@ -604,8 +610,15 @@ class Classifier:
 
     def classify(self, path):
         '''('copy', relative) | ('own',) | ('interpreter',) | ('device',) |
-        ('system',) | ('secret',) | ('outside', path)'''
-        real = os.path.realpath(path)
+        ('system',) | ('secret',) | ('unresolved',) | ('outside', path).
+        Never raises: a test can probe any path, including one with a NUL in
+        it, which os.path.realpath refuses.'''
+        if '\0' in path:
+            return ('unresolved',)
+        try:
+            real = os.path.realpath(path)
+        except (OSError, ValueError):
+            return ('unresolved',)
         for copy in (self.copy, self.copy_real):
             if self.under(path, copy):
                 rel = os.path.relpath(path, copy).replace(os.sep, '/')
@@ -666,6 +679,9 @@ def reads_from(record, classifier, snapshot, mutated, tracked):
     reads = {}
     for path, writing in record['opened'].items():
         c = classifier.classify(path)
+        if c[0] == 'unresolved':
+            why = why or 'touched a path that cannot be resolved'
+            continue
         if writing:
             if c[0] == 'copy' and c[1] in tracked:
                 tracked_writes.append(c[1])
@@ -683,6 +699,9 @@ def reads_from(record, classifier, snapshot, mutated, tracked):
             continue
         c = classifier.classify(path)
         if c[0] in ('own', 'interpreter', 'device'):
+            continue
+        if c[0] == 'unresolved':
+            why = why or 'touched a path that cannot be resolved'
             continue
         if c[0] == 'system':
             why = why or 'read %s' % path
@@ -1184,7 +1203,12 @@ def run_stale(run, args, stale, store, keys, held, unkept):
     baseline_reads = {}
 
     def baseline(t):
-        result, baseline_reads[t] = run_baseline(run, t)
+        try:
+            result, baseline_reads[t] = run_baseline(run, t)
+        except Exception as e:
+            result = Result(None, '', 0.0, 0, 'the harness failed running it: '
+                            '%s: %s' % (type(e).__name__, e))
+            baseline_reads[t] = None
         baselines[t] = result
         if result.code == 0:
             progress('baseline', ' '.join(t), '', result.seconds)
@@ -1207,8 +1231,15 @@ def run_stale(run, args, stale, store, keys, held, unkept):
     def one(c):
         t0 = time.monotonic()
         t = tuple(tests_of(c))
-        verdict, detail, reads = judge(run, c, baselines[t],
-                                       baseline_reads.get(t))
+        try:
+            verdict, detail, reads = judge(run, c, baselines[t],
+                                           baseline_reads.get(t))
+        except Exception as e:
+            # A defect in the harness, reported against the entry it hit:
+            # one used to end the whole run, an hour in, with nothing judged
+            # after it.
+            verdict, detail, reads = 'ERROR', 'the harness failed judging it: ' \
+                '%s: %s' % (type(e).__name__, e), None
         seconds = time.monotonic() - t0
         verdicts[c.name] = (verdict, detail, seconds)
         progress(verdict, c.name, detail, seconds)
