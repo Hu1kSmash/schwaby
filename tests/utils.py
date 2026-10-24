@@ -71,7 +71,11 @@ def _a_child_holds(port):
     '''Whether a process this one started holds ``port``. A child that
     cannot be read is taken as not holding it.'''
     import psutil
-    for child in psutil.Process().children(recursive=True):
+    try:
+        children = psutil.Process().children(recursive=True)
+    except psutil.Error:
+        return False
+    for child in children:
         try:
             # net_connections from psutil 6.0, connections before it.
             connections = getattr(child, 'net_connections',

@@ -1,4 +1,8 @@
 from schwaby import auth
+# Bound when this module loads, before any test's fixtures run, so the test
+# that calls it reaches the flow by a name no patch on the module attribute
+# can have replaced.
+from schwaby.auth import client_from_login_flow as _flow_imported_at_load
 from .utils import (
         AnyStringWith,
         MockAsyncOAuthClient,
@@ -154,20 +158,109 @@ class ClientFromLoginFlowTest(unittest.TestCase):
 
         # And on one a process this test started holds, which is the flow's
         # own server outliving it: a defect, not a collision.
-        import subprocess
-        import sys
-        child = subprocess.Popen(
-                [sys.executable, '-c',
-                 'import socket, sys; s = socket.socket(); '
-                 's.bind(("127.0.0.1", {})); s.listen(); print("bound"); '
-                 'sys.stdout.flush(); sys.stdin.read()'.format(port)],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-        self.addCleanup(child.wait)
-        self.addCleanup(child.stdin.close)
-        self.assertEqual('bound', child.stdout.readline().strip())
+        self.hold_in_a_child(port)
         with self.assertRaises(auth.RedirectServerExitedError):
             with naming_a_port_taken_between_pick_and_bind(self, port):
                 raise auth.RedirectServerExitedError('exited')
+
+        # A child holding some other port does not make a collision the
+        # flow's own: only the port the flow was given counts.
+        taken = free_callback_port()
+        stranger = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.addCleanup(stranger.close)
+        stranger.bind(('127.0.0.1', taken))
+        self.hold_in_a_child(free_callback_port())
+        with self.assertRaisesRegex(
+                AssertionError, 'port taken between pick and bind'):
+            with naming_a_port_taken_between_pick_and_bind(self, taken):
+                raise auth.RedirectServerExitedError(
+                        'a child holds another port')
+
+        # The flow's server can be a grandchild: under forkserver it is the
+        # fork server's child, not this process's.
+        deeper = free_callback_port()
+        self.hold_in_a_child(deeper, through_a_grandchild=True)
+        with self.assertRaises(auth.RedirectServerExitedError):
+            with naming_a_port_taken_between_pick_and_bind(self, deeper):
+                raise auth.RedirectServerExitedError('a grandchild holds it')
+
+        # Children that cannot be listed are taken as holding nothing, so
+        # the flow's error is named by the probe, not replaced by psutil's.
+        import psutil
+        with patch('psutil.Process', side_effect=psutil.AccessDenied()):
+            with self.assertRaisesRegex(
+                    AssertionError, 'port taken between pick and bind'):
+                with naming_a_port_taken_between_pick_and_bind(self, taken):
+                    raise auth.RedirectServerExitedError('exited')
+
+    def hold_in_a_child(self, port, through_a_grandchild=False):
+        '''Start a process holding ``port`` until the test ends, as the
+        flow's own server would, and wait until it holds it.'''
+        import subprocess
+        import sys
+        hold = ('import socket, sys; s = socket.socket(); '
+                's.bind(("127.0.0.1", {})); s.listen(); print("bound"); '
+                'sys.stdout.flush(); sys.stdin.read()'.format(port))
+        if through_a_grandchild:
+            # The grandchild is handed this child's stdin and stdout by
+            # name: on Windows a child given none of the three inherits no
+            # handles, and would have no stdout to say it holds the port.
+            hold = ('import subprocess, sys; '
+                    'sys.exit(subprocess.call([sys.executable, "-c", {!r}], '
+                    'stdin=sys.stdin, stdout=sys.stdout))'.format(hold))
+        child = subprocess.Popen(
+                [sys.executable, '-c', hold],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        self.addCleanup(child.wait)
+        self.addCleanup(child.stdout.close)
+        self.addCleanup(child.stdin.close)
+        self.assertEqual('bound', child.stdout.readline().strip())
+
+    @no_duplicates
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    def test_a_flow_reached_by_an_imported_name_is_port_checked(
+            self, mock_webbrowser_get):
+        # The suite's check on each flow's port sits where the flow builds
+        # its server process, so a name imported from auth -- which a patch
+        # on the module attribute would not reach -- is checked too. The
+        # name is the one bound at this module's load: imported here, after
+        # the fixture, it would be whatever the fixture had patched in. The
+        # port is bound here by hand, so no port helper handed it out.
+        import pytest
+        unhanded = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.addCleanup(unhanded.close)
+        unhanded.bind(('127.0.0.1', 0))
+        url = 'https://127.0.0.1:{}/callback'.format(unhanded.getsockname()[1])
+
+        # Bounded, so a flow the check let through fails fast rather than
+        # waiting out the callback timeout.
+        with self.assertRaises(pytest.fail.Exception) as cm:
+            _flow_imported_at_load(
+                    API_KEY, APP_SECRET, url, self.token_path,
+                    interactive=False, callback_timeout=0.1)
+        self.assertIn('which neither free_callback_port', str(cm.exception))
+        mock_webbrowser_get.assert_not_called()
+
+    @no_duplicates
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    def test_a_port_handed_to_an_earlier_test_is_not_this_ones(
+            self, mock_webbrowser_get):
+        # The ports handed out are forgotten at the start of each test, so a
+        # number one test was given and a later one writes down is caught.
+        # "A later test" is started here, inside this one, with the start
+        # every test gets.
+        import pytest
+        from . import conftest
+        earlier = free_callback_port()
+        with pytest.MonkeyPatch.context() as later:
+            conftest.guard_login_flow_ports(later)
+            with self.assertRaises(pytest.fail.Exception) as cm:
+                auth.client_from_login_flow(
+                        API_KEY, APP_SECRET,
+                        'https://127.0.0.1:{}/callback'.format(earlier),
+                        self.token_path, interactive=False,
+                        callback_timeout=0.1)
+        self.assertIn('which neither free_callback_port', str(cm.exception))
 
     @no_duplicates
     @patch('schwaby.auth.Client')

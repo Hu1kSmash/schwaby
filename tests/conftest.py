@@ -36,6 +36,12 @@ def pytest_xdist_auto_num_workers(config):
 # which a patch on the module attribute would miss.
 @pytest.fixture(autouse=True)
 def login_flows_take_a_port_a_helper_handed_out(monkeypatch):
+    guard_login_flow_ports(monkeypatch)
+
+
+def guard_login_flow_ports(monkeypatch):
+    '''What the fixture above does at the start of every test. A function of
+    its own, so a test can start "a later test" inside itself.'''
     # Imported here: suite_config_test loads this file on its own, outside
     # the package, where a relative import at the top fails.
     import multiprocess

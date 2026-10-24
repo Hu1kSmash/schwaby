@@ -165,6 +165,70 @@ CASES = [
          '::test_a_port_taken_between_pick_and_bind_is_named',
          'port taken between pick and bind'),
 
+    # The suite's port check is where the flow builds its server, so a name
+    # imported from auth is checked too, and its handed-out ports are
+    # forgotten at each test's start.
+    Case('tests/a-flow-reached-by-an-imported-name-is-port-checked',
+         'tests/conftest.py',
+         "    monkeypatch.setattr(multiprocess.Process, '__init__', checked)\n",
+         "",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_flow_reached_by_an_imported_name_is_port_checked',
+         'RedirectServerExitedError'),
+
+    # Checked only where the flow is reached through auth's attribute, as
+    # it was before, a name imported at load gets past it.
+    Case('tests/the-port-check-is-not-on-the-module-attribute',
+         'tests/conftest.py',
+         "    monkeypatch.setattr(multiprocess.Process, '__init__', checked)\n",
+         "    from schwaby import auth\n"
+         "    real_flow = auth.client_from_login_flow\n"
+         "\n"
+         "    def flow(*args, **kwargs):\n"
+         "        with monkeypatch.context() as during:\n"
+         "            during.setattr(multiprocess.Process, '__init__', checked)\n"
+         "            return real_flow(*args, **kwargs)\n"
+         "\n"
+         "    monkeypatch.setattr(auth, 'client_from_login_flow', flow)\n",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_flow_reached_by_an_imported_name_is_port_checked',
+         'RedirectServerExitedError'),
+
+    Case('tests/handed-out-ports-are-forgotten-per-test',
+         'tests/conftest.py',
+         "    HANDED_OUT_PORTS.clear()\n",
+         "",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_port_handed_to_an_earlier_test_is_not_this_ones',
+         'RedirectTimeoutError'),
+
+    # Only the flow's own port, held by a child or a grandchild, makes the
+    # failure the flow's; a child that cannot be listed holds nothing.
+    Case('tests/only-the-flows-port-makes-it-the-flows',
+         'tests/utils.py',
+         "        if any(c.laddr and c.laddr.port == port for c in connections):",
+         "        if any(c.laddr for c in connections):",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_port_taken_between_pick_and_bind_is_named',
+         'a child holds another port'),
+
+    Case('tests/a-grandchild-holding-the-port-is-the-flows',
+         'tests/utils.py',
+         "        children = psutil.Process().children(recursive=True)\n",
+         "        children = psutil.Process().children(recursive=False)\n",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_port_taken_between_pick_and_bind_is_named',
+         'a grandchild holds it'),
+
+    Case('tests/children-that-cannot-be-listed-hold-nothing',
+         'tests/utils.py',
+         "    try:\n        children = psutil.Process().children(recursive=True)\n"
+         "    except psutil.Error:\n        return False\n",
+         "    children = psutil.Process().children(recursive=True)\n",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_port_taken_between_pick_and_bind_is_named',
+         'AccessDenied'),
+
     Case('tests/a-free-port-is-not-called-taken',
          'tests/utils.py',
          "                s.bind(('127.0.0.1', port))\n            except OSError:",
