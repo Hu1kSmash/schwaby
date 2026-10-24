@@ -6315,30 +6315,38 @@ That is the whole install.''',
          "'--dist loadgroup' not found"),
     Case('suite/port-group-guard-sees-the-calls',
          'tests/packaging_test.py',
-         "        names = {'client_from_login_flow'}\n",
-         "        names = {'client_from_login_flow_'}\n",
+         "                return n.func.attr == 'client_from_login_flow'\n",
+         "                return n.func.attr == 'client_from_login_flow_'\n",
          'tests/packaging_test.py::DocExampleTest'
          '::test_no_login_flow_test_names_a_fixed_port',
          'not less than or equal to'),
 
     # A class that calls the flow only through an alias is still one that
-    # runs it; and only an alias adds a name, since a plain import's asname
-    # is None, which a call on a subscript also reads as.
+    # runs it. Only an alias of the flow adds a name, and an alias is a bare
+    # name, so a method named like one is not it.
     Case('suite/port-scan-sees-an-aliased-flow',
          'tests/packaging_test.py',
-         "                             if alias.name == 'client_from_login_flow'\n",
-         "                             if alias.name == 'client_from_login_flow_'\n",
+         "                               if alias.name == 'client_from_login_flow')\n",
+         "                               if alias.name == 'client_from_login_flow_')\n",
          'tests/packaging_test.py::DocExampleTest'
          '::test_a_class_calling_the_flow_by_an_alias_runs_it',
          "'Aliased'"),
 
-    Case('suite/port-scan-adds-no-name-for-a-plain-import',
+    Case('suite/port-scan-takes-only-aliases-of-the-flow',
          'tests/packaging_test.py',
-         "\n                             and alias.asname)\n",
-         ")\n",
+         "                               if alias.name == 'client_from_login_flow')\n",
+         "                               if True)\n",
          'tests/packaging_test.py::DocExampleTest'
          '::test_a_class_calling_the_flow_by_an_alias_runs_it',
-         "'Subscripted'"),
+         "'Other'"),
+
+    Case('suite/port-scan-alias-is-not-a-method-name',
+         'tests/packaging_test.py',
+         "                return n.func.attr == 'client_from_login_flow'\n",
+         "                return n.func.attr in aliases | {'client_from_login_flow'}\n",
+         'tests/packaging_test.py::DocExampleTest'
+         '::test_a_class_calling_the_flow_by_an_alias_runs_it',
+         "'CallsAMethodNamedLikeAnAlias'"),
 
     # The auth tests register tokens 'a' and 'r' in the process-wide
     # redactor, so a test run after them found its logged line redacted letter

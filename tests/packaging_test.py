@@ -2136,21 +2136,25 @@ listening_yet, and none of ten once each test took a free port. It also
     @staticmethod
     def classes_running_the_flow(tree):
         '''The test classes in a module that start the login flow, calling
-        it by its own name or by any name it is imported as.'''
-        names = {'client_from_login_flow'}
+        it by its own name or by any name it is imported as. An alias is a
+        bare name, so it matches only a bare call: one that is also a method
+        name must not pull in a class calling that method.'''
+        aliases = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
-                # Only an alias adds a name: a plain import's asname is None,
-                # which is also what a call on a subscript or a call reads as.
-                names.update(alias.asname for alias in node.names
-                             if alias.name == 'client_from_login_flow'
-                             and alias.asname)
+                aliases.update(alias.asname for alias in node.names
+                               if alias.name == 'client_from_login_flow')
+
+        def calls_the_flow(n):
+            if not isinstance(n, ast.Call):
+                return False
+            if isinstance(n.func, ast.Attribute):
+                return n.func.attr == 'client_from_login_flow'
+            return (isinstance(n.func, ast.Name) and n.func.id in
+                    aliases | {'client_from_login_flow'})
         return [cls for cls in ast.walk(tree)
                 if isinstance(cls, ast.ClassDef)
-                and any(isinstance(n, ast.Call)
-                        and getattr(n.func, 'attr',
-                                    getattr(n.func, 'id', None)) in names
-                        for n in ast.walk(cls))]
+                and any(calls_the_flow(n) for n in ast.walk(cls))]
 
     @no_duplicates
     def test_a_class_calling_the_flow_by_an_alias_runs_it(self):
@@ -2159,6 +2163,7 @@ listening_yet, and none of ten once each test took a free port. It also
         # other calls.
         source = (
             'from schwaby.auth import client_from_login_flow as _flow\n'
+            'from schwaby.auth import client_from_login_flow as run\n'
             'from schwaby.auth import client_from_login_flow\n'
             'from schwaby.auth import client_from_token_file as _other\n'
             'class Aliased:\n'
@@ -2172,7 +2177,10 @@ listening_yet, and none of ten once each test took a free port. It also
             '        auth.client_from_login_flow(1, 2, 3, 4)\n'
             'class Subscripted:\n'
             '    def test(self):\n'
-            '        handlers[0]()\n')
+            '        handlers[0]()\n'
+            'class CallsAMethodNamedLikeAnAlias:\n'
+            '    def test(self):\n'
+            '        thread.run()\n')
         found = {cls.name for cls in
                  self.classes_running_the_flow(ast.parse(source))}
         self.assertEqual({'Aliased', 'ByAttribute'}, found)
