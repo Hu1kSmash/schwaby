@@ -41,6 +41,9 @@ VERDICTS
     SPEC        the entry cannot be judged: its text is missing or ambiguous,
                 the mutation is a no-op, or the test fails unmutated.
 
+POSIX only: each run is a process group of its own, waited for with
+os.wait4 and killed with os.killpg.
+
 Exit status 0 only when every selected entry is PROVEN, KEPT, SUPERSEDED or
 REMOVED, and no run wrote to a tracked file; 2 when --name matches nothing.
 
@@ -68,30 +71,38 @@ measurement. `--jobs` overrides the core count. Entries whose tests carry the
 same xdist_group mark never run at once: the login flow's callback server binds
 a fixed port, 6969, and two copies of it fail each other.
 
-KEPT VERDICTS. A PROVEN run is kept in cache/redproof.json (gitignored) on
-exactly what it read, as recorded by the audit hook: the copy's files by their
-bytes as the run found them (the mutation applied), the directories it listed
-by their names, and the paths it only checked by what they were (file,
-directory or absent). The interpreter counts as its implementation and
-major.minor version, and the installed libraries as requirements.lock, so a
-verdict is kept or reused only when the interpreter is the exact build
-.python-versions pins and the installed set is exactly the lock.
-Never the machine: one store serves every rig. Never kept: a run that started a
-process (what a child reads is not recorded), connected beyond loopback, read
-/proc or /sys, read a file that may hold a secret (whose bytes are never
-digested), or wrote outside its own temporary directory. Kept verdicts need
-Python 3.11 or newer, where pathlib looks os.stat up at each call; earlier
-versions were not checked.
+KEPT VERDICTS. A PROVEN entry is kept in cache/redproof.json (gitignored) on
+exactly what its two runs read, as recorded by the audit hook: the mutated run
+and the unmutated baseline it depends on. The copy's files count by their bytes
+as each run found them (the mutation applied in the one, not the other), the
+directories listed by their names, and the paths only checked by what they
+were (file, directory or absent). The interpreter counts as its implementation,
+major.minor version and the build .python-versions pins for it, and the
+installed libraries as requirements.lock, so a verdict is kept or reused only
+when the interpreter is that exact build and the installed set is exactly the
+lock. Never the machine: one store serves every rig. Never kept: a run that
+started a process (what a child reads is not recorded), connected beyond
+loopback, read /proc or /sys, read a file outside the copy that may hold a
+secret (whose bytes are never digested), or wrote outside its own temporary
+directory. An untracked file in the checkout whose name says it may hold a
+secret is left out of the copies altogether. Kept verdicts need Python 3.11 or
+newer, where pathlib looks os.stat up at each call; earlier versions were not
+checked.
+
+What the audit cannot see, a record cannot key, and these are known: files the
+C library reads for itself (time zone data under TZ, locale files), an
+os.open() relative to a directory descriptor (recorded at the wrong path), and
+a probed path's size or permissions (only its kind is keyed).
 
 A selected entry with a record that still holds is KEPT without running, and
 the record's time is renewed. A record that has not held or been proved for 60
 days is dropped. A run that finds an entry not PROVEN while a record says it
-was retires every record that held, with a `gone` tombstone.
+was retires every record that held, with a `gone` tombstone, and a save never
+lets a renewal undo one: only a proof made after it does.
 '''
 
 import argparse
 import concurrent.futures
-import fcntl
 import hashlib
 import importlib.util
 import json
@@ -113,7 +124,7 @@ AUDIT = 'tools/redproof_audit.py'
 LOCK = 'requirements.lock'
 PYTHONS = '.python-versions'
 STORE = os.path.join(ROOT, 'cache', 'redproof.json')
-STORE_VERSION = 1
+STORE_VERSION = 2
 KEEP_DAYS = 60
 
 #: The lowest a run may leave available, in bytes
@@ -122,6 +133,10 @@ FLOOR = 2 << 30
 RUN_LIMIT = 600
 #: The bound on a run's leftover processes going, once it has exited
 REAP_LIMIT = 30
+#: The bounds on the steps before any entry runs, and on the store's lock
+GIT_LIMIT = 60
+PREPARE_LIMIT = 300
+LOCK_LIMIT = 120
 
 DEVICES = ('/dev/null', '/dev/zero', '/dev/full', '/dev/random',
            '/dev/urandom', '/dev/tty')
@@ -194,6 +209,27 @@ def pairs_of(case):
     return [(old.encode('utf-8'), new.encode('utf-8')) for old, new in pairs]
 
 
+# A line of pytest's short summary: FAILED / ERROR / SUBFAILED(...) <node> - <message>
+_SUMMARY = re.compile(r'^(?:SUB)?(?:FAILED|ERROR)(?:\([^)]*\))? \S+ - (.*)$')
+
+
+def failure_text(output):
+    '''What pytest says the failures were: the `E` lines of each traceback,
+    and each short-summary message without its node id. Not the source lines
+    pytest echoes around a failure, and not node ids: either can contain an
+    entry's `expect` whatever actually failed, which made a failure on the
+    wrong assertion read as PROVEN.'''
+    lines = []
+    for line in output.splitlines():
+        if line.startswith('E '):
+            lines.append(line[2:])
+            continue
+        m = _SUMMARY.match(line)
+        if m:
+            lines.append(m.group(1))
+    return '\n'.join(lines)
+
+
 def mutate(case, original):
     '''The mutated bytes, or (None, why) when the entry cannot be judged.'''
     pairs = pairs_of(case)
@@ -228,15 +264,23 @@ def case_fields(case):
 def repo_files():
     out = subprocess.run(
         ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
-        cwd=ROOT, capture_output=True, check=True).stdout
+        cwd=ROOT, capture_output=True, check=True, timeout=GIT_LIMIT).stdout
     return sorted({f for f in out.decode('utf-8').split('\0')
                    if f and os.path.isfile(os.path.join(ROOT, f))})
 
 
 def tracked_files():
     out = subprocess.run(['git', 'ls-files', '-z'], cwd=ROOT,
-                         capture_output=True, check=True).stdout
+                         capture_output=True, check=True,
+                         timeout=GIT_LIMIT).stdout
     return {f for f in out.decode('utf-8').split('\0') if f}
+
+
+def secret_untracked(files, tracked):
+    '''The untracked files whose names say they may hold a secret. They are
+    not copied: a copy's reads are digested into the store, and nothing in
+    the repository can depend on a file git does not have.'''
+    return [f for f in files if f not in tracked and SECRET_PATH.search(f)]
 
 
 def copy_tree(files, src, dest):
@@ -250,8 +294,11 @@ class Snapshot:
 
     def __init__(self, path):
         self.path = path
-        self.files = repo_files()
-        self.tracked = tracked_files() & set(self.files)
+        files = repo_files()
+        tracked = tracked_files()
+        self.left_out = secret_untracked(files, tracked)
+        self.files = [f for f in files if f not in self.left_out]
+        self.tracked = tracked & set(self.files)
         copy_tree(self.files, ROOT, path)
         content = {}
         for f in self.files:
@@ -461,7 +508,11 @@ def entry_key(case, snapshot):
         'version': STORE_VERSION,
         'entry': case_fields(case),
         'harness': harness,
-        'python': [sys.implementation.name, *sys.version_info[:2]],
+        # The minor version, and the build .python-versions pins for it: a
+        # pin bump is a new interpreter on every rig, so nothing measured on
+        # the old one stands.
+        'python': [sys.implementation.name, *sys.version_info[:2],
+                   pinned_python(snapshot)],
         'lock': sha(snapshot.content.get(LOCK, b'')),
     }
     return sha(json.dumps(material, sort_keys=True).encode())
@@ -600,6 +651,15 @@ def reads_from(record, classifier, snapshot, mutated, tracked):
 
 
 def holds(reads, snapshot, mutated):
+    '''Whether every read a record keys is still what the runs found: the
+    mutated run's with the mutation applied, the unmutated baseline's
+    without it. A record keyed on the mutated run alone stayed KEPT when
+    something only the passing branch reads had changed.'''
+    return (holds_one(reads['mutated'], snapshot, mutated)
+            and holds_one(reads['baseline'], snapshot, None))
+
+
+def holds_one(reads, snapshot, mutated):
     for path, (what, value) in reads.items():
         if path.startswith('copy:'):
             now = copy_value(snapshot, mutated, path[len('copy:'):], what)
@@ -637,8 +697,32 @@ class Store:
         self.records[record_id] = record
         self.changed[record_id] = record
 
+    @staticmethod
+    def when(record, field='at'):
+        try:
+            return datetime.fromisoformat(record[field])
+        except (KeyError, TypeError, ValueError):
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+    @classmethod
+    def merged(cls, current, new):
+        '''Which of two versions of one record a save keeps. A run that found
+        the entry not PROVEN outranks one that only found the record still
+        holding, whichever saved last; only a proof made after the tombstone
+        brings a record back. Otherwise the most recently used wins.'''
+        if current is None:
+            return new
+        if current.get('gone') and not new.get('gone'):
+            return new if cls.when(new, 'proved') > cls.when(current) else (
+                current)
+        if new.get('gone') and not current.get('gone'):
+            return current if cls.when(current, 'proved') > cls.when(new) else (
+                new)
+        return new if cls.when(new) >= cls.when(current) else current
+
     def prune(self):
         cutoff = datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS)
+        self.cutoff = cutoff
         for k, r in list(self.records.items()):
             try:
                 at = datetime.fromisoformat(r['at'])
@@ -652,16 +736,36 @@ class Store:
     def save(self):
         if not self.changed and not self.removed:
             return
+        # Imported here: POSIX only, like the process groups the runs use, and
+        # importing it at the top stopped the suite collecting this module's
+        # tests on Windows.
+        import fcntl
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         with open(self.path + '.lock', 'w') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            # Merge onto what is there now: another run may have saved since
-            # this one loaded.
+            deadline = time.monotonic() + LOCK_LIMIT
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() > deadline:
+                        raise RuntimeError('%s.lock was held for %d s, so no '
+                                           'verdict was saved'
+                                           % (self.path, LOCK_LIMIT))
+                    time.sleep(0.1)
+            # Merge onto what is there now, record by record: another run may
+            # have saved since this one loaded.
             current = Store(self.path)
             current.load()
             records = current.records
-            records.update(self.changed)
+            for k, new in self.changed.items():
+                records[k] = self.merged(records.get(k), new)
+            cutoff = getattr(self, 'cutoff', None)
             for k in self.removed:
+                # Unless another run has used it since this one loaded.
+                if k in records and cutoff is not None and (
+                        self.when(records[k]) >= cutoff):
+                    continue
                 records.pop(k, None)
             tmp = self.path + '.tmp'
             with open(tmp, 'wb') as f:
@@ -677,7 +781,11 @@ class Run:
     def __init__(self, args):
         self.args = args
         self.tmp = tempfile.mkdtemp(prefix='schwaby-redproof-')
-        self.snapshot = Snapshot(os.path.join(self.tmp, 'snapshot'))
+        try:
+            self.snapshot = Snapshot(os.path.join(self.tmp, 'snapshot'))
+        except BaseException:
+            shutil.rmtree(self.tmp, ignore_errors=True)
+            raise
         self.audit = os.path.join(self.snapshot.path, AUDIT)
         self.locks_dir = os.path.join(self.tmp, 'locks')
         os.makedirs(self.locks_dir)
@@ -743,8 +851,9 @@ class Run:
         return result, audit, classifier, changed
 
     def changed_tracked(self, copy, mutation):
-        '''Tracked files the run changed, by bytes. Tests must never write to
-        one, not even with a restore.'''
+        '''Tracked files whose bytes differ after the run. A write that was
+        restored before the run ended is caught by the audit instead (the
+        tracked writes reads_from returns), when the run was recorded.'''
         changed = []
         for f in sorted(self.snapshot.tracked):
             expected = mutation[1] if mutation and mutation[0] == f else (
@@ -759,8 +868,9 @@ class Run:
         return changed
 
 
-def judge(run, case, baseline):
-    '''(verdict, detail, record or None)'''
+def judge(run, case, baseline, baseline_reads=None):
+    '''(verdict, detail, record reads or None). baseline_reads are the
+    unmutated run's keyed reads, or None when that run cannot be kept.'''
     original = run.snapshot.content.get(case.path)
     if original is None:
         return 'SPEC', ('%s does not exist. If the code was deleted on '
@@ -774,6 +884,10 @@ def judge(run, case, baseline):
             ' (%s)' % baseline.killed if baseline.killed else ''), None
     result, audit, classifier, changed = run.run(
         tests_of(case), (case.path, mutated), record=True)
+    if audit is not None:
+        changed = sorted(set(changed) | set(reads_from(
+            audit, classifier, run.snapshot, (case.path, mutated),
+            run.snapshot.tracked)[2]))
     if changed:
         run.tracked_writes[case.name] = changed
     if result.code is None:
@@ -785,16 +899,17 @@ def judge(run, case, baseline):
                          'Either the test is asleep, or what was mutated is '
                          'no longer load-bearing; if the second, mark the '
                          'entry superseded= rather than deleting it.'), None
-    if case.expect not in result.output:
-        first = [line for line in result.output.splitlines()
-                 if line.startswith('E ')]
+    said = failure_text(result.output)
+    if case.expect not in said:
+        first = [line for line in said.splitlines() if line.strip()]
         return 'RED?', ('failed, but not on %r: got %s' % (
             case.expect, first[0].strip() if first else '?')), None
     kept = None
     if audit is not None:
         reads, why, _ = reads_from(audit, classifier, run.snapshot,
                                    (case.path, mutated), run.snapshot.tracked)
-        kept = reads if why is None else None
+        if why is None and baseline_reads is not None:
+            kept = {'mutated': reads, 'baseline': baseline_reads}
     return 'PROVEN', '', kept
 
 
@@ -815,6 +930,10 @@ def main(argv):
     started = time.monotonic()
     run = Run(args)
     try:
+        if run.snapshot.left_out:
+            print('redproof: left out of every copy, as names that may hold '
+                  'a secret: %s' % ', '.join(run.snapshot.left_out),
+                  flush=True)
         return judge_all(run, args, started)
     finally:
         shutil.rmtree(run.tmp, ignore_errors=True)
@@ -949,7 +1068,7 @@ def run_stale(run, args, stale, store, keys, held, unkept):
         [sys.executable, '-I', '-B', run.audit, '--where'], cwd=copy,
         env={'PATH': os.environ.get('PATH', ''), 'HOME': work,
              'LANG': 'C.UTF-8'},
-        capture_output=True, text=True)
+        capture_output=True, text=True, timeout=PREPARE_LIMIT)
     imported = where.stdout.strip()
     if where.returncode != 0 or not Classifier.under(
             imported, os.path.realpath(copy)):
@@ -964,7 +1083,7 @@ def run_stale(run, args, stale, store, keys, held, unkept):
          '-p', 'no:cacheprovider', 'tests/'], cwd=copy,
         env={'PATH': os.environ.get('PATH', ''), 'HOME': work,
              'LANG': 'C.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1'},
-        capture_output=True, text=True)
+        capture_output=True, text=True, timeout=PREPARE_LIMIT)
     if out.returncode != 0 or not os.path.exists(collect):
         print('redproof: collecting the suite failed, so the port groups '
               'are unknown and nothing is judged\n%s%s'
@@ -994,10 +1113,16 @@ def run_stale(run, args, stale, store, keys, held, unkept):
             ('\n           ' + detail) if detail else ''), flush=True)
 
     baselines = {}
+    baseline_reads = {}
 
     def baseline(t):
-        result, _, _, changed = run.run(list(t))
+        result, audit, classifier, changed = run.run(list(t), record=True)
         baselines[t] = result
+        if audit is not None:
+            reads, why, writes = reads_from(audit, classifier, snapshot, None,
+                                            snapshot.tracked)
+            baseline_reads[t] = reads if why is None else None
+            changed = sorted(set(changed) | set(writes))
         if changed:
             run.tracked_writes['the baseline of ' + ' '.join(t)] = changed
         if result.code == 0:
@@ -1021,7 +1146,9 @@ def run_stale(run, args, stale, store, keys, held, unkept):
 
     def one(c):
         t0 = time.monotonic()
-        verdict, detail, reads = judge(run, c, baselines[tuple(tests_of(c))])
+        t = tuple(tests_of(c))
+        verdict, detail, reads = judge(run, c, baselines[t],
+                                       baseline_reads.get(t))
         seconds = time.monotonic() - t0
         verdicts[c.name] = (verdict, detail, seconds)
         progress(verdict, c.name, detail, seconds)
@@ -1031,11 +1158,11 @@ def run_stale(run, args, stale, store, keys, held, unkept):
         if verdict == 'PROVEN':
             # Proved again: what held is renewed.
             for k in held.get(c.name, ()):
-                store.put(k, dict(store.records[k], at=when))
+                store.put(k, dict(store.records[k], at=when, proved=when))
             if reads is not None:
                 digest = sha(json.dumps(reads, sort_keys=True).encode())[:16]
                 store.put('%s:%s' % (key, digest), {
-                    'at': when, 'name': c.name,
+                    'at': when, 'proved': when, 'name': c.name,
                     'reads': reads,
                     # What judging the entry cost (its copy and its mutated
                     # run), for dividing a run between machines. Metadata,

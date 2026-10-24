@@ -8,9 +8,16 @@ import datetime
 import importlib.util
 import json
 import os
+import sys
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
+
+# The harness is POSIX only (process groups, os.wait4, fcntl), and these tests
+# read paths the way it does, with '/'.
+if os.name == 'nt':
+    raise unittest.SkipTest('the red-proof harness runs on POSIX only')
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -173,12 +180,221 @@ class ReadsTest(unittest.TestCase):
         keyed, _, _ = self.reads(record(
             opened=[self.path('schwaby/x.py')],
             listed=[self.path('schwaby')]))
-        self.assertTrue(redproof.holds(keyed, self.s, self.mutated))
+        kept = {'mutated': keyed, 'baseline': {}}
+        self.assertTrue(redproof.holds(kept, self.s, self.mutated))
         # The same file with a different mutation is a different read.
         self.assertFalse(redproof.holds(
-            keyed, self.s, ('schwaby/x.py', b'a = 3\n')))
+            kept, self.s, ('schwaby/x.py', b'a = 3\n')))
         grown = snapshot({**self.s.content, 'schwaby/new.py': b''})
-        self.assertFalse(redproof.holds(keyed, grown, self.mutated))
+        self.assertFalse(redproof.holds(kept, grown, self.mutated))
+
+    def test_what_only_the_baseline_read_keys_the_record_too(self):
+        # The mutated run failed before reading the fixture; the passing
+        # baseline read it. Change the fixture so the test fails unmutated,
+        # and the record must stop holding.
+        s = snapshot({**self.s.content, 'tests/data.txt': b'1\n'})
+        mutated, _, _ = self.reads(record(opened=[self.path('schwaby/x.py')]))
+        baseline, why, _ = redproof.reads_from(
+            record(opened=[self.path('schwaby/x.py'),
+                           self.path('tests/data.txt')]),
+            self.c, s, None, s.tracked)
+        self.assertIsNone(why)
+        kept = {'mutated': mutated, 'baseline': baseline}
+        self.assertTrue(redproof.holds(kept, s, self.mutated))
+        broken = snapshot({**s.content, 'tests/data.txt': b'2\n'})
+        self.assertFalse(redproof.holds(kept, broken, self.mutated),
+                         'a record held after a file only the baseline read '
+                         'had changed')
+
+    def test_a_secret_outside_the_copy_never_holds(self):
+        self.assertFalse(redproof.holds(
+            {'mutated': {'/home/u/.env': ('read', 'file:x')}, 'baseline': {}},
+            self.s, self.mutated))
+
+
+class FakeRun:
+    '''Stands in for redproof.Run in judge(): a snapshot, and run() handing
+    back a canned result.'''
+
+    def __init__(self, content, result, audit=None, classifier=None):
+        self.snapshot = snapshot(content)
+        self.result, self.audit, self.classifier = result, audit, classifier
+        self.tracked_writes = {}
+        self.ran = []
+
+    def run(self, nodes, mutation=None, record=False):
+        self.ran.append((nodes, mutation))
+        return self.result, self.audit, self.classifier, []
+
+
+def result(code, output='', killed=None):
+    return redproof.Result(code, output, 0.1, 1 << 20, killed)
+
+
+class JudgeTest(unittest.TestCase):
+
+    CONTENT = {'schwaby/x.py': b'a = 1\n'}
+    PASSED = result(0, '1 passed')
+
+    # What pytest -q prints for a test whose first assertion failed, with the
+    # entry's expect text in the source it echoes and in nothing it says.
+    ECHOED = '\n'.join([
+        '    def test_x(self):',
+        ">       self.assertIn('identical', why)",
+        "        self.assertIsNone(mutated, 'expected')",
+        "E       AssertionError: 'identical' not found in 'other'",
+        'FAILED tests/expected_test.py::T::test_x - AssertionError: '
+        "'identical' not found",
+        '1 failed in 0.01s'])
+
+    def judge(self, output, expect='expected', baseline=PASSED, code=1,
+              **kwargs):
+        c = case(**kwargs)
+        c.expect = expect
+        run = FakeRun(self.CONTENT, result(code, output))
+        return redproof.judge(run, c, baseline)
+
+    def test_expect_must_be_in_what_the_failure_says(self):
+        verdict, detail, _ = self.judge(self.ECHOED)
+        self.assertEqual('RED?', verdict,
+                         'a failure on another assertion was PROVEN because '
+                         'the expect text was in the echoed source')
+        said = self.ECHOED.replace("'identical' not found in",
+                                   "'expected' not found in")
+        self.assertEqual('PROVEN', self.judge(said)[0])
+
+    def test_a_subtest_failure_message_counts(self):
+        out = ('SUBFAILED(i=1) tests/x_test.py::T::test_x - AssertionError: '
+               'expected 3\n1 failed')
+        self.assertEqual('PROVEN', self.judge(out)[0])
+
+    def test_a_baseline_that_fails_is_not_judged(self):
+        verdict, detail, _ = self.judge(self.ECHOED,
+                                        baseline=result(1, 'FAILED'))
+        self.assertEqual('SPEC', verdict, 'an entry was judged on a test that '
+                         'fails unmutated')
+        self.assertIn('does not pass before the mutation', detail)
+
+    def test_a_run_with_no_exit_status_proves_nothing(self):
+        # Killed after printing the very failure the entry expects: still no
+        # verdict, because a run that did not finish proves nothing.
+        verdict, detail, _ = self.judge('E   AssertionError: expected',
+                                        code=None)
+        self.assertEqual('RED?', verdict, 'a timed-out run was judged')
+
+    def test_a_pass_is_green_unless_superseded(self):
+        self.assertEqual('GREEN', self.judge('1 passed', code=0)[0])
+        self.assertEqual('SUPERSEDED', self.judge(
+            '1 passed', code=0, superseded='covered elsewhere')[0])
+
+    def test_a_record_needs_both_runs_to_be_keepable(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        copy = os.path.join(tmp.name, 'run1', 'copy')
+        os.makedirs(copy)
+        c = case()
+        audit = record(opened=[os.path.join(copy, 'schwaby', 'x.py')])
+        run = FakeRun(self.CONTENT, result(1, 'E   expected'), audit,
+                      redproof.Classifier(copy, [tmp.name]))
+        self.assertIsNone(redproof.judge(run, c, self.PASSED, None)[2],
+                          'kept without the baseline being keepable')
+        kept = redproof.judge(run, c, self.PASSED, {})[2]
+        self.assertEqual({'mutated', 'baseline'}, set(kept))
+
+    def test_a_restored_write_to_a_tracked_file_is_reported(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        copy = os.path.join(tmp.name, 'run1', 'copy')
+        os.makedirs(copy)
+        audit = record(written=[os.path.join(copy, 'schwaby', 'x.py')])
+        run = FakeRun(self.CONTENT, result(1, 'E   expected'), audit,
+                      redproof.Classifier(copy, [tmp.name]))
+        redproof.judge(run, case(), self.PASSED, {})
+        self.assertEqual({'x/y': ['schwaby/x.py']}, run.tracked_writes,
+                         'a write the run restored went unreported')
+
+
+class SnapshotTest(unittest.TestCase):
+
+    def test_untracked_secret_names_are_left_out(self):
+        files = ['README.md', '.env.local', 'docs/api-credentials.rst',
+                 'notes/token-notes.md', 'tests/secret_logging_test.py']
+        tracked = {'README.md', 'tests/secret_logging_test.py'}
+        self.assertEqual(
+            ['.env.local', 'docs/api-credentials.rst', 'notes/token-notes.md'],
+            redproof.secret_untracked(files, tracked),
+            'an untracked secret-named file would be copied and digested')
+
+
+class KeyTest(unittest.TestCase):
+
+    def content(self, **changes):
+        import platform
+        content = {'tools/redproof.py': b'harness', redproof.AUDIT: b'audit',
+                   'requirements.lock': b'a==1\n',
+                   '.python-versions': (platform.python_version() + '\n')
+                   .encode()}
+        content.update(changes)
+        return content
+
+    def test_the_key_names_the_lock_the_harness_and_the_pinned_build(self):
+        import platform
+        key = redproof.entry_key(case(), snapshot(self.content()))
+        major, minor, patch = platform.python_version().split('.')[:3]
+        bumped = '%s.%s.%d\n' % (major, minor, int(patch) + 1)
+        for what, changes in (
+                ('lock', {'requirements.lock': b'a==2\n'}),
+                ('harness', {'tools/redproof.py': b'harness, edited'}),
+                ('audit hook', {redproof.AUDIT: b'audit, edited'}),
+                ('pin', {'.python-versions': bumped.encode()})):
+            self.assertNotEqual(
+                key, redproof.entry_key(case(), snapshot(self.content(
+                    **changes))), 'the key ignores the %s' % what)
+        # The positive control: nothing changed, the same key.
+        self.assertEqual(key, redproof.entry_key(case(), snapshot(
+            self.content())))
+
+    def test_a_set_other_than_the_lock_keeps_nothing(self):
+        import platform
+        why = redproof.environment_matches_lock(snapshot({
+            '.python-versions': (platform.python_version() + '\n').encode(),
+            'requirements.lock': b'no-such-package-anywhere==1.0\n'}))
+        if sys.version_info >= (3, 11):
+            self.assertIn('differ from requirements.lock', why or '',
+                          'an environment unlike the lock was accepted')
+
+
+class GroupLockTest(unittest.TestCase):
+
+    def test_entries_sharing_an_xdist_group_share_a_lock(self):
+        run = types.SimpleNamespace(group_locks={}, groups={
+            'tests/a_test.py::Flow::test_one': 'callback-port',
+            'tests/a_test.py::Flow::test_two': 'callback-port'})
+        whole_file = redproof.Run.locks_for(run, ['tests/a_test.py'])
+        one_test = redproof.Run.locks_for(
+            run, ['tests/a_test.py::Flow::test_two'])
+        self.assertEqual(1, len(whole_file), 'a test in the port group ran '
+                         'without its lock')
+        self.assertIs(whole_file[0], one_test[0])
+        self.assertEqual([], redproof.Run.locks_for(
+            run, ['tests/a_test.py::Other::test_one']))
+
+
+class ChangedTrackedTest(unittest.TestCase):
+
+    def test_a_tracked_file_left_changed_is_named(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        for name, data in (('a.py', b'one\n'), ('b.py', b'two\n')):
+            with open(os.path.join(tmp.name, name), 'wb') as f:
+                f.write(data)
+        s = snapshot({'a.py': b'one\n', 'b.py': b'TWO\n'})
+        run = types.SimpleNamespace(snapshot=s)
+        self.assertEqual(['b.py'], redproof.Run.changed_tracked(
+            run, tmp.name, None), 'a changed tracked file was not named')
+        # The mutated file is expected to differ, by exactly its mutation.
+        self.assertEqual([], redproof.Run.changed_tracked(
+            run, tmp.name, ('b.py', b'two\n')))
 
 
 class LockTest(unittest.TestCase):
@@ -272,6 +488,58 @@ class StoreTest(unittest.TestCase):
         self.assertEqual({'k:2', 'k:3'}, set(store.records))
         self.assertEqual({'k:2'}, set(store.under('k')))
         self.assertEqual({'k:1'}, store.removed)
+
+    def test_a_pruned_record_is_gone_from_the_file(self):
+        store = redproof.Store(self.path)
+        store.put('k:old', {'at': self.at(61), 'reads': {}})
+        store.put('k:new', {'at': self.at(1), 'reads': {}})
+        store.save()
+        again = redproof.Store(self.path)
+        again.load()
+        again.prune()
+        again.save()
+        with open(self.path, 'rb') as f:
+            self.assertEqual({'k:new'}, set(json.loads(f.read())['records']),
+                             'a pruned record was saved again')
+
+    def test_a_renewal_does_not_undo_a_tombstone(self):
+        first, second = redproof.Store(self.path), redproof.Store(self.path)
+        first.load()
+        second.load()
+        first.put('k:1', {'gone': True, 'at': self.at(1)})
+        first.save()
+        # Saved later, by a run that only found the record still holding.
+        second.put('k:1', {'at': self.at(0), 'proved': self.at(5),
+                           'reads': {}})
+        second.save()
+        third = redproof.Store(self.path)
+        third.load()
+        self.assertEqual({}, third.under('k'),
+                         'a renewal brought back a retired record')
+        # A proof made after the tombstone does bring it back.
+        third.put('k:1', {'at': self.at(0), 'proved': self.at(0),
+                          'reads': {}})
+        third.save()
+        fourth = redproof.Store(self.path)
+        fourth.load()
+        self.assertEqual({'k:1'}, set(fourth.under('k')))
+
+    def test_a_record_renewed_elsewhere_survives_a_prune(self):
+        old = {'at': self.at(61), 'reads': {}}
+        seed = redproof.Store(self.path)
+        seed.put('k:1', old)
+        seed.save()
+        pruner = redproof.Store(self.path)
+        pruner.load()
+        renewer = redproof.Store(self.path)
+        renewer.load()
+        renewer.put('k:1', dict(old, at=self.at(0)))
+        renewer.save()
+        pruner.prune()
+        pruner.save()
+        with open(self.path, 'rb') as f:
+            self.assertIn('k:1', json.loads(f.read())['records'],
+                          'a prune dropped a record another run had just used')
 
     def test_saving_merges_onto_what_another_run_saved(self):
         first, second = redproof.Store(self.path), redproof.Store(self.path)

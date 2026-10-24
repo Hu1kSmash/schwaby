@@ -6242,3 +6242,109 @@ PIN_CASES = [
 ]
 
 CASES += PIN_CASES
+
+
+# Round-one review of the harness (2026-10-24). Each breaks one guard the
+# review found untested, or one of its fixes.
+HARNESS_REVIEW_CASES = [
+    # The expect text appeared in the test source pytest echoes, so a failure
+    # on another assertion read as PROVEN: 150 entries were exposed.
+    Case('harness/expect-is-matched-against-what-failed',
+         'tools/redproof.py',
+         '    said = failure_text(result.output)',
+         '    said = result.output',
+         'tests/redproof_tool_test.py::JudgeTest'
+         '::test_expect_must_be_in_what_the_failure_says',
+         'expect text was in the echoed source'),
+    # A record keyed on the mutated run alone stayed KEPT after a file only
+    # the passing baseline read had changed.
+    Case('harness/a-record-keys-the-baseline-too',
+         'tools/redproof.py',
+         "            and holds_one(reads['baseline'], snapshot, None))",
+         ')',
+         'tests/redproof_tool_test.py::ReadsTest'
+         '::test_what_only_the_baseline_read_keys_the_record_too',
+         'only the baseline read had changed'),
+    Case('harness/untracked-secret-names-are-not-copied',
+         'tools/redproof.py',
+         '    return [f for f in files if f not in tracked and '
+         'SECRET_PATH.search(f)]',
+         '    return []',
+         'tests/redproof_tool_test.py::SnapshotTest'
+         '::test_untracked_secret_names_are_left_out',
+         'would be copied and digested'),
+    Case('harness/a-renewal-does-not-undo-a-tombstone',
+         'tools/redproof.py',
+         "            return new if cls.when(new, 'proved') > cls.when(current) "
+         "else (",
+         '            return new if True else (',
+         'tests/redproof_tool_test.py::StoreTest'
+         '::test_a_renewal_does_not_undo_a_tombstone',
+         'a renewal brought back a retired record'),
+    Case('harness/a-prune-spares-a-record-used-since',
+         'tools/redproof.py',
+         '                if k in records and cutoff is not None and (',
+         '                if False and (',
+         'tests/redproof_tool_test.py::StoreTest'
+         '::test_a_record_renewed_elsewhere_survives_a_prune',
+         'another run had just used'),
+    Case('harness/the-key-names-the-lock',
+         'tools/redproof.py',
+         "        'lock': sha(snapshot.content.get(LOCK, b'')),",
+         "        'lock': '',",
+         'tests/redproof_tool_test.py::KeyTest'
+         '::test_the_key_names_the_lock_the_harness_and_the_pinned_build',
+         'the key ignores the lock'),
+    Case('harness/the-key-names-the-pinned-build',
+         'tools/redproof.py',
+         '                   pinned_python(snapshot)],',
+         '                   ],',
+         'tests/redproof_tool_test.py::KeyTest'
+         '::test_the_key_names_the_lock_the_harness_and_the_pinned_build',
+         'the key ignores the pin'),
+    Case('harness/an-environment-unlike-the-lock-keeps-nothing',
+         'tools/redproof.py',
+         '    if differ:\n',
+         '    if False:\n',
+         'tests/redproof_tool_test.py::KeyTest'
+         '::test_a_set_other_than_the_lock_keeps_nothing',
+         'an environment unlike the lock was accepted'),
+    Case('harness/a-port-group-shares-one-lock',
+         'tools/redproof.py',
+         "                if item == node or item.startswith(node + '::'):",
+         '                if False:',
+         'tests/redproof_tool_test.py::GroupLockTest'
+         '::test_entries_sharing_an_xdist_group_share_a_lock',
+         'ran without its lock'),
+    Case('harness/a-changed-tracked-file-is-named',
+         'tools/redproof.py',
+         '                    if fh.read() == expected:',
+         '                    if True:',
+         'tests/redproof_tool_test.py::ChangedTrackedTest'
+         '::test_a_tracked_file_left_changed_is_named',
+         'a changed tracked file was not named'),
+    Case('harness/a-failing-baseline-is-not-judged',
+         'tools/redproof.py',
+         '    if baseline.code != 0:',
+         '    if False:',
+         'tests/redproof_tool_test.py::JudgeTest'
+         '::test_a_baseline_that_fails_is_not_judged',
+         'fails unmutated'),
+    Case('harness/a-run-with-no-status-proves-nothing',
+         'tools/redproof.py',
+         "    if result.code is None:\n        return 'RED?', result.killed, "
+         "None\n",
+         '',
+         'tests/redproof_tool_test.py::JudgeTest'
+         '::test_a_run_with_no_exit_status_proves_nothing',
+         'a timed-out run was judged'),
+    Case('harness/a-restored-tracked-write-is-reported',
+         'tools/redproof.py',
+         '    if audit is not None:\n        changed = sorted(',
+         '    if False:\n        changed = sorted(',
+         'tests/redproof_tool_test.py::JudgeTest'
+         '::test_a_restored_write_to_a_tracked_file_is_reported',
+         'a write the run restored went unreported'),
+]
+
+CASES += HARNESS_REVIEW_CASES
