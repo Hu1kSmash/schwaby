@@ -605,38 +605,103 @@ class InstalledFilesTest(unittest.TestCase):
 
 
 class WorkerTest(unittest.TestCase):
-    '''The worker processes: a dead one is reported, not waited for, and
-    what it left running is killed.'''
+    '''The worker processes: a dead or stopped one is reported, not waited
+    for, what it left running is killed, and the rest of the work goes on.'''
 
     SCRIPT = '''
-import importlib.util, os, signal, subprocess, sys, tempfile, time
+import importlib.util, os, signal, subprocess, sys, time
 spec = importlib.util.spec_from_file_location('redproof', sys.argv[1])
 rp = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rp)
 for s in (signal.SIGTERM, signal.SIGINT):
     signal.signal(s, rp.stop)
-rp._live_dir = tempfile.mkdtemp()
-rp._live_owner = os.getpid()
+
+def group(name):
+    # A pytest, as run_tests starts one and tells the parent about it.
+    p = subprocess.Popen(['sleep', '120'], start_new_session=True,
+                         stdout=subprocess.DEVNULL)
+    rp._track(p.pid)
+    print(name, p.pid, flush=True)
+    return p
+
+def siblings():
+    out = []
+    for d in os.listdir('/proc'):
+        if not d.isdigit():
+            continue
+        try:
+            with open('/proc/%s/stat' % d) as f:
+                ppid = int(f.read().rsplit(')', 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            continue
+        if ppid == os.getppid() and int(d) != os.getpid():
+            out.append(int(d))
+    return out
 
 def task(item):
     if item == 'dies':
-        # Its pytest, as run_tests starts one, then the worker is gone.
-        p = subprocess.Popen(['sleep', '120'], start_new_session=True,
-                             stdout=subprocess.DEVNULL)
-        rp._track(p.pid)
-        print('orphan', p.pid, flush=True)
+        group('orphan')
+        time.sleep(0.5)
         os._exit(1)
-    if item == 'exits':
+    if item == 'stopped':
+        group('stopped-orphan')
+        os.kill(os.getpid(), signal.SIGTERM)
+        time.sleep(30)
+    if item == 'slow':
+        # Its own group must outlive a sibling's death.
+        p = group('slow-group')
+        time.sleep(2)
+        alive = p.poll() is None
+        rp.kill_group(p.pid)
+        p.wait()
+        rp._untrack(p.pid)
+        return ('done', item, alive)
+    if item == 'kills-idle':
+        time.sleep(0.5)
+        for pid in siblings():
+            os.kill(pid, signal.SIGKILL)
+    if item == 'raises':
         raise SystemExit(143)
+    if item == 'unpicklable':
+        return lambda: None
+    if item == 'hangs':
+        time.sleep(20)
+    if item in ('busy', 'wedged'):
+        if item == 'wedged':
+            # Stuck: told to stop, it starts more tests instead, which it
+            # reports after the parent has stopped reading.
+            signal.signal(signal.SIGTERM, lambda *a: group('late-group'))
+        group(item + '-group')
+        open(MARK + item, 'w').close()
+        time.sleep(30)
+    if item.startswith('quick-'):
+        # Done only once the busy one has started its tests.
+        deadline = time.monotonic() + 10
+        while not os.path.exists(MARK + item[6:]) and time.monotonic() < deadline:
+            time.sleep(0.01)
     return ('done', item)
 
-for items in (['a', 'b'], ['exits', 'a'], ['dies']):
-    got = sorted(rp.parallel(task, items, 2,
-                             lambda item, why: ('failed', item, why[:30])))
+MARK = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), 'mark-')
+
+failed = lambda item, why: ('failed', item, why)
+for items, size in ((['a', 'b'], 2), (['dies', 'slow'], 2),
+                    (['stopped', 'after'], 1), (['kills-idle', 'x'], 3),
+                    (['raises', 'a'], 1), (['unpicklable'], 1)):
+    got = sorted(rp.parallel(task, items, size, failed))
     print(items[0], got, flush=True)
+rp.TASK_LIMIT = 1
+print('hangs', sorted(rp.parallel(task, ['hangs'], 1, failed)), flush=True)
+rp.WORKER_STOP_LIMIT = 1
+for first in ('busy', 'wedged'):
+    # The run ends early, as on a signal, with a worker still busy.
+    started = time.monotonic()
+    for result in rp.parallel(task, [first, 'quick-' + first], 2, failed):
+        break
+    print('abandoned-' + first, round(time.monotonic() - started, 1),
+          flush=True)
 '''
 
-    def test_a_dead_worker_is_reported_and_its_tests_killed(self):
+    def run_script(self):
         tmp = self.tmp()
         script = os.path.join(tmp, 'workers.py')
         with open(script, 'w') as f:
@@ -653,23 +718,71 @@ for items in (['a', 'b'], ['exits', 'a'], ['dies']):
         except subprocess.TimeoutExpired:
             os.killpg(proc.pid, 9)
             proc.wait()
-            self.fail('the pool waited on a dead worker')
+            self.fail('the pool waited on a dead or overdue worker')
+        try:
+            os.killpg(proc.pid, 0)
+        except ProcessLookupError:
+            pass
+        else:
+            os.killpg(proc.pid, 9)
+            self.fail('a worker outlived its pool')
         with open(os.path.join(tmp, 'out')) as f:
-            lines = dict(line.split(' ', 1) for line in f.read().splitlines())
+            return dict(line.split(' ', 1) for line in f.read().splitlines())
+
+    def test_a_dead_worker_is_reported_and_its_tests_killed(self):
+        lines = self.run_script()
         # The positive control: workers that live return what they made.
         self.assertEqual("[('done', 'a'), ('done', 'b')]", lines.get('a'))
-        self.assertIn("('done', 'a')", lines.get('exits', ''),
-                      'a worker that exited ended the run')
-        self.assertIn("('failed', 'exits', 'its worker process stopped", lines['exits'])
-        self.assertIn("('failed', 'dies', 'its worker process stopped",
-                      lines.get('dies', ''))
-        orphan = int(lines['orphan'])
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline and self.alive(orphan):
-            time.sleep(0.1)
-        if self.alive(orphan):
-            os.kill(orphan, 9)
-            self.fail('a dead worker\'s tests were left running')
+        self.assertEqual("[('done', 'slow', True), ('failed', 'dies', 'its "
+                         "worker process stopped (exit 1)')]",
+                         lines.get('dies'), 'a dead worker was not reported, '
+                         'or took a sibling\'s tests with it')
+        self.assertEqual("[('done', 'after'), ('failed', 'stopped', 'its "
+                         "worker process stopped (exit 143)')]",
+                         lines.get('stopped'), 'the work after a stopped '
+                         'worker did not go on')
+        self.assertEqual("[('done', 'kills-idle'), ('done', 'x')]",
+                         lines.get('kills-idle'), 'an idle worker\'s death '
+                         'lost work')
+        self.assertEqual("[('done', 'a'), ('failed', 'raises', 'the harness "
+                         "failed: SystemExit: 143')]", lines.get('raises'),
+                         'a task that raised ended its worker\'s work')
+        self.assertRegex(lines.get('unpicklable', ''),
+                         r"\('failed', 'unpicklable', .the harness failed: ",
+                         'a result that cannot '
+                         'cross to the parent was not reported as such')
+        self.assertEqual("[('failed', 'hangs', 'its worker process ran past "
+                         "1 s and was killed')]", lines.get('hangs'),
+                         'a task past its bound was not stopped')
+        # Told to stop, a busy worker stops at once; one that cannot is
+        # killed at the bound, 1 s here.
+        self.assertLess(float(lines['abandoned-busy']), 0.9,
+                        'an abandoned pool\'s busy worker was not told to '
+                        'stop')
+        for name in ('orphan', 'stopped-orphan', 'busy-group',
+                     'wedged-group', 'late-group'):
+            pid = int(lines[name])
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline and self.alive(pid):
+                time.sleep(0.1)
+            if self.alive(pid):
+                os.kill(pid, 9)
+                self.fail('a dead worker\'s tests were left running (%s)'
+                          % name)
+
+    def test_a_second_signal_does_not_cut_the_first_ones_cleanup_short(self):
+        import threading
+        from unittest import mock
+        with mock.patch.object(redproof, '_stopping', threading.Event()), \
+                mock.patch.object(redproof, '_live', set()):
+            with self.assertRaises(SystemExit):
+                redproof.stop(15, None)
+            try:
+                second = redproof.stop(15, None)
+            except SystemExit:
+                second = 'raised'
+            self.assertIsNone(second, 'a second signal raised into the '
+                              'first one\'s cleanup')
 
     def tmp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -683,28 +796,6 @@ for items in (['a', 'b'], ['exits', 'a'], ['dies']):
                 return f.read().rsplit(')', 1)[1].split()[0] != 'Z'
         except OSError:
             return False
-
-    def test_only_the_parent_kills_what_is_listed(self):
-        live = self.tmp()
-        sleeper = subprocess.Popen(['sleep', '120'], start_new_session=True)
-        self.addCleanup(sleeper.wait)
-        self.addCleanup(lambda: redproof.kill_group(sleeper.pid))
-        from unittest import mock
-        with mock.patch.object(redproof, '_live_dir', live), \
-                mock.patch.object(redproof, '_live', set()):
-            redproof._track(sleeper.pid)
-            # A worker stopping alone: every other worker's tests go on.
-            with mock.patch.object(redproof, '_live_owner', os.getpid() + 1):
-                redproof._kill_listed()
-            # Given time to die: a kill is not done when it returns.
-            with self.assertRaises(subprocess.TimeoutExpired,
-                                   msg='a worker stopping killed every '
-                                   'worker\'s tests'):
-                sleeper.wait(1)
-            with mock.patch.object(redproof, '_live_owner', os.getpid()):
-                redproof._kill_listed()
-            self.assertEqual(-9, sleeper.wait(10))
-            self.assertEqual([], os.listdir(live))
 
     def test_an_entry_judged_without_running_has_no_split(self):
         # A worker is forked with whatever the parent's first baseline left

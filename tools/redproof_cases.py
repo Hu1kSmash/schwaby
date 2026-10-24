@@ -6672,31 +6672,90 @@ CASES.extend([
 
 CASES.extend([
     # The worker processes. A pool that waits on a dead worker hangs the run
-    # with no bound, and what that worker was running keeps its port.
+    # with no bound, and what that worker was running keeps its port. A case
+    # per branch of the pool, all against the one scenario script.
     Case('harness/a-dead-workers-tests-are-killed',
          'tools/redproof.py',
-         '        # And whatever a dead worker left running.\n'
-         '        _kill_listed()\n',
+         '                    # Gone: what it left running dies with it.\n'
+         '                    w.kill_groups()\n',
+         '                    # Gone: what it left running dies with it.\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         "a dead worker's tests were left running (orphan)"),
+    Case('harness/a-dead-workers-item-is-reported',
+         'tools/redproof.py',
+         '                        yield failed(items[w.item], (',
+         '                        failed(items[w.item], (',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'a dead worker was not reported'),
+    Case('harness/a-dead-workers-place-is-taken',
+         'tools/redproof.py',
+         '                    if pending:\n                        start()\n'
+         '                    continue\n',
+         '                    continue\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'the pool waited on a dead or overdue worker'),
+    Case('harness/a-stopped-worker-leaves-rather-than-raising',
+         'tools/redproof.py',
+         '            kill_group(pid)\n        os._exit(128 + signum)\n',
+         '            kill_group(pid)\n        raise SystemExit(128 + signum)\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'the work after a stopped worker did not go on'),
+    Case('harness/a-task-that-raises-fails-alone',
+         'tools/redproof.py',
+         "        except BaseException as e:\n            message = ('failed',",
+         "        except Exception as e:\n            message = ('failed',",
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         "a task that raised ended its worker's work"),
+    Case('harness/an-unpicklable-result-is-reported',
+         'tools/redproof.py',
+         '            pickle.dumps(message)\n',
          '',
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
-         "a dead worker's tests were left running"),
-    Case('harness/a-stopped-worker-does-not-end-the-run',
+         'a result that cannot cross to the parent'),
+    Case('harness/an-overdue-task-is-killed',
          'tools/redproof.py',
-         '            except BaseException as e:\n'
-         "                # This process's own signal ends the run.",
-         '            except Exception as e:\n'
-         "                # This process's own signal ends the run.",
+         '                        and now - w.since > TASK_LIMIT:\n',
+         '                        and now - w.since > TASK_LIMIT * 1000:\n',
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
-         'a worker that exited ended the run'),
-    Case('harness/only-the-parent-kills-what-is-listed',
+         'a task past its bound was not stopped'),
+    Case('harness/an-abandoned-pools-busy-worker-is-told-to-stop',
          'tools/redproof.py',
-         '    if not _live_dir or os.getpid() != _live_owner:\n',
-         '    if not _live_dir:\n',
+         '            if w.item is not None:\n'
+         '                w.signal(signal.SIGTERM)\n',
+         '            if w.item is not None:\n                pass\n',
          'tests/redproof_tool_test.py::WorkerTest'
-         '::test_only_the_parent_kills_what_is_listed',
-         "a worker stopping killed every worker's tests"),
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         "an abandoned pool's busy worker was not told to stop"),
+    Case('harness/a-stuck-worker-is-killed-at-the-bound',
+         'tools/redproof.py',
+         '            if _wait_gone(w.pid, deadline) is False:\n'
+         '                w.signal(signal.SIGKILL)\n',
+         '            if _wait_gone(w.pid, deadline) is False:\n'
+         '                pass\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'a worker outlived its pool'),
+    Case('harness/what-a-worker-reports-last-is-read',
+         'tools/redproof.py',
+         '            w.drain()\n',
+         '',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         "a dead worker's tests were left running (late-group)"),
+    Case('harness/a-second-signal-does-not-cut-cleanup-short',
+         'tools/redproof.py',
+         '    if _stopping.is_set():\n        return\n',
+         '',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_second_signal_does_not_cut_the_first_ones_cleanup_short',
+         "a second signal raised into the first one's cleanup"),
     Case('harness/an-entry-that-never-ran-has-no-split',
          'tools/redproof.py',
          "    # an entry judged without running printed the first baseline's "

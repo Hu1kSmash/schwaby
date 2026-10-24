@@ -157,48 +157,27 @@ SECRET_PATH = re.compile(
     r'|[^/]*\.(pem|key|p12|pfx)|id_[a-z0-9]+)$|(^|/)\.(config|ssh|gnupg)/',
     re.IGNORECASE)
 
-# The process groups this process started and has not reaped. No lock: the
-# set is changed only on this process's main thread, which is also where
-# stop() runs, as a signal handler, and a lock taken there would deadlock
-# against the same thread holding it.
+# The process groups this process started and has not reaped. Changed only
+# on the main thread, where stop() also runs, so it takes no lock: one held
+# there when a signal landed deadlocked the handler against its own thread.
 _live = set()
 _stopping = threading.Event()
-# Where every process (the parent and each worker) also lists the groups it
-# started, one empty file named by the group, so the parent can kill a group
-# whose worker died without killing it: the worker's own time limit died
-# with it, and a login-flow test left running holds its port.
-_live_dir = None
-# The process that made _live_dir, and the only one that kills what is
-# listed there: a worker stopping alone kills its own groups, not every
-# worker's.
-_live_owner = None
+# Set in a worker: tells the parent each group it starts and reaps, so the
+# parent can kill what a worker that died left running. That worker's time
+# limit died with it, and a login-flow test left running keeps its port.
+_report = None
 
 
 def _track(pid):
     _live.add(pid)
-    if _live_dir:
-        open(os.path.join(_live_dir, str(pid)), 'w').close()
+    if _report:
+        _report(('started', pid))
 
 
 def _untrack(pid):
-    if _live_dir:
-        try:
-            os.remove(os.path.join(_live_dir, str(pid)))
-        except FileNotFoundError:
-            pass
     _live.discard(pid)
-
-
-def _kill_listed():
-    '''Kills every group still listed: what a dead worker left running.'''
-    if not _live_dir or os.getpid() != _live_owner:
-        return
-    for name in os.listdir(_live_dir):
-        kill_group(int(name))
-        try:
-            os.remove(os.path.join(_live_dir, name))
-        except FileNotFoundError:
-            pass
+    if _report:
+        _report(('reaped', pid))
 
 
 def usable_cpus():
@@ -1411,10 +1390,6 @@ def run_stale(run, args, stale, store, keys, held, unkept):
                 'fails unmutated: %s' % last_lines(result.output)),
                 result.seconds)
 
-    global _live_dir, _live_owner
-    _live_dir = os.path.join(run.tmp, 'live')
-    os.makedirs(_live_dir)
-    _live_owner = os.getpid()
     _job.update(run=run, cases={c.name: c for c in stale})
     baseline_done(_baseline_task(distinct[0]))
     size, reason = pool_size(args, run.largest)
@@ -1544,72 +1519,247 @@ def _entry_failed(name, why):
     return (name, 'ERROR', why, None, 0.0, '', {}, 0, None)
 
 
-#: How long a worker has to stop after it is told to, before it is killed
+#: How long a worker has to stop once told to, before it is killed
 WORKER_STOP_LIMIT = 10
+#: The longest one task may take, seen from the parent: a port group's wait
+#: and two runs' limits. Past it, the worker is killed and the item fails.
+TASK_LIMIT = GROUP_LOCK_LIMIT + 2 * RUN_LIMIT + 60
 
 
 def parallel(fn, items, size, failed):
     '''fn over items in `size` worker processes, yielding each result as
-    it arrives, and failed(item, why) for an item whose worker died or
-    raised. Processes, not threads: the harness's own work on an entry
-    holds the interpreter lock, and twenty threads queued on it spent about
-    fourteen seconds an entry waiting where pytest took half of one.
+    it arrives, and failed(item, why) for an item whose worker died, raised
+    or overran TASK_LIMIT. Processes, not threads: the harness's own work on
+    an entry holds the interpreter lock, and twenty threads queued on it
+    spent about fourteen seconds an entry waiting where pytest took half of
+    one.
 
-    concurrent.futures, not multiprocessing.Pool: a Pool whose worker dies
-    waits for its result forever, and one whose idle worker dies hangs in
-    terminate(). The executor reports the death. Forked, so the workers
-    inherit the run instead of having it pickled, and every worker is
-    started at once, before the executor's thread exists.'''
+    A pool of its own, not multiprocessing's or concurrent.futures': a Pool
+    waits forever on a dead worker and hangs in terminate() after an idle
+    one dies; the executor joins a broken pool's workers with no bound on
+    3.12 and later, and a worker that catches its own SystemExit goes back
+    for more work. Here each worker is forked from this single-threaded
+    process and talks to it over two pipes; a worker that dies closes its
+    pipe, which fails its one item, kills the groups it reported, and puts a
+    new worker in its place. Every wait here has a bound.'''
     if not items:
         return
-    import concurrent.futures
-    import multiprocessing
-    pool = concurrent.futures.ProcessPoolExecutor(
-        size, mp_context=multiprocessing.get_context('fork'))
-    finished = False
+    import selectors
+    pending = list(range(len(items)))[::-1]
+    workers = []
+    selector = selectors.DefaultSelector()
+
+    def start():
+        w = _Worker(fn, items)
+        workers.append(w)
+        selector.register(w.results, selectors.EVENT_READ, w)
+        if pending:
+            w.send(pending.pop())
+
+    outstanding = len(items)
     try:
-        futures = {pool.submit(fn, item): item for item in items}
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                result = future.result()
-            except BaseException as e:
-                # This process's own signal ends the run. A worker's does
-                # not: the executor hands back the SystemExit a worker's
-                # stop() raised as that task's result, and re-raising it
-                # here ended the whole run for one stopped worker.
-                if _stopping.is_set():
-                    raise
-                import concurrent.futures.process
-                if isinstance(e, (SystemExit,
-                                  concurrent.futures.process.BrokenProcessPool)):
-                    why = 'its worker process stopped (%s: %s)' % (
-                        type(e).__name__, e)
-                else:
-                    why = 'the harness failed: %s: %s' % (type(e).__name__, e)
-                result = failed(futures[future], why)
-            yield result
-        finished = True
+        for _ in range(min(size, len(items))):
+            start()
+        while outstanding:
+            for key, _ in selector.select(timeout=1.0):
+                w = key.data
+                frames = w.frames()
+                if frames is None:
+                    # Gone: what it left running dies with it.
+                    w.kill_groups()
+                    selector.unregister(w.results)
+                    workers.remove(w)
+                    status = w.close()
+                    if w.item is not None:
+                        outstanding -= 1
+                        yield failed(items[w.item], (
+                            'its worker process ran past %d s and was killed'
+                            % TASK_LIMIT) if w.overdue else (
+                            'its worker process stopped (%s)' % status))
+                    if pending:
+                        start()
+                    continue
+                for frame in frames:
+                    if frame[0] == 'started':
+                        w.groups.add(frame[1])
+                    elif frame[0] == 'reaped':
+                        w.groups.discard(frame[1])
+                    else:
+                        kind, index, value = frame
+                        w.item = None
+                        outstanding -= 1
+                        yield value if kind == 'result' else failed(
+                            items[index], 'the harness failed: %s' % value)
+                        if pending:
+                            w.send(pending.pop())
+            now = time.monotonic()
+            for w in workers:
+                if w.item is not None and not w.overdue \
+                        and now - w.since > TASK_LIMIT:
+                    w.overdue = True
+                    w.signal(signal.SIGKILL)
     finally:
-        if not finished:
-            # A signal, or the run ending early: each worker kills the
-            # pytest it was running as it stops (they inherit stop()).
-            _end_workers(pool)
-        pool.shutdown(wait=True, cancel_futures=True)
-        # And whatever a dead worker left running.
-        _kill_listed()
+        # Idle workers stop when their task pipe closes; busy ones, on a
+        # signal or a run ending early, are told to and then killed.
+        for w in workers:
+            os.close(w.tasks)
+            w.tasks = None
+            if w.item is not None:
+                w.signal(signal.SIGTERM)
+        deadline = time.monotonic() + WORKER_STOP_LIMIT
+        for w in workers:
+            if _wait_gone(w.pid, deadline) is False:
+                w.signal(signal.SIGKILL)
+                _wait_gone(w.pid, time.monotonic() + WORKER_STOP_LIMIT)
+            # What it reported after the parent stopped reading: a group it
+            # started just before it stopped is otherwise never killed.
+            w.drain()
+            w.kill_groups()
+            os.close(w.results)
+        selector.close()
 
 
-def _end_workers(pool):
-    processes = list((getattr(pool, '_processes', None) or {}).values())
-    for p in processes:
-        if p.is_alive():
-            p.terminate()
-    deadline = time.monotonic() + WORKER_STOP_LIMIT
-    for p in processes:
-        p.join(max(0.0, deadline - time.monotonic()))
-        if p.is_alive():
-            p.kill()
-            p.join(WORKER_STOP_LIMIT)
+class _Worker:
+    '''One forked worker: tasks go to it as 8-byte item indexes, and frames
+    come back as a 4-byte length and a pickle.'''
+
+    def __init__(self, fn, items):
+        results_r, results_w = os.pipe()
+        tasks_r, tasks_w = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            try:
+                os.close(results_r)
+                os.close(tasks_w)
+                _worker_main(fn, items, tasks_r, results_w)
+            finally:
+                os._exit(1)
+        os.close(results_w)
+        os.close(tasks_r)
+        self.pid, self.results, self.tasks = pid, results_r, tasks_w
+        self.buffer = b''
+        self.groups = set()
+        self.item = self.since = None
+        self.overdue = False
+
+    def send(self, index):
+        import struct
+        self.item, self.since = index, time.monotonic()
+        os.write(self.tasks, struct.pack('>q', index))
+
+    def frames(self):
+        '''The whole frames read so far, or None when the worker is gone.'''
+        import pickle
+        import struct
+        data = os.read(self.results, 1 << 16)
+        if not data:
+            return None
+        self.buffer += data
+        out = []
+        while len(self.buffer) >= 4:
+            n, = struct.unpack('>I', self.buffer[:4])
+            if len(self.buffer) < 4 + n:
+                break
+            out.append(pickle.loads(self.buffer[4:4 + n]))
+            self.buffer = self.buffer[4 + n:]
+        return out
+
+    def drain(self):
+        '''Reads the groups the worker reported up to its end. Only once
+        it is gone, so the pipe ends; and bounded, in case it is not.'''
+        deadline = time.monotonic() + WORKER_STOP_LIMIT
+        os.set_blocking(self.results, False)
+        while time.monotonic() < deadline:
+            try:
+                frames = self.frames()
+            except BlockingIOError:
+                return
+            if frames is None:
+                return
+            for frame in frames:
+                if frame[0] == 'started':
+                    self.groups.add(frame[1])
+                elif frame[0] == 'reaped':
+                    self.groups.discard(frame[1])
+
+    def signal(self, sig):
+        try:
+            os.kill(self.pid, sig)
+        except ProcessLookupError:
+            pass
+
+    def kill_groups(self):
+        for pgid in self.groups:
+            kill_group(pgid)
+        self.groups.clear()
+
+    def close(self):
+        '''Reaps the worker, whose pipe has closed, and says how it ended.'''
+        os.close(self.results)
+        self.results = None
+        if self.tasks is not None:
+            os.close(self.tasks)
+            self.tasks = None
+        status = _wait_gone(self.pid, time.monotonic() + WORKER_STOP_LIMIT)
+        if status is False:
+            self.signal(signal.SIGKILL)
+            status = _wait_gone(self.pid, time.monotonic() + WORKER_STOP_LIMIT)
+        if status is None or status is False:
+            return 'its exit was not seen'
+        code = os.waitstatus_to_exitcode(status)
+        return 'killed by signal %d' % -code if code < 0 else 'exit %d' % code
+
+
+def _wait_gone(pid, deadline):
+    '''Its wait status once it has exited, None if it is not ours to wait
+    for, or False at the deadline.'''
+    while True:
+        try:
+            done, status = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            return None
+        if done:
+            return status
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.02)
+
+
+def _worker_main(fn, items, tasks, results):
+    import pickle
+    import struct
+    global _report
+
+    def send(message):
+        data = pickle.dumps(message)
+        data = struct.pack('>I', len(data)) + data
+        while data:
+            data = data[os.write(results, data):]
+
+    def stopped(signum, frame):
+        # Kills its own groups and leaves: no exception, which task code or
+        # cleanup could catch and carry on from.
+        for pid in list(_live):
+            kill_group(pid)
+        os._exit(128 + signum)
+
+    for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(s, stopped)
+    _report = send
+    while True:
+        data = b''
+        while len(data) < 8:
+            more = os.read(tasks, 8 - len(data))
+            if not more:
+                os._exit(0)
+            data += more
+        index, = struct.unpack('>q', data)
+        try:
+            message = ('result', index, fn(items[index]))
+            pickle.dumps(message)
+        except BaseException as e:
+            message = ('failed', index, '%s: %s' % (type(e).__name__, e))
+        send(message)
 
 
 def last_lines(output, n=3):
@@ -1618,15 +1768,13 @@ def last_lines(output, n=3):
 
 
 def stop(signum, frame):
-    # Once: a worker stopping on ^C is then sent SIGTERM by the parent, and
-    # a second SystemExit raised in the first one's cleanup printed a
-    # traceback. One that does not finish stopping is killed.
-    for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        signal.signal(s, signal.SIG_IGN)
+    # Once: a second signal while the first one's cleanup runs would cut
+    # that cleanup short. Every wait in it has a bound.
+    if _stopping.is_set():
+        return
     _stopping.set()
     for pid in list(_live):
         kill_group(pid)
-    _kill_listed()
     raise SystemExit(128 + signum)
 
 
