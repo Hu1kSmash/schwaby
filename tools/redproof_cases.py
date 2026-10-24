@@ -6609,10 +6609,10 @@ CASES.extend([
     # measured against something else.
     Case('harness/pip-is-held-to-its-record',
          'tools/redproof.py',
-         '            owned.add(os.path.realpath(path))\n',
-         # After its files count as owned: a skip before that is refused by
+         '            listed.add(os.path.abspath(path))\n',
+         # After its files count as listed: a skip before that is refused by
          # the walk for files no RECORD lists, which proves the walk, not this.
-         '            owned.add(os.path.realpath(path))\n'
+         '            listed.add(os.path.abspath(path))\n'
          '            if name == \'pip\':\n                continue\n',
          'tests/redproof_tool_test.py::InstalledFilesTest'
          '::test_pip_is_held_to_its_record',
@@ -6649,8 +6649,8 @@ CASES.extend([
          'a file hashed with an unchecked algorithm was taken as intact'),
     Case('harness/an-unlisted-installed-file-keeps-nothing',
          'tools/redproof.py',
-         '                if os.path.realpath(path) not in owned:\n',
-         '                if False:\n',
+         '            if path not in listed:\n',
+         '            if False:\n',
          'tests/redproof_tool_test.py::InstalledFilesTest'
          '::test_a_file_no_record_lists_is_caught',
          'a file no RECORD lists went unnoticed'),
@@ -6766,3 +6766,117 @@ CASES.extend([
          '::test_an_entry_judged_without_running_has_no_split',
          "an entry that never ran printed another run's time split"),
 ])
+
+CASES.extend([
+    # The closed world: every file pytest's interpreter could import from is
+    # one a RECORD lists, or the standard library's digest covers. A case
+    # per rule; an earlier list of bad cases missed five.
+    Case('harness/schwaby-is-held-to-its-record',
+         'tools/redproof.py',
+         '            listed.add(os.path.abspath(path))\n',
+         '            listed.add(os.path.abspath(path))\n'
+         "            if name == 'schwaby':\n                continue\n",
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_schwaby_is_held_to_its_record',
+         'an edited schwaby file was not checked'),
+    Case('harness/a-dependency-from-a-directory-keeps-nothing',
+         'tools/redproof.py',
+         "        if name != 'schwaby' and dist.read_text('direct_url.json') "
+         "is not None:\n",
+         '        if False:\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_a_dependency_installed_from_a_directory_keeps_nothing',
+         'a dependency installed from a directory was taken as intact'),
+    Case('harness/unhashed-only-in-its-place',
+         'tools/redproof.py',
+         "                if (parts[-1] == 'RECORD' and len(parts) >= 2\n"
+         "                        and parts[-2].endswith('.dist-info')) or (\n"
+         "                        parts[-1].endswith('.pyc') and len(parts) >= 2\n"
+         "                        and parts[-2] == '__pycache__'):\n",
+         "                if parts[-1] == 'RECORD' or "
+         "parts[-1].endswith('.pyc'):\n",
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_only_record_and_pyc_may_go_unhashed',
+         'outside its place was not refused'),
+    Case('harness/bytecode-in-pycache-is-not-refused',
+         'tools/redproof.py',
+         "        dirnames[:] = sorted(d for d in dirnames if d != "
+         "'__pycache__')\n",
+         '        dirnames[:] = sorted(dirnames)\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_a_file_no_record_lists_is_caught',
+         'bytecode in __pycache__ was refused'),
+    Case('harness/a-new-name-for-a-listed-file-keeps-nothing',
+         'tools/redproof.py',
+         '            listed.add(os.path.abspath(path))\n',
+         '            listed.add(os.path.realpath(path))\n'
+         '            listed.add(os.path.abspath(path))\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_a_link_no_record_lists_is_caught_though_its_target_is',
+         'a new name for a listed file went unnoticed',
+         also=('            if path not in listed:\n',
+               '            if os.path.realpath(path) not in listed:\n')),
+    Case('harness/a-linked-directory-keeps-nothing',
+         'tools/redproof.py',
+         '            if os.path.islink(path):\n'
+         "                return '%s in %s is a link to a directory' % (\n",
+         '            if False:\n'
+         "                return '%s in %s is a link to a directory' % (\n",
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_a_linked_directory_is_caught',
+         'a linked directory was not looked at'),
+    Case('harness/a-directory-of-nothing-listed-keeps-nothing',
+         'tools/redproof.py',
+         '        if dirpath != root and dirpath not in holding:\n',
+         '        if False:\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_a_directory_with_nothing_listed_is_caught',
+         'a leftover directory went unnoticed'),
+    Case('harness/an-archive-on-the-path-keeps-nothing',
+         'tools/redproof.py',
+         '    if not os.path.isdir(root) or os.path.islink(root):\n',
+         '    if False:\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_an_archive_on_the_path_is_caught',
+         'an archive on the import path went unnoticed'),
+    Case('harness/the-stdlib-digest-reads-every-file',
+         'tools/redproof.py',
+         '            if not STDLIB_PER_BUILD.search(rel_dir + f):\n',
+         "            if f.endswith('.py') and not "
+         'STDLIB_PER_BUILD.search(rel_dir + f):\n',
+         'tests/redproof_tool_test.py::StdlibTest'
+         '::test_every_file_but_the_per_build_ones_counts',
+         'the digest ignores tomllib/py.typed'),
+    Case('harness/the-stdlib-digest-leaves-out-per-build-files',
+         'tools/redproof.py',
+         "    r'^(lib-dynload|config-[^/]*|site-packages)(/|$)'\n",
+         "    r'^(site-packages)(/|$)'\n",
+         'tests/redproof_tool_test.py::StdlibTest'
+         '::test_every_file_but_the_per_build_ones_counts',
+         'a per-build file is in the digest, so the key names the machine'),
+    Case('harness/a-link-in-the-stdlib-is-refused',
+         'tools/redproof.py',
+         '        if os.path.islink(path):\n'
+         "            return 'the standard library\\'s %s is a link' % rel\n",
+         '        if False:\n'
+         "            return 'the standard library\\'s %s is a link' % rel\n",
+         'tests/redproof_tool_test.py::StdlibTest'
+         '::test_a_link_or_a_stray_compiled_module_is_refused',
+         'a link in the standard library was not refused'),
+    Case('harness/a-stray-compiled-module-in-the-stdlib-is-refused',
+         'tools/redproof.py',
+         "        if rel.endswith(('.so', '.pyd', '.dylib')):\n",
+         '        if False:\n',
+         'tests/redproof_tool_test.py::StdlibTest'
+         '::test_a_link_or_a_stray_compiled_module_is_refused',
+         'a compiled module outside lib-dynload was not refused'),
+])
+
+CASES.append(
+    Case('harness/the-gate-checks-the-standard-library',
+         'tools/redproof.py',
+         '    edited = stdlib_differs()\n',
+         '    edited = None\n',
+         'tests/redproof_tool_test.py::InstalledFilesTest'
+         '::test_the_gate_holds_installed_files_to_their_records',
+         'the gate does not check the standard library'))

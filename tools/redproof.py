@@ -98,9 +98,11 @@ checked.
 What the audit cannot see, a record cannot key, and these are known: files the
 C library reads for itself (time zone data under TZ, locale files), an
 os.open() relative to a directory descriptor (recorded at the wrong path), and
-a probed path's size or permissions (only its kind is keyed), and a compiled
-.pyc under site-packages, which no RECORD hashes, read in place of its source
-when its header matches.
+a probed path's size or permissions (only its kind is keyed), and bytecode in
+a __pycache__ directory, which nothing hashes and Python reads in place of its
+source when its header matches the source's time and size. Not reading it
+(-X pycache_prefix) costs 0.6 s a run; replacing one by hand is the only way
+known to make it disagree with its source.
 
 A selected entry with a record that still holds is KEPT without running, and
 the record's time is renewed. A record that has not held or been proved for 60
@@ -449,7 +451,6 @@ def run_tests(workdir, copy, nodes, audit_script, record=None,
         'HOME': os.path.join(workdir, 'home'),
         'TMPDIR': os.path.join(workdir, 'tmp'),
         'LANG': 'C.UTF-8',
-        'PYTHONDONTWRITEBYTECODE': '1',
     }
     os.makedirs(env['HOME'], exist_ok=True)
     os.makedirs(env['TMPDIR'], exist_ok=True)
@@ -459,6 +460,7 @@ def run_tests(workdir, copy, nodes, audit_script, record=None,
     # repr, and a test object whose repr or type name raises (several here
     # exist to) then crashed pytest itself, with an INTERNALERROR and no
     # failure reported. The short form prints the same E lines.
+    # -B, not PYTHONDONTWRITEBYTECODE: -I ignores every PYTHON* variable.
     argv = [sys.executable, '-I', '-B', audit_script, '-q', '--tb=short',
             '-p', 'no:cacheprovider'] + list(nodes)
     log = os.path.join(workdir, 'output.log')
@@ -582,6 +584,9 @@ def environment_matches_lock(snapshot):
     edited = installed_files_differ(metadata.distributions())
     if edited:
         return 'an installed file is not what was installed: %s' % edited
+    edited = stdlib_differs()
+    if edited:
+        return edited
     return None
 
 
@@ -590,29 +595,53 @@ def environment_matches_lock(snapshot):
 RECORD_HASHES = ('sha256', 'sha384', 'sha512')
 
 
-def installed_files_differ(distributions, roots=None):
-    '''The first installed file that is not what its distribution's RECORD
-    says, as text, or None. The lock pins versions, so a library file edited
-    in place at the same version passed the lock gate and could keep a
-    verdict measured against the original.
+def import_roots():
+    '''What the interpreter pytest runs under imports from: its sys.path
+    under -I, as the harness starts it, so what .pth files and system
+    site-packages add is in it.'''
+    out = subprocess.run(
+        [sys.executable, '-I', '-B', '-c',
+         'import json, sys; print(json.dumps(sys.path))'],
+        capture_output=True, text=True, timeout=60, check=True)
+    return [p for p in json.loads(out.stdout) if p]
 
-    Fails closed: a distribution with no RECORD, a hash it cannot check, a
-    file listed without a hash (other than RECORD itself and compiled .pyc
-    files, which pip never hashes), and a file under site-packages (`roots`)
-    that no RECORD lists, such as a .pth file dropped in by hand, each keep
-    nothing. pip and schwaby are held to their RECORDs too: both run at every
-    interpreter start, schwaby through its editable finder.'''
+
+def installed_files_differ(distributions, roots=None):
+    '''The first thing pytest's interpreter could import from that is not
+    what was installed, as text, or None. The lock pins versions, so a
+    library file edited in place at the same version passed the lock gate
+    and could keep a verdict measured against the original.
+
+    A closed world, not a list of bad cases (an earlier list missed five):
+    every file under every import root outside the standard library, which
+    stdlib_digest() covers, must be one a RECORD lists by that path and
+    whose bytes match its hash. So a file or a link no RECORD lists, a
+    linked directory, a directory with nothing listed under it (an
+    uninstall's leftovers import as a namespace package), an archive on the
+    path, a distribution with no RECORD, a hash it cannot check, a listed
+    file without a hash other than its dist-info's RECORD and __pycache__
+    bytecode, and a distribution installed from a directory or VCS (its
+    files are not in its RECORD) each keep nothing. schwaby, under test, may
+    be installed from its checkout. __pycache__ directories are not walked:
+    bytecode is not hashed by anything (see the module docstring).'''
     import base64
-    owned = set()
+    listed = set()
     for dist in distributions:
         name = normalize(dist.metadata['Name'] or '')
         if dist.files is None:
             return '%s has no RECORD, so its files cannot be checked' % name
+        if name != 'schwaby' and dist.read_text('direct_url.json') is not None:
+            return ('%s is installed from a directory or a repository, whose '
+                    'files its RECORD does not list' % name)
         for f in dist.files:
             path = dist.locate_file(f)
-            owned.add(os.path.realpath(path))
+            listed.add(os.path.abspath(path))
             if not f.hash:
-                if f.name == 'RECORD' or f.name.endswith('.pyc'):
+                parts = str(f).replace(os.sep, '/').split('/')
+                if (parts[-1] == 'RECORD' and len(parts) >= 2
+                        and parts[-2].endswith('.dist-info')) or (
+                        parts[-1].endswith('.pyc') and len(parts) >= 2
+                        and parts[-2] == '__pycache__'):
                     continue
                 return '%s: %s has no hash in its RECORD' % (name, f)
             if f.hash.mode not in RECORD_HASHES:
@@ -629,46 +658,119 @@ def installed_files_differ(distributions, roots=None):
             if digest != f.hash.value:
                 return '%s: %s differs from its RECORD' % (name, f)
     if roots is None:
-        import sysconfig
-        roots = {sysconfig.get_paths()[k] for k in ('purelib', 'platlib')}
-    for root in sorted({os.path.realpath(r) for r in roots}):
-        for dirpath, dirnames, files in os.walk(root):
-            dirnames[:] = sorted(d for d in dirnames if d != '__pycache__')
-            for f in sorted(files):
-                path = os.path.join(dirpath, f)
-                if os.path.realpath(path) not in owned:
-                    return '%s is in %s but no RECORD lists it' % (
-                        os.path.relpath(path, root), root)
+        stdlib = stdlib_root()
+        roots = [r for r in import_roots()
+                 if not (Classifier.under(r, stdlib) and not Classifier.under(
+                     r, os.path.join(stdlib, 'site-packages')))]
+    for root in roots:
+        why = _unlisted_under(os.path.abspath(root), listed)
+        if why:
+            return why
     return None
 
 
-_stdlib_digest = []
+def _unlisted_under(root, listed):
+    if not os.path.lexists(root):
+        return None
+    if not os.path.isdir(root) or os.path.islink(root):
+        return '%s is on the import path and is not a directory' % root
+    holding = set()
+    for path in listed:
+        if Classifier.under(path, root):
+            d = os.path.dirname(path)
+            while d not in holding and Classifier.under(d, root):
+                holding.add(d)
+                d = os.path.dirname(d)
+    for dirpath, dirnames, files in os.walk(root):
+        for d in sorted(dirnames):
+            path = os.path.join(dirpath, d)
+            if os.path.islink(path):
+                return '%s in %s is a link to a directory' % (
+                    os.path.relpath(path, root), root)
+        dirnames[:] = sorted(d for d in dirnames if d != '__pycache__')
+        if dirpath != root and dirpath not in holding:
+            return '%s in %s holds nothing any RECORD lists' % (
+                os.path.relpath(dirpath, root), root)
+        for f in sorted(files):
+            path = os.path.join(dirpath, f)
+            if path not in listed:
+                return '%s is in %s but no RECORD lists it' % (
+                    os.path.relpath(path, root), root)
+    return None
 
 
-def stdlib_digest():
-    '''A digest of the standard library's Python sources, for the key.
-    Nothing installs the standard library, so no RECORD holds it, and the
-    pin holds only the release: an edited unittest/case.py kept every
-    verdict. Python sources only, and not the per-architecture
-    _sysconfigdata or config-* files, so it is one value on every rig on the
-    pin (measured equal for 3.14.8's aarch64 and x86_64 builds). The
-    compiled modules are held to the release alone.'''
-    if not _stdlib_digest:
-        import sysconfig
-        root = os.path.realpath(sysconfig.get_paths()['stdlib'])
+#: In the standard library but not its digest: built for one architecture,
+#: or holding the build's own paths, so different on every rig on the pin.
+#: The compiled modules among them are held to the release alone.
+STDLIB_PER_BUILD = re.compile(
+    r'^(lib-dynload|config-[^/]*|site-packages)(/|$)'
+    r'|(^|/)__pycache__(/|$)'
+    r'|^(_sysconfigdata[^/]*|_sysconfig_vars[^/]*|build-details\.json)$')
+
+
+def stdlib_root():
+    import sysconfig
+    return os.path.abspath(sysconfig.get_paths()['stdlib'])
+
+
+_stdlib_digests = {}
+
+
+def stdlib_digest(root=None):
+    '''A digest of the standard library, for the key: every file under
+    it but the per-build ones (STDLIB_PER_BUILD) and __pycache__, each by
+    its path and bytes. Nothing installs the standard library, so no RECORD
+    holds it, and the pin holds only the release: an edited unittest/case.py
+    kept every verdict, and so did a sourceless .pyc, which only a digest of
+    every file sees. One value on every rig on the pin: measured equal for
+    3.14.8's aarch64 and x86_64 builds. A link in it, which this digest
+    would not follow, is refused by stdlib_differs().'''
+    root = os.path.abspath(root or stdlib_root())
+    if root not in _stdlib_digests:
         h = hashlib.sha256()
-        for dirpath, dirnames, files in os.walk(root):
-            dirnames[:] = sorted(
-                d for d in dirnames if d not in ('__pycache__', 'site-packages')
-                and not d.startswith('config-'))
-            for f in sorted(files):
-                if f.endswith('.py') and not f.startswith('_sysconfigdata'):
-                    path = os.path.join(dirpath, f)
-                    rel = os.path.relpath(path, root).replace(os.sep, '/')
-                    with open(path, 'rb') as fh:
-                        h.update(rel.encode() + b'\0' + fh.read() + b'\0')
-        _stdlib_digest.append(h.hexdigest())
-    return _stdlib_digest[0]
+        for rel, path in _stdlib_files(root):
+            if os.path.islink(path):
+                h.update(b'L' + rel.encode() + b'\0'
+                         + os.readlink(path).encode() + b'\0')
+                continue
+            with open(path, 'rb') as fh:
+                h.update(b'F' + rel.encode() + b'\0' + fh.read() + b'\0')
+        _stdlib_digests[root] = h.hexdigest()
+    return _stdlib_digests[root]
+
+
+def _stdlib_files(root):
+    for dirpath, dirnames, files in os.walk(root):
+        rel_dir = os.path.relpath(dirpath, root).replace(os.sep, '/')
+        rel_dir = '' if rel_dir == '.' else rel_dir + '/'
+        kept = []
+        for d in sorted(dirnames):
+            if STDLIB_PER_BUILD.search(rel_dir + d):
+                continue
+            if os.path.islink(os.path.join(dirpath, d)):
+                yield rel_dir + d, os.path.join(dirpath, d)
+                continue
+            kept.append(d)
+        dirnames[:] = kept
+        for f in sorted(files):
+            if not STDLIB_PER_BUILD.search(rel_dir + f):
+                yield rel_dir + f, os.path.join(dirpath, f)
+
+
+def stdlib_differs(root=None):
+    '''Why the standard library cannot be digested as it stands, or
+    None. A build ships it with no links and with compiled modules only in
+    lib-dynload, so either elsewhere is something added.'''
+    root = os.path.abspath(root or stdlib_root())
+    if not os.path.isdir(root):
+        return 'the standard library is not at %s' % root
+    for rel, path in _stdlib_files(root):
+        if os.path.islink(path):
+            return 'the standard library\'s %s is a link' % rel
+        if rel.endswith(('.so', '.pyd', '.dylib')):
+            return ('the standard library\'s %s is a compiled module outside '
+                    'lib-dynload' % rel)
+    return None
 
 
 def entry_key(case, snapshot):
@@ -1336,7 +1438,7 @@ def run_stale(run, args, stale, store, keys, held, unkept):
         [sys.executable, '-I', '-B', run.audit, '--collect', collect,
          '-p', 'no:cacheprovider', 'tests/'], cwd=copy,
         env={'PATH': os.environ.get('PATH', ''), 'HOME': work,
-             'LANG': 'C.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1'},
+             'LANG': 'C.UTF-8'},
         capture_output=True, text=True, timeout=PREPARE_LIMIT)
     if out.returncode != 0 or not os.path.exists(collect):
         print('redproof: collecting the suite failed, so the port groups '

@@ -495,7 +495,7 @@ class InstalledFilesTest(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root = tmp.name
 
-    def dist(self, name, files, mode='sha256'):
+    def dist(self, name, files, mode='sha256', direct_url=None):
         '''files: (rel, bytes on disk or None for absent, bytes recorded or
         None for no hash).'''
         import base64
@@ -503,6 +503,8 @@ class InstalledFilesTest(unittest.TestCase):
         recorded = []
         for rel, data, recorded_data in files:
             if data is not None:
+                os.makedirs(os.path.dirname(os.path.join(self.root, rel)),
+                            exist_ok=True)
                 with open(os.path.join(self.root, rel), 'wb') as f:
                     f.write(data)
             value = None if recorded_data is None else \
@@ -512,7 +514,8 @@ class InstalledFilesTest(unittest.TestCase):
                                       value))
         return types.SimpleNamespace(
             metadata={'Name': name}, files=recorded,
-            locate_file=lambda f: os.path.join(self.root, f.rel))
+            locate_file=lambda f: os.path.join(self.root, f.rel),
+            read_text=lambda f: direct_url if f == 'direct_url.json' else None)
 
     def differ(self, *dists):
         return redproof.installed_files_differ(dists, roots=[self.root])
@@ -533,6 +536,25 @@ class InstalledFilesTest(unittest.TestCase):
             self.dist('pip', [('d.py', b'z = 2', b'z = 1')])),
             'an edited pip file was not checked')
 
+    def test_schwaby_is_held_to_its_record(self):
+        self.assertEqual('schwaby: e.pth differs from its RECORD', self.differ(
+            self.dist('schwaby', [('e.pth', b'import x', b'import y')])),
+            'an edited schwaby file was not checked')
+
+    def test_a_dependency_installed_from_a_directory_keeps_nothing(self):
+        # Its RECORD lists the finder, not the tree the finder imports from,
+        # so an edit there was invisible.
+        editable = '{"url": "file:///src/blinker", "dir_info": {"editable": true}}'
+        self.assertEqual(
+            'blinker is installed from a directory or a repository, whose '
+            'files its RECORD does not list', self.differ(self.dist(
+                'blinker', [('f.pth', b'x', b'x')], direct_url=editable)),
+            'a dependency installed from a directory was taken as intact')
+        # schwaby is the code under test, and may be.
+        os.remove(os.path.join(self.root, 'f.pth'))
+        self.assertIsNone(self.differ(self.dist(
+            'schwaby', [('g.pth', b'x', b'x')], direct_url=editable)))
+
     def test_a_missing_file_is_caught(self):
         self.assertEqual('gone: e.py is missing', self.differ(
             self.dist('gone', [('e.py', None, b'x')])),
@@ -546,13 +568,24 @@ class InstalledFilesTest(unittest.TestCase):
 
     def test_only_record_and_pyc_may_go_unhashed(self):
         self.assertIsNone(self.differ(self.dist('ok', [
-            ('f.py', b'x', b'x'), ('RECORD', b'', None),
-            ('g.cpython-314.pyc', b'', None)])))
+            ('f.py', b'x', b'x'), ('ok-1.dist-info/RECORD', b'', None),
+            ('__pycache__/f.cpython-314.pyc', b'', None)])))
         self.assertEqual('unhashed: h.py has no hash in its RECORD',
                          self.differ(self.dist('unhashed', [
                              ('h.py', b'x', None)])),
                          'a source file listed without a hash was not '
                          'refused')
+        # Only bytecode where Python caches it, and only the dist-info's
+        # own RECORD: a sourceless .pyc imports, and is not cache.
+        for rel in ('sourceless.pyc', 'RECORD'):
+            os.remove(os.path.join(self.root, 'h.py'))
+            with self.subTest(rel):
+                self.assertEqual(
+                    'loose: %s has no hash in its RECORD' % rel,
+                    self.differ(self.dist('loose', [(rel, b'', None)])),
+                    'an unhashed %s outside its place was not refused' % rel)
+            os.remove(os.path.join(self.root, rel))
+            open(os.path.join(self.root, 'h.py'), 'w').close()
 
     def test_a_hash_it_does_not_check_keeps_nothing(self):
         self.assertIsNone(self.differ(self.dist(
@@ -574,12 +607,51 @@ class InstalledFilesTest(unittest.TestCase):
         os.remove(os.path.join(self.root, 'zz_stray.pth'))
         os.mkdir(os.path.join(self.root, '__pycache__'))
         open(os.path.join(self.root, '__pycache__', 'k.pyc'), 'wb').close()
+        self.assertIsNone(self.differ(owned), 'bytecode in __pycache__ was '
+                          'refused')
+
+    def test_a_link_no_record_lists_is_caught_though_its_target_is(self):
+        owned = self.dist('owned', [('k.py', b'x', b'x')])
+        os.symlink(os.path.join(self.root, 'k.py'),
+                   os.path.join(self.root, 'sitecustomize.py'))
+        self.assertEqual('sitecustomize.py is in %s but no RECORD lists it'
+                         % self.root, self.differ(owned),
+                         'a new name for a listed file went unnoticed')
+
+    def test_a_linked_directory_is_caught(self):
+        owned = self.dist('owned', [('k.py', b'x', b'x')])
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        os.symlink(outside.name, os.path.join(self.root, 'sitecustomize'))
+        self.assertEqual('sitecustomize in %s is a link to a directory'
+                         % self.root, self.differ(owned),
+                         'a linked directory was not looked at')
+
+    def test_a_directory_with_nothing_listed_is_caught(self):
+        # An uninstall's leftovers: a directory of bytecode alone imports as
+        # a namespace package where there was an ImportError.
+        owned = self.dist('owned', [('pkg/k.py', b'x', b'x')])
         self.assertIsNone(self.differ(owned))
+        os.makedirs(os.path.join(self.root, 'gone', '__pycache__'))
+        self.assertEqual('gone in %s holds nothing any RECORD lists'
+                         % self.root, self.differ(owned),
+                         'a leftover directory went unnoticed')
+
+    def test_an_archive_on_the_path_is_caught(self):
+        archive = os.path.join(self.root, 'python314.zip')
+        open(archive, 'wb').close()
+        self.assertEqual('%s is on the import path and is not a directory'
+                         % archive, redproof.installed_files_differ(
+                             [], roots=[archive]),
+                         'an archive on the import path went unnoticed')
+        self.assertIsNone(redproof.installed_files_differ(
+            [], roots=[os.path.join(self.root, 'absent.zip')]))
 
     @unittest.skipIf(sys.version_info < (3, 11), 'kept verdicts need 3.11')
     def test_the_gate_holds_installed_files_to_their_records(self):
-        # The gate itself, not only the function: the real pin and lock,
-        # as installed, reach the check.
+        # The gate itself, not only the function: a pin and a lock this
+        # environment matches, made from it so the test holds wherever it
+        # runs, reach the check.
         import platform
         from importlib import metadata
         from unittest import mock
@@ -597,6 +669,14 @@ class InstalledFilesTest(unittest.TestCase):
             self.assertEqual('an installed file is not what was installed: '
                              'x: y.py differs', why,
                              'the gate does not check installed files')
+            with mock.patch.object(redproof, 'installed_files_differ',
+                                   return_value=None), \
+                    mock.patch.object(redproof, 'stdlib_differs',
+                                      return_value='a stdlib link'):
+                self.assertEqual('a stdlib link', redproof.
+                                 environment_matches_lock(pinned),
+                                 'the gate does not check the standard '
+                                 'library')
             # The positive control: the same gate, this environment as it
             # is, passes the check.
             with mock.patch.object(redproof, 'installed_files_differ',
@@ -815,6 +895,76 @@ for first in ('busy', 'wedged'):
         self.assertEqual('SPEC', result[1])
         self.assertEqual('', result[5], 'an entry that never ran printed '
                          'another run\'s time split')
+
+
+class StdlibTest(unittest.TestCase):
+    '''The standard library's digest, on a tree of its own.'''
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = os.path.join(tmp.name, 'python3.14')
+        for rel, data in (('unittest/case.py', b'def assertIn(): pass\n'),
+                          ('tomllib/py.typed', b''),
+                          ('lib-dynload/_ssl.so', b'aarch64'),
+                          ('config-3.14-aarch64-linux-gnu/Makefile', b'aarch64'),
+                          ('_sysconfigdata__linux_aarch64-linux-gnu.py', b'/b'),
+                          ('build-details.json', b'{"arch": "aarch64"}'),
+                          ('site-packages/pip/__init__.py', b''),
+                          ('unittest/__pycache__/case.cpython-314.pyc', b'1')):
+            self.write(rel, data)
+
+    def write(self, rel, data):
+        path = os.path.join(self.root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'wb') as f:
+            f.write(data)
+
+    def digest(self):
+        redproof._stdlib_digests.clear()
+        return redproof.stdlib_digest(self.root)
+
+    def test_every_file_but_the_per_build_ones_counts(self):
+        before = self.digest()
+        for rel in ('unittest/case.py', 'tomllib/py.typed'):
+            with self.subTest(rel):
+                with open(os.path.join(self.root, rel), 'rb') as f:
+                    kept = f.read()
+                self.write(rel, kept + b'# edited\n')
+                self.assertNotEqual(before, self.digest(),
+                                    'the digest ignores %s' % rel)
+                self.write(rel, kept)
+        self.write('sitecustomize.pyc', b'sourceless')
+        self.assertNotEqual(before, self.digest(),
+                            'the digest ignores a sourceless .pyc')
+        os.remove(os.path.join(self.root, 'sitecustomize.pyc'))
+        # The positive control: the per-build files and bytecode do not.
+        for rel in ('lib-dynload/_ssl.so', 'config-3.14-aarch64-linux-gnu/'
+                    'Makefile', '_sysconfigdata__linux_aarch64-linux-gnu.py',
+                    'build-details.json', 'site-packages/pip/__init__.py',
+                    'unittest/__pycache__/case.cpython-314.pyc'):
+            self.write(rel, b'x86_64')
+        self.assertEqual(before, self.digest(), 'a per-build file is in '
+                         'the digest, so the key names the machine')
+
+    def test_a_link_or_a_stray_compiled_module_is_refused(self):
+        self.assertIsNone(redproof.stdlib_differs(self.root))
+        os.symlink(os.path.join(self.root, 'unittest'),
+                   os.path.join(self.root, 'unittest2'))
+        self.assertEqual("the standard library's unittest2 is a link",
+                         redproof.stdlib_differs(self.root),
+                         'a link in the standard library was not refused')
+        os.remove(os.path.join(self.root, 'unittest2'))
+        self.write('_evil.so', b'')
+        self.assertEqual("the standard library's _evil.so is a compiled "
+                         "module outside lib-dynload",
+                         redproof.stdlib_differs(self.root),
+                         'a compiled module outside lib-dynload was not '
+                         'refused')
+
+    def test_the_real_standard_library_passes(self):
+        # A build as shipped: refusing it would keep nothing anywhere.
+        self.assertIsNone(redproof.stdlib_differs())
 
 
 class GroupLockTest(unittest.TestCase):
