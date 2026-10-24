@@ -1616,7 +1616,7 @@ it refuses costs that field; decoded in one ``try``, it costs the message:
   bits.** A serialized .NET ``System.Decimal`` has a 96-bit mantissa, and the
   obvious reading of ``lo`` is the low 32 bits of it, with ``mid`` and ``hi``
   carrying the rest. That is not what Schwab sends. In 5,843 decimal objects
-  from a production ``ACCT_ACTIVITY`` archive, none carried ``mid`` or ``hi``,
+  from a recorded ``ACCT_ACTIVITY`` archive, none carried ``mid`` or ``hi``,
   and 129 carried a ``lo`` wider than 32 bits --- each a string of ten digits,
   at ``signScale`` 12 or 13:
 
@@ -1893,8 +1893,8 @@ malformed message and should not be reported as one.
   type has nothing to dispatch on. An empty type carrying a notice like this
   is not logged as a message type nobody has captured; an empty type carrying a
   JSON object still is. It recurs: it was seen on at least 69 days
-  across about three months of one production feed, most often around 00:30
-  Eastern, and also around 18:00 and 21:00.
+  across about three months of recorded traffic from one feed, most often
+  around 00:30 Eastern, and also around 18:00 and 21:00.
 
 ``parse_message_data`` does that second parse and keeps the three cases apart:
 
@@ -1940,7 +1940,7 @@ This section draws on several sources:
   the decimal and ``Mid`` counts come from;
 - option orders placed by hand whose prices were then changed, described
   below;
-- for the batch ordering above, a note: it was recorded in production without
+- for the batch ordering above, a note: it was recorded live without
   the frame being retained, so it is attested by a note rather than by bytes
   anyone can still produce.
 
@@ -2027,8 +2027,8 @@ a ``notify``-channel item, which this library forwards unchanged --- see the
 warning under :ref:`Data Field Relabeling <data_field_relabeling>` above.
 Observed values there include an activity token of ``orderfill``. The
 ``Feature not supported`` notice has been seen on the ``data`` channel instead:
-over about three months of one production feed it arrived only there, as
-``MESSAGE_DATA`` text.
+over about three months of recorded traffic from one feed it arrived only
+there, as ``MESSAGE_DATA`` text.
 
 If you learn something this list gets wrong, a pull request correcting it is
 more useful than a private patch.

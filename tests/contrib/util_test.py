@@ -48,7 +48,7 @@ class DecodeDecimalTest(unittest.TestCase):
 
     @no_duplicates
     def test_lo_carries_the_whole_mantissa_past_32_bits(self):
-        # Measured shape, invented values. A production ACCT_ACTIVITY archive
+        # Measured shape, invented values. A recorded ACCT_ACTIVITY archive
         # of 5,843 decimal objects carried `lo` alone in every one, as a
         # string of digits, and 129 were wider than 32 bits: fill
         # `PrincipalAmmount`, and the estimated amounts on OrderCreated, ten

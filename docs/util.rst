@@ -137,8 +137,8 @@ handle on it.
 
   This raises rather than returning ``None``, which means
   **anything between the call and its return value is skipped** on the
-  failing path rather than running with a ``None`` in hand. In one live
-  deployment that was the bookkeeping which records an order as the program's
+  failing path rather than running with a ``None`` in hand. In one caller's
+  program that was the bookkeeping which records an order as the program's
   own, and skipping it made the system report its own orders as manual trades.
   If you have code in that position, move it or catch around it.
 

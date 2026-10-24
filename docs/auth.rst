@@ -48,7 +48,7 @@ a way that's appropriate to the context in which you're running:
   **For an unattended or long-running process, prefer**
   :func:`~schwaby.auth.client_from_token_file`, which never initiates a login.
   What ``easy_client`` does when the token ages out is open a browser, and on a
-  daemon that is a window nobody sees --- reported from a live deployment as an
+  daemon that is a window nobody sees --- reported by a caller as an
   auth screen opening *behind* a running terminal UI while keystrokes went
   dead. Loading the token directly turns re-authentication into an explicit
   operator action, and an expired token into an ordinary API exception you can
