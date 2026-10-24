@@ -909,9 +909,10 @@ def _entry_failed(name, why):
 
 #: How long a worker has to stop once told to, before it is killed
 WORKER_STOP_LIMIT = 10
-#: The longest one task may take, seen from the parent: a port group's wait
-#: and two runs' limits. Past it, the worker is killed and the item fails.
-TASK_LIMIT = GROUP_LOCK_LIMIT + 2 * RUN_LIMIT + 60
+#: The longest one task may take, seen from the parent: a port group's wait,
+#: its one run and that run's reap, and five minutes for copying and the rest.
+#: Past it, the worker is killed and the item fails.
+TASK_LIMIT = GROUP_LOCK_LIMIT + RUN_LIMIT + REAP_LIMIT + 300
 
 
 def parallel(fn, items, size, failed):
@@ -937,12 +938,19 @@ def parallel(fn, items, size, failed):
     workers = []
     selector = selectors.DefaultSelector()
 
+    def give(w):
+        index = pending.pop()
+        if not w.send(index):
+            # Gone since its last result: the item waits for the worker
+            # that takes its place.
+            pending.append(index)
+
     def start():
         w = _Worker(fn, items)
         workers.append(w)
         selector.register(w.results, selectors.EVENT_READ, w)
         if pending:
-            w.send(pending.pop())
+            give(w)
 
     outstanding = len(items)
     try:
@@ -953,8 +961,9 @@ def parallel(fn, items, size, failed):
                 w = key.data
                 frames = w.frames()
                 if frames is None:
-                    # Gone: what it left running dies with it.
-                    w.kill_groups()
+                    # Gone: what it left running dies with it, and is gone
+                    # before another worker can take its port group's lock.
+                    w.reap_groups()
                     selector.unregister(w.results)
                     workers.remove(w)
                     status = w.close()
@@ -968,43 +977,51 @@ def parallel(fn, items, size, failed):
                         start()
                     continue
                 for frame in frames:
-                    if frame[0] == 'started':
-                        w.groups.add(frame[1])
-                    elif frame[0] == 'reaped':
-                        w.groups.discard(frame[1])
-                    else:
-                        kind, index, value = frame
-                        w.item = None
-                        outstanding -= 1
-                        yield value if kind == 'result' else failed(
-                            items[index], 'the harness failed: %s' % value)
-                        if pending:
-                            w.send(pending.pop())
+                    if w.take(frame):
+                        continue
+                    kind, index, value = frame
+                    w.item = None
+                    outstanding -= 1
+                    yield value if kind == 'result' else failed(
+                        items[index], 'the harness failed: %s' % value)
+                    if pending:
+                        give(w)
             now = time.monotonic()
             for w in workers:
-                if w.item is not None and not w.overdue \
-                        and now - w.since > TASK_LIMIT:
+                if w.item is not None and now - w.since > TASK_LIMIT:
                     w.overdue = True
                     w.signal(signal.SIGKILL)
     finally:
         # Idle workers stop when their task pipe closes; busy ones, on a
-        # signal or a run ending early, are told to and then killed.
+        # signal or a run ending early, are told to and then killed. Each
+        # worker's cleanup on its own: one that fails, or a signal landing
+        # in it, must not leave the rest running.
+        failures = []
         for w in workers:
-            os.close(w.tasks)
-            w.tasks = None
-            if w.item is not None:
-                w.signal(signal.SIGTERM)
+            try:
+                os.close(w.tasks)
+                w.tasks = None
+                if w.item is not None:
+                    w.signal(signal.SIGTERM)
+            except BaseException as e:
+                failures.append(e)
         deadline = time.monotonic() + WORKER_STOP_LIMIT
         for w in workers:
-            if _wait_gone(w.pid, deadline) is False:
-                w.signal(signal.SIGKILL)
-                _wait_gone(w.pid, time.monotonic() + WORKER_STOP_LIMIT)
-            # What it reported after the parent stopped reading: a group it
-            # started just before it stopped is otherwise never killed.
-            w.drain()
-            w.kill_groups()
-            os.close(w.results)
+            try:
+                if _wait_gone(w.pid, deadline) is False:
+                    w.signal(signal.SIGKILL)
+                    _wait_gone(w.pid, time.monotonic() + WORKER_STOP_LIMIT)
+                # What it reported after the parent stopped reading: a group
+                # it started just before it stopped is otherwise never killed.
+                w.drain()
+            except BaseException as e:
+                failures.append(e)
+            finally:
+                w.reap_groups()
+                os.close(w.results)
         selector.close()
+        if failures:
+            raise failures[0]
 
 
 class _Worker:
@@ -1031,9 +1048,27 @@ class _Worker:
         self.overdue = False
 
     def send(self, index):
+        '''Whether the worker took the item: one that died after its last
+        result has a task pipe nobody reads.'''
         import struct
+        try:
+            os.write(self.tasks, struct.pack('>q', index))
+        except OSError:
+            return False
         self.item, self.since = index, time.monotonic()
-        os.write(self.tasks, struct.pack('>q', index))
+        return True
+
+    def take(self, frame):
+        '''Whether frame was a group it started or reaped, now noted: one
+        place for both, so the parent kills what is running and never a
+        group already gone, whose number may be another's by then.'''
+        if frame[0] == 'started':
+            self.groups.add(frame[1])
+        elif frame[0] == 'reaped':
+            self.groups.discard(frame[1])
+        else:
+            return False
+        return True
 
     def frames(self):
         '''The whole frames read so far, or None when the worker is gone.'''
@@ -1065,10 +1100,7 @@ class _Worker:
             if frames is None:
                 return
             for frame in frames:
-                if frame[0] == 'started':
-                    self.groups.add(frame[1])
-                elif frame[0] == 'reaped':
-                    self.groups.discard(frame[1])
+                self.take(frame)
 
     def signal(self, sig):
         try:
@@ -1076,9 +1108,14 @@ class _Worker:
         except ProcessLookupError:
             pass
 
-    def kill_groups(self):
-        for pgid in self.groups:
-            kill_group(pgid)
+    def reap_groups(self):
+        '''Kills what it reported running and waits for it to go: a
+        callback server left behind holds port 6969 against the next run.'''
+        for pgid in sorted(self.groups):
+            try:
+                reap(pgid)
+            except RuntimeError:
+                pass    # outlived REAP_LIMIT; killed, and nothing more to do
         self.groups.clear()
 
     def close(self):
@@ -1088,10 +1125,8 @@ class _Worker:
         if self.tasks is not None:
             os.close(self.tasks)
             self.tasks = None
+        # Its pipe closes only as it exits, so this is a moment's wait.
         status = _wait_gone(self.pid, time.monotonic() + WORKER_STOP_LIMIT)
-        if status is False:
-            self.signal(signal.SIGKILL)
-            status = _wait_gone(self.pid, time.monotonic() + WORKER_STOP_LIMIT)
         if status is None or status is False:
             return 'its exit was not seen'
         code = os.waitstatus_to_exitcode(status)
@@ -1125,10 +1160,8 @@ def _worker_main(fn, items, tasks, results):
             data = data[os.write(results, data):]
 
     def stopped(signum, frame):
-        # Kills its own groups and leaves: no exception, which task code or
-        # cleanup could catch and carry on from.
-        for pid in list(_live):
-            kill_group(pid)
+        # Leaves: no exception, which task code or cleanup could catch and
+        # carry on from. The parent kills the groups it reported.
         os._exit(128 + signum)
 
     for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):

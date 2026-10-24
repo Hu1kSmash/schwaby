@@ -375,6 +375,9 @@ class SnapshotTest(unittest.TestCase):
             'an untracked secret-named file would be copied and digested')
 
 
+@unittest.skipUnless(os.path.isdir('/proc'), 'the scenarios find processes '
+                     'through /proc; without it every check of one passes '
+                     'for the wrong reason')
 class WorkerTest(unittest.TestCase):
     '''The worker processes: a dead or stopped one is reported, not waited
     for, what it left running is killed, and the rest of the work goes on.'''
@@ -433,6 +436,19 @@ def task(item):
             os.kill(pid, signal.SIGKILL)
     if item == 'raises':
         raise SystemExit(143)
+    if item == 'big':
+        # Larger than one read of the pipe: its frame arrives in pieces.
+        return ('big', 'x' * 300000)
+    if item == 'reaps-then-dies':
+        p = group('reaped-group')
+        rp.kill_group(p.pid)
+        p.wait()
+        rp._untrack(p.pid)
+        os._exit(1)
+    if item == 'dies-after':
+        # Gone a moment after its result, while the parent is still busy
+        # with that result: the next item meets a pipe nobody reads.
+        signal.setitimer(signal.ITIMER_REAL, 0.05)
     if item == 'unpicklable':
         return lambda: None
     if item == 'hangs':
@@ -455,11 +471,19 @@ def task(item):
 MARK = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), 'mark-')
 
 failed = lambda item, why: ('failed', item, why)
+# Every group the parent kills, so a reaped one killed again shows.
+killed = []
+real_kill_group = rp.kill_group
+rp.kill_group = lambda pgid: (killed.append(pgid), real_kill_group(pgid))
 for items, size in ((['a', 'b'], 2), (['dies', 'slow'], 2),
                     (['stopped', 'after'], 1), (['kills-idle', 'x'], 3),
-                    (['raises', 'a'], 1), (['unpicklable'], 1)):
+                    (['raises', 'a'], 1), (['unpicklable'], 1),
+                    (['reaps-then-dies'], 1)):
     got = sorted(rp.parallel(task, items, size, failed))
     print(items[0], got, flush=True)
+print('killed', killed, flush=True)
+got = [(r[0], len(r[1])) for r in rp.parallel(task, ['big'], 1, failed)]
+print('big', got, flush=True)
 rp.TASK_LIMIT = 1
 print('hangs', sorted(rp.parallel(task, ['hangs'], 1, failed)), flush=True)
 rp.WORKER_STOP_LIMIT = 1
@@ -470,6 +494,11 @@ for first in ('busy', 'wedged'):
         break
     print('abandoned-' + first, round(time.monotonic() - started, 1),
           flush=True)
+got = []
+for result in rp.parallel(task, ['dies-after', 'b', 'c'], 1, failed):
+    got.append(result)
+    time.sleep(0.3)
+print('dies-after', sorted(got), flush=True)
 '''
 
     def run_script(self):
@@ -479,11 +508,12 @@ for first in ('busy', 'wedged'):
             f.write(self.SCRIPT)
         # To a file, not a pipe: a pipe is held open by whatever the script
         # leaves running, and reading it would wait on that, not the pool.
-        with open(os.path.join(tmp, 'out'), 'w') as out:
+        with open(os.path.join(tmp, 'out'), 'w') as out, \
+                open(os.path.join(tmp, 'err'), 'w') as err:
             proc = subprocess.Popen(
                 [sys.executable, '-I', script, os.path.join(
                     os.path.dirname(__file__), '..', 'tools', 'redproof.py')],
-                stdout=out, start_new_session=True)
+                stdout=out, stderr=err, start_new_session=True)
         try:
             proc.wait(timeout=40)
         except subprocess.TimeoutExpired:
@@ -497,6 +527,9 @@ for first in ('busy', 'wedged'):
         else:
             os.killpg(proc.pid, 9)
             self.fail('a worker outlived its pool')
+        with open(os.path.join(tmp, 'err')) as f:
+            self.stderr = f.read()
+        self.returncode = proc.returncode
         with open(os.path.join(tmp, 'out')) as f:
             return dict(line.split(' ', 1) for line in f.read().splitlines())
 
@@ -522,6 +555,12 @@ for first in ('busy', 'wedged'):
                          r"\('failed', 'unpicklable', .the harness failed: ",
                          'a result that cannot '
                          'cross to the parent was not reported as such')
+        reaped = lines['reaped-group']
+        self.assertNotIn(reaped, lines.get('killed', '').replace(
+            '[', ' ').replace(']', ' ').replace(',', ' ').split(),
+            'a reaped group was killed again')
+        self.assertEqual("[('big', 300000)]", lines.get('big'),
+                         'a result larger than one read was lost')
         self.assertEqual("[('failed', 'hangs', 'its worker process ran past "
                          "1 s and was killed')]", lines.get('hangs'),
                          'a task past its bound was not stopped')
@@ -530,6 +569,13 @@ for first in ('busy', 'wedged'):
         self.assertLess(float(lines['abandoned-busy']), 0.9,
                         'an abandoned pool\'s busy worker was not told to '
                         'stop')
+        # Left alive, a stuck worker keeps its killed tests as zombies, so
+        # reaping them waits out REAP_LIMIT: 30 s, not about 1.
+        self.assertLess(float(lines['abandoned-wedged']), 5,
+                        'a stuck worker was not killed at the bound')
+        self.assertEqual("[('done', 'b'), ('done', 'c'), ('done', "
+                         "'dies-after')]", lines.get('dies-after'),
+                         'a worker that died after its result lost the run')
         for name in ('orphan', 'stopped-orphan', 'busy-group',
                      'wedged-group', 'late-group'):
             pid = int(lines[name])
@@ -540,6 +586,8 @@ for first in ('busy', 'wedged'):
                 os.kill(pid, 9)
                 self.fail('a dead worker\'s tests were left running (%s)'
                           % name)
+        self.assertEqual(0, self.returncode, 'the scenario script failed: '
+                         + self.stderr[-2000:])
 
     def test_a_second_signal_does_not_cut_the_first_ones_cleanup_short(self):
         import threading

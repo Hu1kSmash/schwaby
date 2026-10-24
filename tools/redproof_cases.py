@@ -6675,9 +6675,9 @@ CASES.extend([
     # per branch of the pool, all against the one scenario script.
     Case('harness/a-dead-workers-tests-are-killed',
          'tools/redproof.py',
-         '                    # Gone: what it left running dies with it.\n'
-         '                    w.kill_groups()\n',
-         '                    # Gone: what it left running dies with it.\n',
+         '                    w.reap_groups()\n'
+         '                    selector.unregister(w.results)\n',
+         '                    selector.unregister(w.results)\n',
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
          "a dead worker's tests were left running (orphan)"),
@@ -6698,8 +6698,10 @@ CASES.extend([
          'the pool waited on a dead or overdue worker'),
     Case('harness/a-stopped-worker-leaves-rather-than-raising',
          'tools/redproof.py',
-         '            kill_group(pid)\n        os._exit(128 + signum)\n',
-         '            kill_group(pid)\n        raise SystemExit(128 + signum)\n',
+         '        # carry on from. The parent kills the groups it reported.\n'
+         '        os._exit(128 + signum)\n',
+         '        # carry on from. The parent kills the groups it reported.\n'
+         '        raise SystemExit(128 + signum)\n',
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
          'the work after a stopped worker did not go on'),
@@ -6719,31 +6721,32 @@ CASES.extend([
          'a result that cannot cross to the parent'),
     Case('harness/an-overdue-task-is-killed',
          'tools/redproof.py',
-         '                        and now - w.since > TASK_LIMIT:\n',
-         '                        and now - w.since > TASK_LIMIT * 1000:\n',
+         '                if w.item is not None and now - w.since > TASK_LIMIT:\n',
+         '                if w.item is not None and now - w.since > TASK_LIMIT * '
+         '1000:\n',
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
          'a task past its bound was not stopped'),
     Case('harness/an-abandoned-pools-busy-worker-is-told-to-stop',
          'tools/redproof.py',
-         '            if w.item is not None:\n'
-         '                w.signal(signal.SIGTERM)\n',
-         '            if w.item is not None:\n                pass\n',
+         '                if w.item is not None:\n'
+         '                    w.signal(signal.SIGTERM)\n',
+         '                if w.item is not None:\n                    pass\n',
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
          "an abandoned pool's busy worker was not told to stop"),
     Case('harness/a-stuck-worker-is-killed-at-the-bound',
          'tools/redproof.py',
-         '            if _wait_gone(w.pid, deadline) is False:\n'
-         '                w.signal(signal.SIGKILL)\n',
-         '            if _wait_gone(w.pid, deadline) is False:\n'
-         '                pass\n',
+         '                if _wait_gone(w.pid, deadline) is False:\n'
+         '                    w.signal(signal.SIGKILL)\n',
+         '                if _wait_gone(w.pid, deadline) is False:\n'
+         '                    pass\n',
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
-         'a worker outlived its pool'),
+         'a stuck worker was not killed at the bound'),
     Case('harness/what-a-worker-reports-last-is-read',
          'tools/redproof.py',
-         '            w.drain()\n',
+         '                w.drain()\n',
          '',
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
@@ -6978,3 +6981,42 @@ for _case in CASES:
             'harness/the-gate-checks-the-standard-library'}:
         _case.removed = KEPT_VERDICTS_REMOVED
 del _case
+
+CASES.extend([
+    # The pool's close-out: a case for each branch it found without one.
+    Case('harness/an-item-for-a-gone-worker-waits-for-its-replacement',
+         'tools/redproof.py',
+         '        except OSError:\n            return False\n',
+         '        except ValueError:\n            return False\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'a worker that died after its result lost the run'),
+    Case('harness/a-frame-in-pieces-is-put-together',
+         'tools/redproof.py',
+         '                break\n            out.append(pickle.loads(',
+         '                pass\n            out.append(pickle.loads(',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'a result larger than one read was lost'),
+    Case('harness/a-reaped-group-is-not-killed-again',
+         'tools/redproof.py',
+         '            self.groups.discard(frame[1])\n',
+         '            pass\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'a reaped group was killed again'),
+    Case('harness/a-worker-says-when-a-group-is-reaped',
+         'tools/redproof.py',
+         "        _report(('reaped', pid))\n",
+         '        pass\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'a reaped group was killed again'),
+    Case('harness/an-idle-worker-leaves-when-its-pipe-closes',
+         'tools/redproof.py',
+         '            if not more:\n                os._exit(0)\n',
+         '            if not more:\n                continue\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'the pool waited on a dead or overdue worker'),
+])
