@@ -104,7 +104,6 @@ lets a renewal undo one: only a proof made after it does.
 '''
 
 import argparse
-import concurrent.futures
 import hashlib
 import importlib.util
 import json
@@ -139,6 +138,8 @@ REAP_LIMIT = 30
 GIT_LIMIT = 60
 PREPARE_LIMIT = 300
 LOCK_LIMIT = 120
+#: The bound on waiting for a port group's lock, behind its other entries
+GROUP_LOCK_LIMIT = 3600
 
 DEVICES = ('/dev/null', '/dev/zero', '/dev/full', '/dev/random',
            '/dev/urandom', '/dev/tty')
@@ -456,6 +457,9 @@ def run_tests(workdir, copy, nodes, audit_script, record=None,
         _, status, usage = os.wait4(proc.pid, 0)
     finally:
         timer.cancel()
+        # Gone before anything forks: a process with threads is unsafe to
+        # fork, and the worker pool is forked from this one.
+        timer.join()
     proc.returncode = os.waitstatus_to_exitcode(status)
     seconds = time.monotonic() - started
     try:
@@ -644,19 +648,29 @@ class Classifier:
         it, which os.path.realpath refuses.'''
         if '\0' in path:
             return ('unresolved',)
-        try:
-            real = os.path.realpath(path)
-        except (OSError, ValueError):
-            return ('unresolved',)
         for copy in (self.copy, self.copy_real):
             if self.under(path, copy):
                 rel = os.path.relpath(path, copy).replace(os.sep, '/')
                 return ('copy', '' if rel == '.' else rel)
+        # By the path as recorded first: most of a run's paths are the
+        # interpreter's and the libraries', and resolving each through
+        # realpath was most of the harness's own time on an entry. They stay
+        # covered by the key's pinned build and lock and the RECORD check.
         for root in self.own:
-            if self.under(path, root) or self.under(real, root):
+            if self.under(path, root):
                 return ('own',)
         for root in self.interpreter:
-            if self.under(path, root) or self.under(real, root):
+            if self.under(path, root):
+                return ('interpreter',)
+        try:
+            real = os.path.realpath(path)
+        except (OSError, ValueError):
+            return ('unresolved',)
+        for root in self.own:
+            if self.under(real, root):
+                return ('own',)
+        for root in self.interpreter:
+            if self.under(real, root):
                 return ('interpreter',)
         if path in DEVICES or path.startswith('/dev/fd/') or path.startswith(
                 '/dev/pts/'):
@@ -898,11 +912,9 @@ class Run:
         self.timing = threading.local()
 
     def workdir(self):
-        with self.counter_lock:
-            self.counter += 1
-            path = os.path.join(self.tmp, 'run%d' % self.counter)
-        os.makedirs(path)
-        return path
+        # mkdtemp, not a counter: each worker process has its own copy of a
+        # counter, and two of them made the same directory.
+        return tempfile.mkdtemp(prefix='run', dir=self.tmp)
 
     def note_memory(self, result):
         self.largest = max(self.largest, result.peak)
@@ -912,13 +924,40 @@ class Run:
             self.lowest_available = avail
 
     def locks_for(self, nodes):
+        '''The xdist groups these nodes' tests are in, sorted: the port
+        groups whose lock a run of them must hold.'''
         names = set()
         for node in nodes:
             for item, group in self.groups.items():
                 if item == node or item.startswith(node + '::'):
                     names.add(group)
-        return [self.group_locks.setdefault(n, threading.Lock())
-                for n in sorted(names)]
+        return sorted(names)
+
+    def hold_groups(self, names):
+        '''Holds each group's lock, a file lock, so it holds across the
+        worker processes. Bounded, and the wait that runs past it fails by
+        the group's name.'''
+        import fcntl
+        held = []
+        for name in names:
+            f = open(os.path.join(self.locks_dir, sha(name.encode())[:16]),
+                     'w')
+            deadline = time.monotonic() + GROUP_LOCK_LIMIT
+            while True:
+                try:
+                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() > deadline:
+                        f.close()
+                        for g in held:
+                            g.close()
+                        raise RuntimeError(
+                            'waited %d s for the lock of port group %r'
+                            % (GROUP_LOCK_LIMIT, name))
+                    time.sleep(0.1)
+            held.append(f)
+        return held
 
     def run(self, nodes, mutation=None, record=False):
         '''Runs nodes in a fresh copy, with the mutation (path, bytes) if any.
@@ -932,9 +971,7 @@ class Run:
                 f.write(mutation[1])
         record_path = os.path.join(work, 'record.json') if record else None
         copied = time.monotonic()
-        locks = self.locks_for(nodes)
-        for lock in locks:
-            lock.acquire()
+        locks = self.hold_groups(self.locks_for(nodes))
         locked = time.monotonic()
         try:
             if _stopping.is_set():
@@ -942,7 +979,7 @@ class Run:
             result = run_tests(work, copy, nodes, self.audit, record_path)
         finally:
             for lock in reversed(locks):
-                lock.release()
+                lock.close()
         self.note_memory(result)
         changed = self.changed_tracked(copy, mutation)
         audit = None
@@ -1008,10 +1045,14 @@ def judge(run, case, baseline, baseline_reads=None):
             ' (%s)' % baseline.killed if baseline.killed else ''), None
     result, audit, classifier, changed = run.run(
         tests_of(case), (case.path, mutated), record=True)
+    reads = why = None
     if audit is not None:
-        changed = sorted(set(changed) | set(reads_from(
-            audit, classifier, run.snapshot, (case.path, mutated),
-            run.snapshot.tracked)[2]))
+        # Once: classifying a run's few thousand paths is most of what the
+        # harness itself spends on an entry.
+        reads, why, found = reads_from(audit, classifier, run.snapshot,
+                                       (case.path, mutated),
+                                       run.snapshot.tracked)
+        changed = sorted(set(changed) | set(found))
     if changed:
         run.tracked_writes[case.name] = changed
     if result.code is None:
@@ -1031,8 +1072,6 @@ def judge(run, case, baseline, baseline_reads=None):
             else '', said[0].strip() if said else '?')), None
     kept = None
     if audit is not None:
-        reads, why, _ = reads_from(audit, classifier, run.snapshot,
-                                   (case.path, mutated), run.snapshot.tracked)
         if why is None and baseline_reads is not None:
             kept = {'mutated': reads, 'baseline': baseline_reads}
     return 'PROVEN', '', kept
@@ -1250,14 +1289,20 @@ def run_stale(run, args, stale, store, keys, held, unkept):
     baselines = {}
     baseline_reads = {}
 
-    def baseline(t):
-        try:
-            result, baseline_reads[t] = run_baseline(run, t)
-        except Exception as e:
-            result = Result(None, '', 0.0, 0, 'the harness failed running it: '
-                            '%s: %s' % (type(e).__name__, e))
-            baseline_reads[t] = None
+    def merge(task_result):
+        '''What a worker learned that the run as a whole keeps.'''
+        writes, largest, lowest = task_result[-3:]
+        run.tracked_writes.update(writes)
+        run.largest = max(run.largest, largest)
+        if lowest is not None and (run.lowest_available is None
+                                   or lowest < run.lowest_available):
+            run.lowest_available = lowest
+
+    def baseline_done(task_result):
+        t, result, reads = task_result[:3]
+        merge(task_result)
         baselines[t] = result
+        baseline_reads[t] = reads
         if result.code == 0:
             progress('baseline', ' '.join(t), '', result.seconds)
         else:
@@ -1265,47 +1310,41 @@ def run_stale(run, args, stale, store, keys, held, unkept):
                 'fails unmutated: %s' % last_lines(result.output)),
                 result.seconds)
 
-    baseline(distinct[0])
+    _job.update(run=run, cases={c.name: c for c in stale})
+    baseline_done(_baseline_task(distinct[0]))
     size, reason = pool_size(args, run.largest)
     print('redproof: %d at once: %s' % (size, reason), flush=True)
 
-    parallel(baseline, distinct[1:], size)
+    for task_result in parallel(_baseline_task, distinct[1:], size):
+        baseline_done(task_result)
     size, reason = pool_size(args, run.largest)
     print('redproof: %d at once for the entries: %s' % (size, reason),
           flush=True)
 
     verdicts = {}
+    _job.update(baselines=baselines, baseline_reads=baseline_reads)
 
-    def one(c):
-        t0 = time.monotonic()
-        t = tuple(tests_of(c))
-        try:
-            verdict, detail, reads = judge(run, c, baselines[t],
-                                           baseline_reads.get(t))
-        except Exception as e:
-            # A defect in the harness, reported against the entry it hit:
-            # one used to end the whole run, an hour in, with nothing judged
-            # after it.
-            verdict, detail, reads = 'ERROR', 'the harness failed judging it: ' \
-                '%s: %s' % (type(e).__name__, e), None
-        seconds = time.monotonic() - t0
-        verdicts[c.name] = (verdict, detail, seconds)
-        progress(verdict, c.name, detail, seconds, split(run, seconds))
+    for task_result in parallel(_entry_task, [c.name for c in stale], size):
+        name, verdict, detail, reads, seconds, breakdown = task_result[:6]
+        merge(task_result)
+        c = _job['cases'][name]
+        verdicts[name] = (verdict, detail, seconds)
+        progress(verdict, name, detail, seconds, breakdown)
         if unkept is not None:
-            return
+            continue
         # When this verdict was reached, not when the phase began: a proof
         # and a disproof from overlapping runs are ordered by these, and a
         # stamp taken early made a later disproof look older than a proof.
         when = now_iso()
-        key = keys[c.name]
+        key = keys[name]
         if verdict == 'PROVEN':
             # Proved again: what held is renewed.
-            for k in held.get(c.name, ()):
+            for k in held.get(name, ()):
                 store.put(k, dict(store.records[k], at=when, proved=when))
             if reads is not None:
                 digest = sha(json.dumps(reads, sort_keys=True).encode())[:16]
                 store.put('%s:%s' % (key, digest), {
-                    'at': when, 'proved': when, 'name': c.name,
+                    'at': when, 'proved': when, 'name': name,
                     'reads': reads,
                     # What judging the entry cost (its copy and its mutated
                     # run), for dividing a run between machines. Metadata,
@@ -1318,10 +1357,8 @@ def run_stale(run, args, stale, store, keys, held, unkept):
                 })
         else:
             # This run disproves every record that held.
-            for k in held.get(c.name, ()):
+            for k in held.get(name, ()):
                 store.put(k, {'gone': True, 'at': when, 'name': c.name})
-
-    parallel(one, stale, size)
 
     avail = run.lowest_available
     print('redproof: memory: largest run %s, lowest available %s' % (
@@ -1343,13 +1380,67 @@ def split(run, seconds):
     return text
 
 
-def parallel(fn, items, size):
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=size)
+# What the worker processes inherit when they are forked: the run, its
+# entries and, for the entries' phase, the baselines. Forked rather than
+# spawned, so nothing large is pickled on the way in; only a task's result
+# comes back.
+_job = {}
+
+
+def _worker_result(run):
+    '''What every task hands back besides its own result: the tracked
+    writes it found, and the memory it saw.'''
+    writes = dict(run.tracked_writes)
+    run.tracked_writes.clear()
+    return writes, run.largest, run.lowest_available
+
+
+def _baseline_task(t):
+    run = _job['run']
     try:
-        return list(pool.map(fn, items))
+        result, reads = run_baseline(run, t)
+    except Exception as e:
+        result = Result(None, '', 0.0, 0, 'the harness failed running it: '
+                        '%s: %s' % (type(e).__name__, e))
+        reads = None
+    return (t, result, reads) + _worker_result(run)
+
+
+def _entry_task(name):
+    run = _job['run']
+    c = _job['cases'][name]
+    t = tuple(tests_of(c))
+    started = time.monotonic()
+    try:
+        verdict, detail, reads = judge(run, c, _job['baselines'][t],
+                                       _job['baseline_reads'].get(t))
+    except Exception as e:
+        # A defect in the harness, reported against the entry it hit: one
+        # used to end the whole run, an hour in, with nothing judged after.
+        verdict, detail, reads = 'ERROR', 'the harness failed judging it: ' \
+            '%s: %s' % (type(e).__name__, e), None
+    seconds = time.monotonic() - started
+    return (name, verdict, detail, reads, seconds,
+            split(run, seconds)) + _worker_result(run)
+
+
+def parallel(fn, items, size):
+    '''fn over items in `size` worker processes, yielding each result as
+    it arrives. Processes, not threads: the harness's own work on an entry
+    holds the interpreter lock, and twenty threads queued on it spent about
+    fourteen seconds an entry waiting where pytest took half of one.'''
+    if not items:
+        return
+    import multiprocessing
+    pool = multiprocessing.get_context('fork').Pool(size)
+    try:
+        yield from pool.imap_unordered(fn, items)
+        pool.close()
     finally:
-        # On a signal, what has not started never starts.
-        pool.shutdown(wait=True, cancel_futures=True)
+        # On a signal, or anything else: the workers stop, and each kills
+        # the pytest it was running on its way out (they inherit stop()).
+        pool.terminate()
+        pool.join()
 
 
 def last_lines(output, n=3):

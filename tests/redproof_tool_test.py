@@ -8,6 +8,7 @@ import datetime
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import types
@@ -512,11 +513,31 @@ class GroupLockTest(unittest.TestCase):
         whole_file = redproof.Run.locks_for(run, ['tests/a_test.py'])
         one_test = redproof.Run.locks_for(
             run, ['tests/a_test.py::Flow::test_two'])
-        self.assertEqual(1, len(whole_file), 'a test in the port group ran '
-                         'without its lock')
-        self.assertIs(whole_file[0], one_test[0])
+        self.assertEqual(['callback-port'], whole_file, 'a test in the port '
+                         'group ran without its lock')
+        self.assertEqual(whole_file, one_test)
         self.assertEqual([], redproof.Run.locks_for(
             run, ['tests/a_test.py::Other::test_one']))
+
+    def test_a_group_lock_holds_across_processes(self):
+        # The entries run in worker processes, so a thread lock would hold
+        # nothing: two workers would bind port 6969 at once.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        run = types.SimpleNamespace(locks_dir=tmp.name)
+        held = redproof.Run.hold_groups(run, ['callback-port'])
+        self.addCleanup(lambda: [f.close() for f in held])
+        probe = subprocess.run([sys.executable, '-c', '''
+import fcntl, os, sys
+f = open(os.path.join(sys.argv[1], sys.argv[2]), 'w')
+try:
+    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    print('taken')
+except BlockingIOError:
+    print('held')
+''', tmp.name, os.path.basename(held[0].name)], capture_output=True, text=True)
+        self.assertEqual('held', probe.stdout.strip(),
+                         'another process could take a held group lock')
 
 
 class ChangedTrackedTest(unittest.TestCase):

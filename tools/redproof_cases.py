@@ -6436,8 +6436,8 @@ HARNESS_REVIEW_CASES = [
          'a timed-out run was judged'),
     Case('harness/a-restored-tracked-write-is-reported',
          'tools/redproof.py',
-         '    if audit is not None:\n        changed = sorted(',
-         '    if False:\n        changed = sorted(',
+         '        changed = sorted(set(changed) | set(found))\n',
+         '        pass\n',
          'tests/redproof_tool_test.py::JudgeTest'
          '::test_a_restored_write_to_a_tracked_file_is_reported',
          'a write the run restored went unreported'),
@@ -6590,3 +6590,15 @@ CASES.append(
          'tests/redproof_tool_test.py::InstalledFilesTest'
          '::test_a_file_edited_at_the_same_version_is_caught',
          'an installed file edited in place was not noticed'))
+
+CASES.append(
+    # The entries run in worker processes, where a thread lock holds nothing:
+    # two workers would bind port 6969 at once.
+    Case('harness/a-group-lock-holds-across-processes',
+         'tools/redproof.py',
+         '                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)\n'
+         '                    break\n',
+         '                    break\n',
+         'tests/redproof_tool_test.py::GroupLockTest'
+         '::test_a_group_lock_holds_across_processes',
+         'another process could take a held group lock'))
