@@ -157,9 +157,48 @@ SECRET_PATH = re.compile(
     r'|[^/]*\.(pem|key|p12|pfx)|id_[a-z0-9]+)$|(^|/)\.(config|ssh|gnupg)/',
     re.IGNORECASE)
 
+# The process groups this process started and has not reaped. No lock: the
+# set is changed only on this process's main thread, which is also where
+# stop() runs, as a signal handler, and a lock taken there would deadlock
+# against the same thread holding it.
 _live = set()
-_live_lock = threading.Lock()
 _stopping = threading.Event()
+# Where every process (the parent and each worker) also lists the groups it
+# started, one empty file named by the group, so the parent can kill a group
+# whose worker died without killing it: the worker's own time limit died
+# with it, and a login-flow test left running holds its port.
+_live_dir = None
+# The process that made _live_dir, and the only one that kills what is
+# listed there: a worker stopping alone kills its own groups, not every
+# worker's.
+_live_owner = None
+
+
+def _track(pid):
+    _live.add(pid)
+    if _live_dir:
+        open(os.path.join(_live_dir, str(pid)), 'w').close()
+
+
+def _untrack(pid):
+    if _live_dir:
+        try:
+            os.remove(os.path.join(_live_dir, str(pid)))
+        except FileNotFoundError:
+            pass
+    _live.discard(pid)
+
+
+def _kill_listed():
+    '''Kills every group still listed: what a dead worker left running.'''
+    if not _live_dir or os.getpid() != _live_owner:
+        return
+    for name in os.listdir(_live_dir):
+        kill_group(int(name))
+        try:
+            os.remove(os.path.join(_live_dir, name))
+        except FileNotFoundError:
+            pass
 
 
 def usable_cpus():
@@ -450,8 +489,7 @@ def run_tests(workdir, copy, nodes, audit_script, record=None,
         proc = subprocess.Popen(argv, cwd=copy, env=env, stdin=subprocess.DEVNULL,
                                 stdout=out, stderr=subprocess.STDOUT,
                                 start_new_session=True)
-    with _live_lock:
-        _live.add(proc.pid)
+    _track(proc.pid)
 
     def expire():
         timed_out.set()
@@ -471,8 +509,7 @@ def run_tests(workdir, copy, nodes, audit_script, record=None,
     try:
         reap(proc.pid)
     finally:
-        with _live_lock:
-            _live.discard(proc.pid)
+        _untrack(proc.pid)
     with open(log, 'rb') as f:
         output = f.read().decode('utf-8', 'replace')
     peak = usage.ru_maxrss * 1024
@@ -969,10 +1006,7 @@ class Run:
         self.audit = os.path.join(self.snapshot.path, AUDIT)
         self.locks_dir = os.path.join(self.tmp, 'locks')
         os.makedirs(self.locks_dir)
-        self.group_locks = {}
         self.groups = {}
-        self.counter = 0
-        self.counter_lock = threading.Lock()
         self.largest = 0
         self.lowest_available = available_memory()
         self.tracked_writes = {}
@@ -1377,12 +1411,17 @@ def run_stale(run, args, stale, store, keys, held, unkept):
                 'fails unmutated: %s' % last_lines(result.output)),
                 result.seconds)
 
+    global _live_dir, _live_owner
+    _live_dir = os.path.join(run.tmp, 'live')
+    os.makedirs(_live_dir)
+    _live_owner = os.getpid()
     _job.update(run=run, cases={c.name: c for c in stale})
     baseline_done(_baseline_task(distinct[0]))
     size, reason = pool_size(args, run.largest)
     print('redproof: %d at once: %s' % (size, reason), flush=True)
 
-    for task_result in parallel(_baseline_task, distinct[1:], size):
+    for task_result in parallel(_baseline_task, distinct[1:], size,
+                                _baseline_failed):
         baseline_done(task_result)
     size, reason = pool_size(args, run.largest)
     print('redproof: %d at once for the entries: %s' % (size, reason),
@@ -1391,7 +1430,8 @@ def run_stale(run, args, stale, store, keys, held, unkept):
     verdicts = {}
     _job.update(baselines=baselines, baseline_reads=baseline_reads)
 
-    for task_result in parallel(_entry_task, [c.name for c in stale], size):
+    for task_result in parallel(_entry_task, [c.name for c in stale], size,
+                                _entry_failed):
         name, verdict, detail, reads, seconds, breakdown = task_result[:6]
         merge(task_result)
         c = _job['cases'][name]
@@ -1435,7 +1475,7 @@ def run_stale(run, args, stale, store, keys, held, unkept):
 
 
 def split(run, seconds):
-    '''`: copy a, lock b, pytest c, harness d` for the run this thread just
+    '''`: copy a, lock b, pytest c, harness d` for the run this task just
     made, or '' when it made none (an entry judged without running).'''
     t = run.timing
     if not hasattr(t, 'pytest'):
@@ -1464,6 +1504,8 @@ def _worker_result(run):
 
 def _baseline_task(t):
     run = _job['run']
+    # A worker is forked with whatever the parent's last run left here.
+    run.timing.__dict__.clear()
     try:
         result, reads = run_baseline(run, t)
     except Exception as e:
@@ -1477,6 +1519,9 @@ def _entry_task(name):
     run = _job['run']
     c = _job['cases'][name]
     t = tuple(tests_of(c))
+    # A worker is forked with whatever the parent's last run left here, and
+    # an entry judged without running printed the first baseline's split.
+    run.timing.__dict__.clear()
     started = time.monotonic()
     try:
         verdict, detail, reads = judge(run, c, _job['baselines'][t],
@@ -1491,23 +1536,80 @@ def _entry_task(name):
             split(run, seconds)) + _worker_result(run)
 
 
-def parallel(fn, items, size):
+def _baseline_failed(t, why):
+    return (t, Result(None, '', 0.0, 0, why), None, {}, 0, None)
+
+
+def _entry_failed(name, why):
+    return (name, 'ERROR', why, None, 0.0, '', {}, 0, None)
+
+
+#: How long a worker has to stop after it is told to, before it is killed
+WORKER_STOP_LIMIT = 10
+
+
+def parallel(fn, items, size, failed):
     '''fn over items in `size` worker processes, yielding each result as
-    it arrives. Processes, not threads: the harness's own work on an entry
+    it arrives, and failed(item, why) for an item whose worker died or
+    raised. Processes, not threads: the harness's own work on an entry
     holds the interpreter lock, and twenty threads queued on it spent about
-    fourteen seconds an entry waiting where pytest took half of one.'''
+    fourteen seconds an entry waiting where pytest took half of one.
+
+    concurrent.futures, not multiprocessing.Pool: a Pool whose worker dies
+    waits for its result forever, and one whose idle worker dies hangs in
+    terminate(). The executor reports the death. Forked, so the workers
+    inherit the run instead of having it pickled, and every worker is
+    started at once, before the executor's thread exists.'''
     if not items:
         return
+    import concurrent.futures
     import multiprocessing
-    pool = multiprocessing.get_context('fork').Pool(size)
+    pool = concurrent.futures.ProcessPoolExecutor(
+        size, mp_context=multiprocessing.get_context('fork'))
+    finished = False
     try:
-        yield from pool.imap_unordered(fn, items)
-        pool.close()
+        futures = {pool.submit(fn, item): item for item in items}
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                result = future.result()
+            except BaseException as e:
+                # This process's own signal ends the run. A worker's does
+                # not: the executor hands back the SystemExit a worker's
+                # stop() raised as that task's result, and re-raising it
+                # here ended the whole run for one stopped worker.
+                if _stopping.is_set():
+                    raise
+                import concurrent.futures.process
+                if isinstance(e, (SystemExit,
+                                  concurrent.futures.process.BrokenProcessPool)):
+                    why = 'its worker process stopped (%s: %s)' % (
+                        type(e).__name__, e)
+                else:
+                    why = 'the harness failed: %s: %s' % (type(e).__name__, e)
+                result = failed(futures[future], why)
+            yield result
+        finished = True
     finally:
-        # On a signal, or anything else: the workers stop, and each kills
-        # the pytest it was running on its way out (they inherit stop()).
-        pool.terminate()
-        pool.join()
+        if not finished:
+            # A signal, or the run ending early: each worker kills the
+            # pytest it was running as it stops (they inherit stop()).
+            _end_workers(pool)
+        pool.shutdown(wait=True, cancel_futures=True)
+        # And whatever a dead worker left running.
+        _kill_listed()
+
+
+def _end_workers(pool):
+    processes = list((getattr(pool, '_processes', None) or {}).values())
+    for p in processes:
+        if p.is_alive():
+            p.terminate()
+    deadline = time.monotonic() + WORKER_STOP_LIMIT
+    for p in processes:
+        p.join(max(0.0, deadline - time.monotonic()))
+        if p.is_alive():
+            p.kill()
+            p.join(WORKER_STOP_LIMIT)
 
 
 def last_lines(output, n=3):
@@ -1516,10 +1618,15 @@ def last_lines(output, n=3):
 
 
 def stop(signum, frame):
+    # Once: a worker stopping on ^C is then sent SIGTERM by the parent, and
+    # a second SystemExit raised in the first one's cleanup printed a
+    # traceback. One that does not finish stopping is killed.
+    for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(s, signal.SIG_IGN)
     _stopping.set()
-    with _live_lock:
-        for pid in list(_live):
-            kill_group(pid)
+    for pid in list(_live):
+        kill_group(pid)
+    _kill_listed()
     raise SystemExit(128 + signum)
 
 

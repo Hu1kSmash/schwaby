@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import types
 import unittest
 from unittest.mock import patch
@@ -603,10 +604,132 @@ class InstalledFilesTest(unittest.TestCase):
                 self.assertIsNone(redproof.environment_matches_lock(pinned))
 
 
+class WorkerTest(unittest.TestCase):
+    '''The worker processes: a dead one is reported, not waited for, and
+    what it left running is killed.'''
+
+    SCRIPT = '''
+import importlib.util, os, signal, subprocess, sys, tempfile, time
+spec = importlib.util.spec_from_file_location('redproof', sys.argv[1])
+rp = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(rp)
+for s in (signal.SIGTERM, signal.SIGINT):
+    signal.signal(s, rp.stop)
+rp._live_dir = tempfile.mkdtemp()
+rp._live_owner = os.getpid()
+
+def task(item):
+    if item == 'dies':
+        # Its pytest, as run_tests starts one, then the worker is gone.
+        p = subprocess.Popen(['sleep', '120'], start_new_session=True,
+                             stdout=subprocess.DEVNULL)
+        rp._track(p.pid)
+        print('orphan', p.pid, flush=True)
+        os._exit(1)
+    if item == 'exits':
+        raise SystemExit(143)
+    return ('done', item)
+
+for items in (['a', 'b'], ['exits', 'a'], ['dies']):
+    got = sorted(rp.parallel(task, items, 2,
+                             lambda item, why: ('failed', item, why[:30])))
+    print(items[0], got, flush=True)
+'''
+
+    def test_a_dead_worker_is_reported_and_its_tests_killed(self):
+        tmp = self.tmp()
+        script = os.path.join(tmp, 'workers.py')
+        with open(script, 'w') as f:
+            f.write(self.SCRIPT)
+        # To a file, not a pipe: a pipe is held open by whatever the script
+        # leaves running, and reading it would wait on that, not the pool.
+        with open(os.path.join(tmp, 'out'), 'w') as out:
+            proc = subprocess.Popen(
+                [sys.executable, '-I', script, os.path.join(
+                    os.path.dirname(__file__), '..', 'tools', 'redproof.py')],
+                stdout=out, start_new_session=True)
+        try:
+            proc.wait(timeout=40)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, 9)
+            proc.wait()
+            self.fail('the pool waited on a dead worker')
+        with open(os.path.join(tmp, 'out')) as f:
+            lines = dict(line.split(' ', 1) for line in f.read().splitlines())
+        # The positive control: workers that live return what they made.
+        self.assertEqual("[('done', 'a'), ('done', 'b')]", lines.get('a'))
+        self.assertIn("('done', 'a')", lines.get('exits', ''),
+                      'a worker that exited ended the run')
+        self.assertIn("('failed', 'exits', 'its worker process stopped", lines['exits'])
+        self.assertIn("('failed', 'dies', 'its worker process stopped",
+                      lines.get('dies', ''))
+        orphan = int(lines['orphan'])
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and self.alive(orphan):
+            time.sleep(0.1)
+        if self.alive(orphan):
+            os.kill(orphan, 9)
+            self.fail('a dead worker\'s tests were left running')
+
+    def tmp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        return tmp.name
+
+    @staticmethod
+    def alive(pid):
+        try:
+            with open('/proc/%d/stat' % pid) as f:
+                return f.read().rsplit(')', 1)[1].split()[0] != 'Z'
+        except OSError:
+            return False
+
+    def test_only_the_parent_kills_what_is_listed(self):
+        live = self.tmp()
+        sleeper = subprocess.Popen(['sleep', '120'], start_new_session=True)
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(lambda: redproof.kill_group(sleeper.pid))
+        from unittest import mock
+        with mock.patch.object(redproof, '_live_dir', live), \
+                mock.patch.object(redproof, '_live', set()):
+            redproof._track(sleeper.pid)
+            # A worker stopping alone: every other worker's tests go on.
+            with mock.patch.object(redproof, '_live_owner', os.getpid() + 1):
+                redproof._kill_listed()
+            # Given time to die: a kill is not done when it returns.
+            with self.assertRaises(subprocess.TimeoutExpired,
+                                   msg='a worker stopping killed every '
+                                   'worker\'s tests'):
+                sleeper.wait(1)
+            with mock.patch.object(redproof, '_live_owner', os.getpid()):
+                redproof._kill_listed()
+            self.assertEqual(-9, sleeper.wait(10))
+            self.assertEqual([], os.listdir(live))
+
+    def test_an_entry_judged_without_running_has_no_split(self):
+        # A worker is forked with whatever the parent's first baseline left
+        # in the timing, and printed it for an entry that never ran.
+        import threading
+        from unittest import mock
+        run = types.SimpleNamespace(
+            snapshot=types.SimpleNamespace(content={}), timing=threading.local(),
+            tracked_writes={}, largest=0, lowest_available=None)
+        run.timing.copy, run.timing.lock, run.timing.pytest = 0.1, 0.0, 0.5
+        entry = case()
+        with mock.patch.object(redproof, '_job', {
+                'run': run, 'cases': {entry.name: entry},
+                'baselines': {tuple(redproof.tests_of(entry)): None},
+                'baseline_reads': {}}):
+            result = redproof._entry_task(entry.name)
+        self.assertEqual('SPEC', result[1])
+        self.assertEqual('', result[5], 'an entry that never ran printed '
+                         'another run\'s time split')
+
+
 class GroupLockTest(unittest.TestCase):
 
     def test_entries_sharing_an_xdist_group_share_a_lock(self):
-        run = types.SimpleNamespace(group_locks={}, groups={
+        run = types.SimpleNamespace(groups={
             'tests/a_test.py::Flow::test_one': 'callback-port',
             'tests/a_test.py::Flow::test_two': 'callback-port'})
         whole_file = redproof.Run.locks_for(run, ['tests/a_test.py'])

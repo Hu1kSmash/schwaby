@@ -6669,3 +6669,41 @@ CASES.extend([
          '::test_the_key_names_the_lock_the_harness_and_the_pinned_build',
          'the key ignores the standard library'),
 ])
+
+CASES.extend([
+    # The worker processes. A pool that waits on a dead worker hangs the run
+    # with no bound, and what that worker was running keeps its port.
+    Case('harness/a-dead-workers-tests-are-killed',
+         'tools/redproof.py',
+         '        # And whatever a dead worker left running.\n'
+         '        _kill_listed()\n',
+         '',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         "a dead worker's tests were left running"),
+    Case('harness/a-stopped-worker-does-not-end-the-run',
+         'tools/redproof.py',
+         '            except BaseException as e:\n'
+         "                # This process's own signal ends the run.",
+         '            except Exception as e:\n'
+         "                # This process's own signal ends the run.",
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'a worker that exited ended the run'),
+    Case('harness/only-the-parent-kills-what-is-listed',
+         'tools/redproof.py',
+         '    if not _live_dir or os.getpid() != _live_owner:\n',
+         '    if not _live_dir:\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_only_the_parent_kills_what_is_listed',
+         "a worker stopping killed every worker's tests"),
+    Case('harness/an-entry-that-never-ran-has-no-split',
+         'tools/redproof.py',
+         "    # an entry judged without running printed the first baseline's "
+         'split.\n    run.timing.__dict__.clear()\n',
+         "    # an entry judged without running printed the first baseline's "
+         'split.\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_an_entry_judged_without_running_has_no_split',
+         "an entry that never ran printed another run's time split"),
+])
