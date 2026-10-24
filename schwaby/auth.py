@@ -287,6 +287,7 @@ def _refuse_unusable_token_response(response):
                 description='the token endpoint answered with HTTP {} and a '
                             'token, which was not stored: a token is kept '
                             'only from a success'.format(response.status_code))
+        refusal._described_by_this_library = True
         refusal._token_endpoint_status = response.status_code
         raise refusal
     refusal = OAuthError(

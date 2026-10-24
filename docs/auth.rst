@@ -342,8 +342,8 @@ fewer requests, so the retry should wait longer. ``status_code`` is the HTTP
 status it answered with, and ``endpoint_answered`` says whether it was asked
 at all. All three are set the same way for a refusal with a JSON body and one
 without, and they are what to branch on: the ``http_429`` code this library
-gives a refusal with no body is a message, and could be worded differently in
-a later release.
+gives a refusal with no body, or with a token in it, is a message, and could
+be worded differently in a later release.
 
 **Retrying a dead refresh token cannot work, and the retries are not free.**
 A refresh token is good for seven days and is replaced only by the full

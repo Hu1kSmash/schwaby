@@ -142,7 +142,10 @@ class HTTPStatusErrorTest(unittest.TestCase):
         # list or a string was kept in memory; either way every call after it
         # failed without contacting Schwab. Now none is stored: the call
         # raises, and the next one refreshes again and recovers once the
-        # endpoint does.
+        # endpoint does. Each body is sent at a success as well as at a
+        # refusal: a token is kept only from a success, so at a refusal a
+        # body wrongly judged usable is refused anyway, and only the success
+        # proves the judgement.
         import time
         from schwaby.utils import TokenRefreshError
         usable = {'access_token': 'NEW', 'token_type': 'Bearer',
@@ -159,20 +162,21 @@ class HTTPStatusErrorTest(unittest.TestCase):
                      dict(usable, expires_at=int(time.time()) * 1000),
                      # Milliseconds sent as expires_in: 20.8 days of 401s.
                      dict(usable, expires_in=1800000)):
-            with self.subTest(body=body):
-                answers = [(401, body), (200, self.GOOD_TOKEN)]
-                writes = []
-                client, requests = self._refreshing_client(
-                        lambda request: self._json_response(
-                            *answers.pop(0), request), writes=writes)
-                with self.assertRaises(TokenRefreshError) as caught:
-                    client.get_quote('F')
-                self.assertFalse(caught.exception.refresh_token_invalid)
-                self.assertEqual([], writes)
-                self.assertEqual(200, client.get_quote('F').status_code)
-                self.assertEqual(['/v1/oauth/token', '/v1/oauth/token',
-                                  '/marketdata/v1/F/quotes'], requests)
-                self.assertEqual('NEW', writes[0]['token']['access_token'])
+            for status in (200, 401):
+                with self.subTest(body=body, status=status):
+                    answers = [(status, body), (200, self.GOOD_TOKEN)]
+                    writes = []
+                    client, requests = self._refreshing_client(
+                            lambda request: self._json_response(
+                                *answers.pop(0), request), writes=writes)
+                    with self.assertRaises(TokenRefreshError) as caught:
+                        client.get_quote('F')
+                    self.assertFalse(caught.exception.refresh_token_invalid)
+                    self.assertEqual([], writes)
+                    self.assertEqual(200, client.get_quote('F').status_code)
+                    self.assertEqual(['/v1/oauth/token', '/v1/oauth/token',
+                                      '/marketdata/v1/F/quotes'], requests)
+                    self.assertEqual('NEW', writes[0]['token']['access_token'])
 
     @no_duplicates
     def test_a_server_error_with_a_json_body_is_still_a_server_error(self):
