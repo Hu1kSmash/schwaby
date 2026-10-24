@@ -6152,7 +6152,10 @@ LIGHT_CHECK_CASES = [
          '        pass',
          'tests/light_check_test.py::LightCheckTest'
          '::test_a_file_that_does_not_parse_is_refused',
-         'does not parse was let through'),
+         'does not parse was let through',
+         superseded='the compile step, light-check/the-staged-file-must-'
+                    'compile, reports a syntax error pyflakes did not, so '
+                    'this report is no longer the only one'),
     Case('light-check/whitespace-errors-fail',
          'tools/light_check.py',
          '    if check.returncode != 0:',
@@ -6163,8 +6166,8 @@ LIGHT_CHECK_CASES = [
     # The index is what the commit will contain; the working tree may differ.
     Case('light-check/the-index-is-checked',
          'tools/light_check.py',
-         "    now = warnings_in(blob(':' + path) or b'', path)",
-         "    now = warnings_in(open(path, 'rb').read(), path)",
+         "    staged = blob(':' + path) or b''",
+         "    staged = open(path, 'rb').read()",
          'tests/light_check_test.py::LightCheckTest'
          '::test_the_index_is_checked_not_the_working_tree',
          'the working tree was checked instead of the index'),
