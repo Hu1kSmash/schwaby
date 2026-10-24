@@ -92,6 +92,53 @@ class LightCheckTest(unittest.TestCase):
         self.assertEqual(1, code, 'the working tree was checked instead of '
                          'the index: ' + out)
 
+    def test_a_renamed_file_keeps_its_old_warnings(self):
+        self.git('mv', 'mod.py', 'renamed.py')
+        code, out = self.check()
+        self.assertEqual(0, code, 'a rename was blamed for the warnings the '
+                         'file already had: ' + out)
+        # The positive control: a rename that adds one is still caught.
+        self.write('renamed.py', 'import os\nimport sys\n\n\ndef f():\n'
+                   '    return 1\n')
+        self.git('add', 'renamed.py')
+        code, out = self.check()
+        self.assertEqual(1, code, out)
+        self.assertIn("'sys' imported but unused", out)
+
+    def test_bytes_that_are_not_utf8_do_not_parse(self):
+        with open(os.path.join(self.repo, 'mod.py'), 'wb') as f:
+            f.write(b'x = "caf\xe9"\n')
+        self.git('add', 'mod.py')
+        code, out = self.check()
+        self.assertEqual(1, code, 'a file Python cannot decode was let '
+                         'through: ' + out)
+        self.assertIn('syntax error', out)
+
+    def test_a_syntax_error_already_at_head_still_fails(self):
+        self.write('broken.py', 'def f(:\n')
+        self.git('add', 'broken.py')
+        self.git('commit', '-q', '--no-verify', '-m', 'broken')
+        self.stage('broken.py', 'def f(:\n\n# edited\n')
+        code, out = self.check()
+        self.assertEqual(1, code, 'a file that still does not parse was let '
+                         'through: ' + out)
+
+    def test_a_symlink_is_not_checked_as_code(self):
+        os.symlink('mod.py', os.path.join(self.repo, 'link.py'))
+        self.git('add', 'link.py')
+        code, out = self.check()
+        self.assertEqual(0, code, 'a symlink was checked as code: ' + out)
+
+    def test_a_warning_only_in_the_working_tree_is_not_the_commits(self):
+        # The other direction from the test above: staged clean, dirty on
+        # disk. The commit carries the clean one.
+        self.stage('mod.py', 'import os\n\n\ndef f():\n    return 2\n')
+        self.write('mod.py', 'import os\nimport sys\n\n\ndef f():\n'
+                   '    return 2\n')
+        code, out = self.check()
+        self.assertEqual(0, code, 'the working tree was checked instead of '
+                         'the index: ' + out)
+
     def test_both_hooks_run_the_check(self):
         for hook in ('pre-commit', 'pre-merge-commit'):
             with open(os.path.join(HOOKS, hook)) as f:

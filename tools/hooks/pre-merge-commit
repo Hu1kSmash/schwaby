@@ -1,7 +1,14 @@
 #!/bin/sh
 # The light check, on what is about to be committed (tools/light_check.py).
 # Turned on with: git config core.hooksPath tools/hooks
+#
+# The interpreter that has the dev tools: the active virtualenv, else one at
+# the checkout's root (.venv, or venv as CONTRIBUTING creates it), else
+# python3, which says plainly if pyflakes is missing.
 root=$(git rev-parse --show-toplevel) || exit 1
 python=python3
-[ -x "$root/.venv/bin/python" ] && python="$root/.venv/bin/python"
+for candidate in "$root/venv/bin/python" "$root/.venv/bin/python" \
+                 "${VIRTUAL_ENV:+$VIRTUAL_ENV/bin/python}"; do
+  [ -n "$candidate" ] && [ -x "$candidate" ] && python=$candidate
+done
 exec "$python" "$root/tools/light_check.py"

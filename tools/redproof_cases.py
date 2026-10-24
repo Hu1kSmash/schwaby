@@ -6087,22 +6087,22 @@ CASES += TIMING_CASES
 LIGHT_CHECK_CASES = [
     Case('light-check/only-new-warnings-fail',
          'tools/light_check.py',
-         '    return sorted((now - before).elements())',
-         '    return sorted(now.elements())',
+         '    new = now - before\n',
+         '    new = now\n',
          'tests/light_check_test.py::LightCheckTest'
          '::test_a_warning_moved_or_kept_is_not_new',
          'an old warning was blamed on this commit'),
     Case('light-check/new-warnings-fail',
          'tools/light_check.py',
-         '    return sorted((now - before).elements())',
-         '    return []',
+         '    new = now - before\n',
+         '    new = collections.Counter()\n',
          'tests/light_check_test.py::LightCheckTest'
          '::test_a_new_warning_is_refused_and_named',
          'a new warning was let through'),
     Case('light-check/a-new-file-has-no-baseline',
          'tools/light_check.py',
-         '              else collections.Counter())',
-         '              else now)',
+         '              if before_text is not None else collections.Counter())',
+         '              if before_text is not None else now)',
          'tests/light_check_test.py::LightCheckTest'
          '::test_a_new_file_is_checked_whole',
          'a new file was not checked'),
@@ -6123,11 +6123,46 @@ LIGHT_CHECK_CASES = [
     # The index is what the commit will contain; the working tree may differ.
     Case('light-check/the-index-is-checked',
          'tools/light_check.py',
-         "    now = warnings_in(blob(':' + path) or '', path)",
-         '    now = warnings_in(open(path).read(), path)',
+         "    now = warnings_in(blob(':' + path) or b'', path)",
+         "    now = warnings_in(open(path, 'rb').read(), path)",
          'tests/light_check_test.py::LightCheckTest'
          '::test_the_index_is_checked_not_the_working_tree',
          'the working tree was checked instead of the index'),
+]
+
+LIGHT_CHECK_CASES += [
+    # Round-one review: each of these let a commit through, or refused one,
+    # wrongly.
+    Case('light-check/a-rename-is-compared-with-its-old-path',
+         'tools/light_check.py',
+         "    before_text = blob('HEAD:' + before_path)",
+         "    before_text = blob('HEAD:' + path)",
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_renamed_file_keeps_its_old_warnings',
+         'a rename was blamed'),
+    Case('light-check/the-blob-is-read-as-bytes',
+         'tools/light_check.py',
+         '    return out.stdout if out.returncode == 0 else None',
+         "    return (out.stdout.decode('utf-8', 'replace').encode('utf-8')\n"
+         '            if out.returncode == 0 else None)',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_bytes_that_are_not_utf8_do_not_parse',
+         'a file Python cannot decode was let through'),
+    Case('light-check/a-syntax-error-is-never-subtracted',
+         'tools/light_check.py',
+         "        if message.startswith('syntax error:'):\n"
+         '            new[message] = now[message]\n',
+         '        pass\n',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_syntax_error_already_at_head_still_fails',
+         'still does not parse'),
+    Case('light-check/a-symlink-is-not-code',
+         'tools/light_check.py',
+         "        if path.endswith('.py') and meta[1] != '120000':",
+         "        if path.endswith('.py'):",
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_symlink_is_not_checked_as_code',
+         'a symlink was checked as code'),
 ]
 
 CASES += LIGHT_CHECK_CASES

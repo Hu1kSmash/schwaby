@@ -19,10 +19,13 @@ commit will contain:
  * `git diff --cached --check`: no whitespace errors or conflict markers.
 
 A warning is compared by its text without its line number, as a count per
-file, so moving code does not read as adding a warning.
+file, so moving code does not read as adding a warning, and a renamed file is
+compared with its old path at HEAD. A syntax error is never subtracted: a
+file that does not parse fails, whatever HEAD had.
 '''
 
 import collections
+import os
 import re
 import subprocess
 import sys
@@ -61,38 +64,64 @@ def git(*args, check=True):
 
 
 def blob(spec):
-    '''The text of a blob, or None if there is none.'''
+    '''The bytes of a blob, or None if there is none. Bytes, not text: a
+    stray byte that is not UTF-8 makes a file Python refuses to import, and
+    decoding it here hid that.'''
     out = git('show', spec, check=False)
-    return out.stdout.decode('utf-8', 'replace') if out.returncode == 0 else None
+    return out.stdout if out.returncode == 0 else None
 
 
 def staged_python():
-    out = git('diff', '--cached', '--name-only', '-z', '--diff-filter=ACMR')
-    return [f for f in out.stdout.decode('utf-8').split('\0')
-            if f.endswith('.py')]
+    '''(path, its path at HEAD) for each staged Python file. A renamed file
+    is compared with what it was, which is not a new file with every warning
+    new; a symlink is not code.'''
+    out = git('diff', '--cached', '--raw', '-z', '-M', '--diff-filter=ACMR')
+    fields = out.stdout.split(b'\0')
+    staged = []
+    i = 0
+    while i < len(fields) and fields[i].startswith(b':'):
+        # :old-mode new-mode old-sha new-sha status, then one path, or two
+        # for a rename or a copy
+        meta = fields[i].decode('ascii').split()
+        if meta[4][0] in 'RC':
+            before, path = os.fsdecode(fields[i + 1]), os.fsdecode(fields[i + 2])
+            i += 3
+        else:
+            before = path = os.fsdecode(fields[i + 1])
+            i += 2
+        if path.endswith('.py') and meta[1] != '120000':
+            staged.append((path, before))
+    return staged
 
 
-def new_warnings(path):
-    now = warnings_in(blob(':' + path) or '', path)
-    before_text = blob('HEAD:' + path)
-    before = (warnings_in(before_text, path) if before_text is not None
-              else collections.Counter())
-    return sorted((now - before).elements())
+def new_warnings(path, before_path):
+    now = warnings_in(blob(':' + path) or b'', path)
+    before_text = blob('HEAD:' + before_path)
+    before = (warnings_in(before_text, before_path)
+              if before_text is not None else collections.Counter())
+    new = now - before
+    # A file that does not parse fails whatever HEAD had: that it did not
+    # parse before either is no reason to commit it.
+    for message in now:
+        if message.startswith('syntax error:'):
+            new[message] = now[message]
+    return sorted(new.elements())
 
 
 def main():
     if api is None:
-        print('light check: pyflakes is not installed; '
-              "`pip install -e '.[dev]'` installs it")
+        print('light check: pyflakes is not installed for %s; '
+              "`pip install -e '.[dev]'` in your virtualenv installs it"
+              % sys.executable)
         return 1
     failed = False
-    for path in staged_python():
-        for message in new_warnings(path):
+    for path, before in staged_python():
+        for message in new_warnings(path, before):
             print('light check: %s: %s' % (path, message))
             failed = True
     check = git('diff', '--cached', '--check', check=False)
     if check.returncode != 0:
-        sys.stdout.write(re.sub(r'(?m)^', 'light check: ',
+        sys.stdout.write(re.sub(r'(?m)^(?=.)', 'light check: ',
                                 check.stdout.decode('utf-8', 'replace')))
         failed = True
     if failed:
