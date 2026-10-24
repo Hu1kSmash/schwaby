@@ -428,6 +428,44 @@ class TokenEndpointStatusTest(unittest.TestCase):
         return caught.exception, requests
 
     @no_duplicates
+    def test_a_token_at_a_refusal_is_refused_on_either_session(self):
+        # The async session runs the same hook through authlib's async
+        # refresh; a token is kept only from a success there too.
+        import asyncio
+        from schwaby.utils import TokenRefreshError
+        good = HTTPStatusErrorTest.GOOD_TOKEN
+        for asynchronous in (False, True):
+            for status in (302, 401, 429, 200):
+                with self.subTest(status=status, asynchronous=asynchronous):
+                    writes = []
+                    client, requests = self._refreshing_client(
+                            lambda request: self._json_response(
+                                status, good, request),
+                            writes=writes, asynchronous=asynchronous)
+                    try:
+                        if asynchronous:
+                            asyncio.run(client.get_quote('F'))
+                        else:
+                            client.get_quote('F')
+                    except TokenRefreshError as e:
+                        refusal = e
+                    else:
+                        refusal = None
+                    if status == 200:
+                        self.assertIsNone(refusal)
+                        self.assertEqual(
+                                ['NEW'],
+                                [w['token']['access_token'] for w in writes])
+                        continue
+                    self.assertIsNotNone(refusal)
+                    self.assertEqual('http_{}'.format(status),
+                                     refusal.__cause__.error)
+                    self.assertEqual(status, refusal.status_code)
+                    self.assertEqual(status == 429, refusal.rate_limited)
+                    self.assertEqual([], writes)
+                    self.assertEqual(['/v1/oauth/token'], requests)
+
+    @no_duplicates
     def test_a_refusal_without_a_json_body_carries_its_status(self):
         import httpx2
         for asynchronous in (False, True):

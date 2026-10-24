@@ -2699,6 +2699,15 @@ CASES = [
          '::test_a_refresh_keeps_a_token_only_from_a_success',
          'TokenRefreshError not raised', subtest='status=401'),
 
+    # The async session runs the same hook, through authlib's async refresh.
+    Case('refresh/an-async-refresh-refuses-a-token-at-a-refusal',
+         'schwaby/auth.py',
+         '        if 200 <= response.status_code < 300:\n',
+         '        if True:\n',
+         'tests/utils_test.py::TokenEndpointStatusTest'
+         '::test_a_token_at_a_refusal_is_refused_on_either_session',
+         'unexpectedly None', subtest='asynchronous=True'),
+
     Case('auth/a-token-at-300-is-refused',
          'schwaby/auth.py',
          '        if 200 <= response.status_code < 300:\n',
