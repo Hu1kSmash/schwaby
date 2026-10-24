@@ -14,22 +14,27 @@ false GREEN.
 With ``REDPROOF_AUDIT`` set, an audit hook goes in before pytest is imported
 and records what the run writes: an ``open()`` or ``os.open()`` for writing,
 a rename, a removal, a permission or time change, a truncation. Each is
-recorded by its path and by the file it touched (its device and inode), so a
-write through a symbolic or hard link to a tracked file, or through a
-descriptor, names that file as surely as a write by its own name. A link or
-a directory made or removed is not recorded: none can be a tracked file,
-which is removed, and recorded, before anything else can stand at its path.
-``os.open`` is wrapped, since its audit event carries no ``dir_fd``; the
-wrapper records the file it opened and the event inside it records nothing.
-The record is written to that path when pytest returns. The harness
-compares the copy with the snapshot after the run, which catches a tracked
-file left changed; this catches one changed and put back. A write the hook
-could not place is recorded as unresolved, and the harness fails the run for
-it, as it does for a run that left no record. Recording never raises into
-the run: an exception there would fail the call being audited, and a test
-failing for that reason is a red the mutation did not cause. What it cannot
-see: a write by a process the test started, and an ``os.open`` a caller took
-before the hook was put in, which is recorded at the wrong path.
+recorded by its path, and what changes a file's bytes or attributes also by
+the file it touched (its device and inode), so a write through a symbolic or
+hard link to a tracked file, or through a descriptor, names that file as
+surely as a write by its own name. A rename or a removal acts on one name
+only, and is known by that name: removing a hard link a test made to a
+tracked file changes nothing about the file. Making a link or a directory
+is not recorded: neither can be a tracked file, which is removed, and
+recorded, before anything else can stand at its path. ``os.open`` is
+wrapped, since its audit event carries no ``dir_fd``; the wrapper records
+the file it opened and the event inside it records nothing. The record is
+written to that path when pytest returns. The harness compares the copy
+with the snapshot after the run, which catches a tracked file left changed;
+this catches one changed and put back. A write the hook could not place is
+recorded as unresolved, and the harness fails the run for it, as it does for
+a run that left no record. Recording never raises into the run: an exception
+there would fail the call being audited, and a test failing for that reason
+is a red the mutation did not cause. What it cannot see: a write by a
+process the test started; a permission or time change made through a
+symbolic link to a tracked file (its event does not say whether it followed
+the link); and an ``os.open`` a caller took before the hook was put in,
+which is recorded at the wrong path.
 
 ``--collect`` writes ``{node id: xdist group}`` for every collected test with
 an ``xdist_group`` mark. The harness reads it to keep two entries that share a
@@ -56,9 +61,11 @@ _WRITE = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
 _ANONYMOUS = getattr(os, 'O_TMPFILE', 0)
 
 # Events that change a file, with where the path (or descriptor) and its
-# directory descriptor sit among the event's arguments, and whether the event
-# acts on a link itself rather than what it points to. A rename or an unlink
-# writes as surely as an open for writing does.
+# directory descriptor sit among the event's arguments, and whether the file
+# it changed is known by what it is as well as by its name. A rename or an
+# unlink writes as surely as an open for writing does, but only to the name it
+# acts on: dropping or moving one name of a file leaves the file and its other
+# names as they were, so those are known by path alone.
 _CHANGES = {
     'os.rename': ((0, 2, False), (1, 3, False)),
     'os.remove': ((0, 1, False),),
@@ -83,15 +90,23 @@ def _at(value, dir_fd=None):
         return ''
 
 
-def _identity(value, dir_fd=None, follow=True):
+def _identity(value, dir_fd=None, links=False):
     '''Notes the file a path or descriptor names, by device and inode: the
-    same file under any name. Nothing, for what does not exist yet.'''
+    same file under any name. Nothing, for what does not exist yet, and
+    nothing for a symbolic link unless the event is known to follow it
+    (links=True): a chmod, chown or utime's event does not say whether it
+    followed one, and copying a tree of links changes the links' times, not
+    their targets'.'''
     try:
         if isinstance(value, int):
             st = os.fstat(value)
         else:
-            st = os.stat(value, dir_fd=dir_fd if isinstance(dir_fd, int)
-                         and dir_fd >= 0 else None, follow_symlinks=follow)
+            fd = dir_fd if isinstance(dir_fd, int) and dir_fd >= 0 else None
+            if not links and os.path.islink(
+                    value if fd is None else os.path.join(
+                        os.readlink('/proc/self/fd/%d' % fd), value)):
+                return
+            st = os.stat(value, dir_fd=fd)
     except Exception:
         return
     _inodes.add((st.st_dev, st.st_ino))
@@ -121,15 +136,21 @@ def _record(event, args):
         if not ((isinstance(mode, str) and any(c in mode for c in 'wax+'))
                 or _writes(flags)):
             return
+        # An open that must create (mode 'x', O_EXCL) fails on a file that
+        # exists and otherwise makes a new one: never a tracked file.
+        if (isinstance(mode, str) and 'x' in mode) or (
+                isinstance(flags, int) and flags & os.O_EXCL):
+            return
         path = _at(args[0])
         if path == '':
             _unresolved.append(event)
         elif path is not None:
             _written.add(path)
-        # Before the open: a file it truncates is still the same file.
-        _identity(args[0])
+        # Before the open: a file it truncates is still the same file, and
+        # an open follows a link.
+        _identity(args[0], links=True)
     elif event in _CHANGES:
-        for at, fd, follow in _CHANGES[event]:
+        for at, fd, by_identity in _CHANGES[event]:
             if at >= len(args):
                 continue
             dir_fd = args[fd] if fd is not None and fd < len(args) else None
@@ -138,7 +159,8 @@ def _record(event, args):
                 _unresolved.append(event)
             elif path is not None:
                 _written.add(path)
-            _identity(args[at], dir_fd, follow)
+            if by_identity:
+                _identity(args[at], dir_fd)
 
 
 def _install():

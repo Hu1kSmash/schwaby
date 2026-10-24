@@ -39,7 +39,8 @@ VERDICTS
     ERROR       the harness itself failed while judging it: a defect in the
                 harness, named against the entry, and the run goes on.
     SPEC        the entry cannot be judged: its text is missing or ambiguous,
-                the mutation is a no-op, or the test fails unmutated.
+                the mutation is a no-op, or the test fails unmutated, which
+                includes a baseline whose worker died before it finished.
 
 POSIX only: each run is a process group of its own, waited for with
 os.wait4 and killed with os.killpg.
@@ -73,9 +74,10 @@ because an import from anywhere else makes every verdict a false GREEN.
 
 PARALLEL. Every usable core with REDPROOF_JOBS_ALL=1, which a job that holds
 a machine to itself sets; two at a time otherwise, since a run on a machine
-someone is using should stay modest. Never more than memory holds: the pool is
-min(cores, (available memory - FLOOR) / the largest run measured so far),
-printed with its reason. The first baseline runs alone to give that
+someone is using should stay modest. No more than memory holds, beyond the
+one run that always goes ahead: the pool is min(cores, (available memory -
+FLOOR) / the largest run measured so far), at least one, printed with its
+reason. The first baseline runs alone to give that
 measurement. `--jobs` overrides the core count. Entries whose tests carry the
 same xdist_group mark never run at once: the login flow's callback server binds
 a fixed port, 6969, and two copies of it fail each other.
@@ -84,8 +86,9 @@ TRACKED WRITES. A test that writes to a tracked file fails the run, by
 name: the copy is compared with the snapshot after each run, and the audit
 hook records the run's writes, by path and by the file each touched, so a
 file written and put back before the run ended is caught too, under its own
-name, through a link to it, or through a descriptor. A run whose writes the hook could not all place, or
-that left no record of them, fails the run the same way. What the hook
+name, through a link to it, or through a descriptor. A run whose writes the
+hook could not all place, or that left no record of them, fails the run the
+same way. What the hook
 cannot see is a write by a process the test started, unless it is left in
 place.
 '''
@@ -319,7 +322,9 @@ def secret_untracked(files, tracked):
 def copy_tree(files, src, dest):
     for f in files:
         os.makedirs(os.path.dirname(os.path.join(dest, f)), exist_ok=True)
-        shutil.copyfile(os.path.join(src, f), os.path.join(dest, f))
+        # With its mode: a copy lost the executable bit, and a test that
+        # checks a hook script is executable failed in every one.
+        shutil.copy(os.path.join(src, f), os.path.join(dest, f))
 
 
 class Snapshot:
@@ -1083,8 +1088,13 @@ def parallel(fn, items, size, failed):
                 w.drain()
             except BaseException as e:
                 failures.append(e)
-                # Whatever stopped the wait, the worker does not outlive it.
+                # Whatever stopped the wait, the worker does not outlive it,
+                # and what it reported last is still read.
                 w.signal(signal.SIGKILL)
+                try:
+                    w.drain()
+                except BaseException as e:
+                    failures.append(e)
             try:
                 w.reap_groups()
                 os.close(w.results)

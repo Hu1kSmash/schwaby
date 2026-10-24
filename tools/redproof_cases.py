@@ -5888,8 +5888,9 @@ That is the whole install.''',
 ]
 
 
-# The harness's own guards. A kept verdict stands in for a run, so a guard here
-# that stops working reports a broken check as PROVEN with nothing to show it.
+# The harness's own guards. A guard here that stops working reports a broken
+# check as PROVEN with nothing to show it. Many below mutated the kept-verdict
+# machinery, deleted since, and are kept as removed.
 HARNESS_CASES = [
     # What a child process reads is recorded nowhere.
     Case('harness/a-started-process-is-never-kept',
@@ -6211,9 +6212,9 @@ LIGHT_CHECK_CASES += [
 CASES += LIGHT_CHECK_CASES
 
 
-# The lock covers every supported Python. Read without its markers, the pins
-# for another interpreter count, the installed set never matches, and no
-# verdict is ever kept or reused.
+# The lock covered every supported Python, when verdicts were kept on it. Read
+# without its markers, the pins for another interpreter counted, the
+# installed set never matched, and no verdict was ever kept or reused.
 LOCK_CASES = [
     Case('harness/lock-markers-are-evaluated',
          'tools/redproof.py',
@@ -6744,8 +6745,10 @@ CASES.extend([
          'a stuck worker was not killed at the bound'),
     Case('harness/what-a-worker-reports-last-is-read',
          'tools/redproof.py',
-         '                w.drain()\n',
-         '',
+         '                # it started just before it stopped is otherwise never '
+         'killed.\n                w.drain()\n',
+         '                # it started just before it stopped is otherwise never '
+         'killed.\n',
          'tests/redproof_tool_test.py::WorkerTest'
          '::test_a_dead_worker_is_reported_and_its_tests_killed',
          "a dead worker's tests were left running (late-group)"),
@@ -7217,16 +7220,15 @@ CASES.extend([
     # Writes known by the file they touched, not only its name.
     Case('audit/a-write-through-a-link-is-the-files',
          'tools/redproof_audit.py',
-         '        # Before the open: a file it truncates is still the same file.\n'
-         '        _identity(args[0])\n',
-         '',
+         '            _identity(args[0], links=True)\n',
+         '            pass\n',
          'tests/redproof_tool_test.py::AuditTest'
          '::test_a_write_put_back_is_recorded_and_a_read_is_not',
          'a write through a symlink was not recorded'),
     Case('audit/a-change-by-descriptor-is-the-files',
          'tools/redproof_audit.py',
-         '            _identity(args[at], dir_fd, follow)\n',
-         '',
+         '            if by_identity:\n                _identity(args[at], dir_fd)\n',
+         '            if False:\n                _identity(args[at], dir_fd)\n',
          'tests/redproof_tool_test.py::AuditTest'
          '::test_a_write_put_back_is_recorded_and_a_read_is_not',
          'a change through a read-only descriptor was not recorded'),
@@ -7307,4 +7309,48 @@ CASES.extend([
          'tests/redproof_tool_test.py::BaselineTest'
          '::test_a_baselines_unchecked_run_is_reported',
          'a baseline whose writes went unchecked was not reported'),
+])
+
+CASES.extend([
+    # The close-out review: what is not a write to a tracked file, though a
+    # file's identity would have named one.
+    Case('audit/a-removed-link-is-not-its-file',
+         'tools/redproof_audit.py',
+         "    'os.remove': ((0, 1, False),),\n",
+         "    'os.remove': ((0, 1, True),),\n",
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'a removed link was taken for its file'),
+    Case('audit/a-links-own-times-are-not-its-files',
+         'tools/redproof_audit.py',
+         '            if not links and os.path.islink(\n',
+         '            if False and os.path.islink(\n',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         "a change to a link itself was taken for its file's"),
+    Case('audit/an-exclusive-open-names-no-file',
+         'tools/redproof_audit.py',
+         "        if (isinstance(mode, str) and 'x' in mode) or (\n"
+         '                isinstance(flags, int) and flags & os.O_EXCL):\n'
+         '            return\n',
+         '        if False:\n            return\n',
+         'tests/redproof_tool_test.py::AuditTest'
+         '::test_a_write_put_back_is_recorded_and_a_read_is_not',
+         'an open that could only fail was taken for a write'),
+    Case('harness/a-cut-short-wait-still-reads-the-last-reports',
+         'tools/redproof.py',
+         '                w.signal(signal.SIGKILL)\n                try:\n'
+         '                    w.drain()\n',
+         '                w.signal(signal.SIGKILL)\n                try:\n'
+         '                    pass\n',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         "a dead worker's tests were left running (late2-group)"),
+    Case('harness/a-copy-keeps-file-modes',
+         'tools/redproof.py',
+         '        shutil.copy(os.path.join(src, f), os.path.join(dest, f))\n',
+         '        shutil.copyfile(os.path.join(src, f), os.path.join(dest, f))\n',
+         'tests/redproof_tool_test.py::SnapshotTest'
+         '::test_a_copy_keeps_each_files_mode',
+         'a copy lost a file\'s mode'),
 ])

@@ -333,9 +333,18 @@ def test_writes_and_puts_back():
         os.fchmod(fd, 0o600)
     finally:
         os.close(fd)
-    # What is not a write: a directory opened to read it, and a file with
-    # no name.
+    # What is not a write: a directory opened to read it, a file with no
+    # name, a hard link made and removed again, a link's own times, and an
+    # open that could only fail.
     os.close(os.open('sub', os.O_RDONLY))
+    os.link('kept_a.py', 'kept_a_link.py')
+    os.remove('kept_a_link.py')
+    os.symlink('kept_b.py', 'kept_b_link.py')
+    os.utime('kept_b_link.py', ns=(0, 0), follow_symlinks=False)
+    try:
+        open('kept_c.py', 'x')
+    except FileExistsError:
+        pass
     if hasattr(os, 'O_TMPFILE'):
         os.close(os.open('.', os.O_TMPFILE | os.O_WRONLY))
 '''
@@ -359,7 +368,8 @@ def test_writes_and_puts_back():
                            ('chowned.py', ''), ('touched.py', ''),
                            ('truncated.py', 'x'), ('sub/inner.py', ''),
                            ('sym_target.py', ''), ('hard_target.py', ''),
-                           ('fd_target.py', '')):
+                           ('fd_target.py', ''), ('kept_a.py', ''),
+                           ('kept_b.py', ''), ('kept_c.py', '')):
             with open(os.path.join(root, name), 'w') as f:
                 f.write(data)
         out = os.path.join(root, 'record.json')
@@ -387,6 +397,16 @@ def test_writes_and_puts_back():
                           'a %s was not recorded' % kind)
         self.assertNotIn(os.path.join(root, 'decoy.py'), written,
                          'a write was recorded where it was not made')
+        for name, what in (
+                ('kept_a.py', 'a removed link was taken for its file'),
+                ('kept_b.py', "a change to a link itself was taken for its "
+                 "file's"),
+                ('kept_c.py', 'an open that could only fail was taken for a '
+                 'write')):
+            st = os.stat(os.path.join(root, name))
+            self.assertNotIn((st.st_dev, st.st_ino), inodes, what)
+        self.assertNotIn(os.path.join(root, 'kept_c.py'), written,
+                         'an open that could only fail was taken for a write')
         self.assertNotIn(os.path.join(root, 'sub'), written,
                          'a directory opened to read was recorded as a write')
         if hasattr(os, 'O_TMPFILE'):
@@ -524,6 +544,18 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(files[:3], redproof.secret_untracked(files, set()),
                          'a secret directory at the root was copied')
 
+    def test_a_copy_keeps_each_files_mode(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        src, dest = os.path.join(tmp.name, 's'), os.path.join(tmp.name, 'd')
+        os.makedirs(os.path.join(src, 'tools'))
+        hook = os.path.join(src, 'tools', 'hook')
+        open(hook, 'w').close()
+        os.chmod(hook, 0o755)
+        redproof.copy_tree(['tools/hook'], src, dest)
+        self.assertEqual(0o755, os.stat(os.path.join(dest, 'tools', 'hook'))
+                         .st_mode & 0o777, 'a copy lost a file\'s mode')
+
     def test_untracked_secret_names_are_left_out(self):
         files = ['README.md', '.env.local', 'docs/api-credentials.rst',
                  'notes/token-notes.md', 'tests/secret_logging_test.py']
@@ -612,11 +644,12 @@ def task(item):
         return lambda: None
     if item == 'hangs':
         time.sleep(20)
-    if item in ('busy', 'wedged', 'own'):
-        if item == 'wedged':
+    if item in ('busy', 'wedged', 'wedged2', 'own'):
+        if item in ('wedged', 'wedged2'):
             # Stuck: told to stop, it starts more tests instead, which it
             # reports after the parent has stopped reading.
-            signal.signal(signal.SIGTERM, lambda *a: group('late-group'))
+            late = 'late-group' if item == 'wedged' else 'late2-group'
+            signal.signal(signal.SIGTERM, lambda *a: group(late))
         group(item + '-group')
         open(MARK + item, 'w').close()
         time.sleep(30)
@@ -660,6 +693,23 @@ rp.reap = lambda pgid: None
 for result in rp.parallel(task, ['own', 'quick-own'], 2, failed):
     break
 rp.reap = real_reap
+# A wait cut short, as by a signal landing in it: the worker is killed, and
+# what it reported last is still read and its tests killed.
+real_wait_gone = rp._wait_gone
+cut = [False]
+def cut_short(pid, deadline):
+    if not cut[0]:
+        cut[0] = True
+        time.sleep(0.3)
+        raise RuntimeError('a wait cut short')
+    return real_wait_gone(pid, deadline)
+rp._wait_gone = cut_short
+try:
+    for result in rp.parallel(task, ['wedged2', 'quick-wedged2'], 2, failed):
+        break
+except RuntimeError:
+    pass
+rp._wait_gone = real_wait_gone
 # A cleanup that fails says so, not silently.
 real_wait_gone = rp._wait_gone
 def broken(pid, deadline):
@@ -750,7 +800,8 @@ print('dies-after', sorted(got), flush=True)
         # Whatever the script started is killed however the test ends: an
         # assertion failing first left them running for two minutes.
         for name in ('orphan', 'stopped-orphan', 'busy-group', 'wedged-group',
-                     'late-group', 'own-group', 'reaped-group', 'slow-group'):
+                     'late-group', 'own-group', 'reaped-group', 'slow-group',
+                     'wedged2-group', 'late2-group'):
             if lines.get(name, '').strip().isdigit():
                 self.addCleanup(redproof.kill_group, int(lines[name]))
         # The positive control: workers that live return what they made.
@@ -803,7 +854,7 @@ print('dies-after', sorted(got), flush=True)
                          "'dies-after')]", lines.get('dies-after'),
                          'a worker that died after its result lost the run')
         for name in ('orphan', 'stopped-orphan', 'busy-group',
-                     'wedged-group', 'late-group', 'own-group'):
+                     'wedged-group', 'late-group', 'own-group', 'late2-group'):
             self.assertIn(name, lines, self.say('the scenario never started '
                           '%s' % name))
             pid = int(lines[name])
