@@ -136,6 +136,8 @@ class LightCheckTest(unittest.TestCase):
         self.assertEqual(0, code, 'a warning naming a line was blamed on the '
                          'edit that moved it: ' + out)
 
+    @unittest.skipIf(os.name == 'nt', 'a symlink on Windows needs a '
+                     'privilege and core.symlinks, which these repos turn off')
     def test_a_symlink_replaced_by_a_file_is_checked(self):
         os.symlink('mod.py', os.path.join(self.repo, 'link.py'))
         self.git('add', 'link.py')
@@ -147,6 +149,8 @@ class LightCheckTest(unittest.TestCase):
                          + out)
         self.assertIn("'sys' imported but unused", out)
 
+    @unittest.skipIf(os.name == 'nt', 'a symlink on Windows needs a '
+                     'privilege and core.symlinks, which these repos turn off')
     def test_a_symlink_is_not_checked_as_code(self):
         os.symlink('mod.py', os.path.join(self.repo, 'link.py'))
         self.git('add', 'link.py')
