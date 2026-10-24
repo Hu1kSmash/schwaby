@@ -866,6 +866,7 @@ class Run:
         self.largest = 0
         self.lowest_available = available_memory()
         self.tracked_writes = {}
+        self.timing = threading.local()
 
     def workdir(self):
         with self.counter_lock:
@@ -893,6 +894,7 @@ class Run:
     def run(self, nodes, mutation=None, record=False):
         '''Runs nodes in a fresh copy, with the mutation (path, bytes) if any.
         Returns (Result, record dict or None, Classifier, tracked writes).'''
+        started = time.monotonic()
         work = self.workdir()
         copy = os.path.join(work, 'copy')
         self.snapshot.copy(copy)
@@ -900,9 +902,11 @@ class Run:
             with open(os.path.join(copy, mutation[0]), 'wb') as f:
                 f.write(mutation[1])
         record_path = os.path.join(work, 'record.json') if record else None
+        copied = time.monotonic()
         locks = self.locks_for(nodes)
         for lock in locks:
             lock.acquire()
+        locked = time.monotonic()
         try:
             if _stopping.is_set():
                 raise SystemExit(1)
@@ -918,6 +922,11 @@ class Run:
                 audit = json.loads(f.read())
         classifier = Classifier(copy, [work, self.tmp])
         shutil.rmtree(work, ignore_errors=True)
+        # Where the time went, for the entry's line: the copy, the wait for a
+        # port group's lock, and pytest itself; the rest is the harness's.
+        self.timing.copy = copied - started
+        self.timing.lock = locked - copied
+        self.timing.pytest = result.seconds
         return result, audit, classifier, changed
 
     def changed_tracked(self, copy, mutation):
@@ -1201,12 +1210,12 @@ def run_stale(run, args, stale, store, keys, held, unkept):
     done = [0]
     done_lock = threading.Lock()
 
-    def progress(verdict, label, detail, seconds):
+    def progress(verdict, label, detail, seconds, breakdown=''):
         with done_lock:
             done[0] += 1
             n = done[0]
-        print('[%d/%d] %-10s %s  (%.1f s)%s' % (
-            n, total, verdict, label, seconds,
+        print('[%d/%d] %-10s %s  (%.1f s%s)%s' % (
+            n, total, verdict, label, seconds, breakdown,
             ('\n           ' + detail) if detail else ''), flush=True)
 
     baselines = {}
@@ -1252,7 +1261,7 @@ def run_stale(run, args, stale, store, keys, held, unkept):
                 '%s: %s' % (type(e).__name__, e), None
         seconds = time.monotonic() - t0
         verdicts[c.name] = (verdict, detail, seconds)
-        progress(verdict, c.name, detail, seconds)
+        progress(verdict, c.name, detail, seconds, split(run, seconds))
         if unkept is not None:
             return
         # When this verdict was reached, not when the phase began: a proof
@@ -1290,6 +1299,19 @@ def run_stale(run, args, stale, store, keys, held, unkept):
         gib(run.largest), gib(avail) if avail is not None else 'unknown'),
         flush=True)
     return verdicts
+
+
+def split(run, seconds):
+    '''`: copy a, lock b, pytest c, harness d` for the run this thread just
+    made, or '' when it made none (an entry judged without running).'''
+    t = run.timing
+    if not hasattr(t, 'pytest'):
+        return ''
+    own = max(0.0, seconds - t.copy - t.lock - t.pytest)
+    text = ': copy %.1f, lock %.1f, pytest %.1f, harness %.1f' % (
+        t.copy, t.lock, t.pytest, own)
+    del t.copy, t.lock, t.pytest
+    return text
 
 
 def parallel(fn, items, size):
