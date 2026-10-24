@@ -3,6 +3,7 @@ from .utils import (
         AnyStringWith,
         MockAsyncOAuthClient,
         MockOAuthClient,
+        bound_callback_socket,
         free_callback_port,
         no_duplicates
 )
@@ -68,7 +69,12 @@ _skip_on_macos_runner = unittest.skipIf(
 class ClientFromLoginFlowTest(unittest.TestCase):
 
     def setUp(self):
-        self.port = free_callback_port()
+        # Held from the moment its port is chosen and served on, so nothing
+        # can take the port first. The two tests of the flow binding the port
+        # itself take a free one of their own.
+        self.socket = bound_callback_socket()
+        self.addCleanup(self.socket.close)
+        self.port = self.socket.getsockname()[1]
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.token_path = os.path.join(self.tmp_dir.name, 'token.json')
         self.raw_token = {'token': 'yes'}
@@ -86,19 +92,20 @@ class ClientFromLoginFlowTest(unittest.TestCase):
     @_skip_on_macos_runner
     def test_create_token_file(
             self, mock_webbrowser_get, async_session, sync_session, client):
+        port = free_callback_port()
         AUTH_URL = 'https://auth.url.com'
 
         sync_session.return_value = sync_session
         sync_session.create_authorization_url.return_value = AUTH_URL, None
         sync_session.fetch_token.return_value = self.raw_token
 
-        callback_url = f'https://127.0.0.1:{self.port}/callback'
+        callback_url = f'https://127.0.0.1:{port}/callback'
 
         controller = MagicMock()
         mock_webbrowser_get.return_value = controller
         controller.open.side_effect = \
                 lambda auth_url: requests.get(
-                        f'https://127.0.0.1:{self.port}/callback?code=c', verify=False)
+                        f'https://127.0.0.1:{port}/callback?code=c', verify=False)
 
         client.return_value = 'returned client'
 
@@ -121,6 +128,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
     @_skip_on_macos_runner
     def test_the_callback_server_has_exited_when_the_flow_returns(
             self, mock_webbrowser_get, async_session, sync_session, client):
+        port = free_callback_port()
         # A killed server holds the port until it has actually exited, so a
         # second flow started straight after found the port taken. Exited
         # and reaped is checked rather than the port, which is a race: a
@@ -138,7 +146,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         mock_webbrowser_get.return_value = controller
         controller.open.side_effect = \
                 lambda auth_url: requests.get(
-                        f'https://127.0.0.1:{self.port}/callback?code=c', verify=False)
+                        f'https://127.0.0.1:{port}/callback?code=c', verify=False)
 
         started = []
         real_start = multiprocess.Process.start
@@ -149,7 +157,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
 
         with patch.object(multiprocess.Process, 'start', start):
             auth.client_from_login_flow(
-                    API_KEY, APP_SECRET, f'https://127.0.0.1:{self.port}/callback',
+                    API_KEY, APP_SECRET, f'https://127.0.0.1:{port}/callback',
                     self.token_path)
 
         # Positive control: no server started means nothing to have exited.
@@ -185,6 +193,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
 
         auth.client_from_login_flow(
                 API_KEY, APP_SECRET, callback_url, self.token_path,
+                callback_socket=self.socket,
                 requested_browser='custom-browser')
 
         mock_webbrowser_get.assert_called_with('custom-browser')
@@ -217,8 +226,8 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         client.return_value = 'returned client'
 
         auth.client_from_login_flow(
-                API_KEY, APP_SECRET, callback_url, self.token_path, 
-                interactive=False)
+                API_KEY, APP_SECRET, callback_url, self.token_path,
+                callback_socket=self.socket, interactive=False)
 
         with open(self.token_path, 'r') as f:
             self.assertEqual({
@@ -255,7 +264,8 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         client.return_value = 'returned client'
 
         auth.client_from_login_flow(
-                API_KEY, APP_SECRET, callback_url, self.token_path)
+                API_KEY, APP_SECRET, callback_url, self.token_path,
+                callback_socket=self.socket)
 
         with open(self.token_path, 'r') as f:
             self.assertEqual({
@@ -317,7 +327,8 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         with self.assertRaises(auth.RedirectTimeoutError):
             auth.client_from_login_flow(
                     API_KEY, APP_SECRET, f'https://127.0.0.1:{self.port}/callback',
-                    self.token_path, callback_timeout=0.1)
+                    self.token_path,
+                    callback_socket=self.socket, callback_timeout=0.1)
 
         self.assertEqual(3, mock_get.call_count)
 
@@ -340,7 +351,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                     auth.RedirectServerExitedError, 'did not become ready'):
                 auth.client_from_login_flow(
                         API_KEY, APP_SECRET, f'https://127.0.0.1:{self.port}/callback',
-                        self.token_path)
+                        self.token_path, callback_socket=self.socket)
 
 
     @no_duplicates
@@ -394,7 +405,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                 'Something other than the schwaby callback server'):
             auth.client_from_login_flow(
                     API_KEY, APP_SECRET, f'https://127.0.0.1:{self.port}/callback',
-                    self.token_path)
+                    self.token_path, callback_socket=self.socket)
 
 
     @patch('schwaby.auth.Client')
@@ -464,6 +475,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                                     'Timed out waiting'):
             auth.client_from_login_flow(
                     API_KEY, APP_SECRET, callback_url, self.token_path,
+                    callback_socket=self.socket,
                     callback_timeout=0.01)
 
 
@@ -487,6 +499,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'endless wait requested'):
             auth.client_from_login_flow(
                     API_KEY, APP_SECRET, callback_url, self.token_path,
+                    callback_socket=self.socket,
                     callback_timeout=None)
 
 
@@ -510,7 +523,80 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'endless wait requested'):
             auth.client_from_login_flow(
                     API_KEY, APP_SECRET, callback_url, self.token_path,
+                    callback_socket=self.socket,
                     callback_timeout=0)
+
+    @no_duplicates
+    @patch('schwaby.auth.Client')
+    @patch('schwaby.auth.OAuth2Client', new_callable=MockOAuthClient)
+    @patch('schwaby.auth.AsyncOAuth2Client', new_callable=MockAsyncOAuthClient)
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    @patch('schwaby.auth.input', MagicMock(return_value=''))
+    @patch('time.time', MagicMock(return_value=MOCK_NOW))
+    @_skip_on_macos_runner
+    def test_a_held_socket_is_served_on_and_left_open(
+            self, mock_webbrowser_get, async_session, sync_session, client):
+        # The socket is bound and not listening, so the flow has to put it
+        # in the listening state; and it is held, so a server binding the
+        # port itself would find it taken and exit.
+        sync_session.return_value = sync_session
+        sync_session.create_authorization_url.return_value = (
+                'https://auth.url.com', None)
+        sync_session.fetch_token.return_value = self.raw_token
+
+        controller = MagicMock()
+        mock_webbrowser_get.return_value = controller
+        controller.open.side_effect = \
+                lambda auth_url: requests.get(
+                        f'https://127.0.0.1:{self.port}/callback?code=c',
+                        verify=False)
+
+        with patch('schwaby.auth.SERVER_STARTUP_TIMEOUT', 10):
+            auth.client_from_login_flow(
+                    API_KEY, APP_SECRET,
+                    f'https://127.0.0.1:{self.port}/callback',
+                    self.token_path, callback_socket=self.socket)
+
+        with open(self.token_path, 'r') as f:
+            self.assertEqual(self.raw_token, json.load(f)['token'])
+        # Left open and still bound: closing it is the caller's.
+        self.assertNotEqual(-1, self.socket.fileno())
+        self.assertEqual(('127.0.0.1', self.port), self.socket.getsockname())
+
+    @no_duplicates
+    @patch('schwaby.auth.webbrowser.get', new_callable=MagicMock)
+    def test_a_held_socket_must_be_bound_to_the_callback_port(
+            self, mock_webbrowser_get):
+        import socket
+        other = bound_callback_socket()
+        unbound = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        datagram = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        for s in (other, unbound, datagram):
+            self.addCleanup(s.close)
+        datagram.bind(('127.0.0.1', 0))
+        url = f'https://127.0.0.1:{self.port}/callback'
+
+        # Refused before any server starts. Bounded all the same, so a check
+        # that let one through fails in seconds rather than in the half
+        # minute a server gets to come up.
+        for name, held, port in (
+                ('another port', other, self.port),
+                ('unbound', unbound, self.port),
+                ('not TCP', datagram, datagram.getsockname()[1])):
+            with self.subTest(name), \
+                    patch('schwaby.auth.SERVER_STARTUP_TIMEOUT', 2):
+                with self.assertRaisesRegex(
+                        ValueError, 'callback_socket must be a TCP socket'):
+                    auth.client_from_login_flow(
+                            API_KEY, APP_SECRET,
+                            f'https://127.0.0.1:{port}/callback',
+                            self.token_path, callback_socket=held)
+
+        with self.assertRaisesRegex(TypeError, 'must be a socket.socket'):
+            auth.client_from_login_flow(
+                    API_KEY, APP_SECRET, url, self.token_path,
+                    callback_socket=self.socket.fileno())
+        mock_webbrowser_get.assert_not_called()
 
 
 class ClientFromTokenFileTest(unittest.TestCase):

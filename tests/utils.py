@@ -15,12 +15,22 @@ def free_callback_port():
     callback URL: a fixed one (6969) made any two runs of the suite on one
     machine fail each other. The port is free when this returns and the flow
     binds it a moment later, so another process could take it between the
-    two; the flow cannot be handed a socket already bound. With a port of
+    two; a test that is not about the flow binding its port serves on
+    bound_callback_socket() instead, which leaves no such gap. With a port of
     its own, a login-flow test needs no worker or run to itself: two flows
     side by side no longer take each other's server for their own.'''
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('127.0.0.1', 0))
         return s.getsockname()[1]
+
+
+def bound_callback_socket():
+    '''A loopback socket bound to a port of its own, held from the moment the
+    port is chosen, for a login flow to serve on as its ``callback_socket``.
+    Bound and not listening: the flow puts it in the listening state.'''
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(('127.0.0.1', 0))
+    return s
 
 
 # Resolved from this file rather than the working directory. Every test that

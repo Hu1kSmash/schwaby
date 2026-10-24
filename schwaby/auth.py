@@ -15,6 +15,7 @@ import math
 import numbers
 import os
 import queue
+import socket
 import sys
 import tempfile
 import time
@@ -691,7 +692,8 @@ INTERNAL_STATUS_PATH = '/schwaby-internal/status'
 
 # This runs in a separate process and is invisible to coverage
 def __run_client_from_login_flow_server(
-        q, callback_port, callback_path):  # pragma: no cover
+        q, callback_port, callback_path,
+        callback_socket=None):  # pragma: no cover
     '''Helper server for intercepting redirects to the callback URL. See
     client_from_login_flow for details.'''
 
@@ -724,7 +726,15 @@ def __run_client_from_login_flow_server(
 
         old_stdout = sys.stdout
         sys.stdout = devnull
-        app.run(port=callback_port, ssl_context='adhoc')
+        if callback_socket is None:
+            app.run(port=callback_port, ssl_context='adhoc')
+        else:
+            # What app.run does, on the socket the caller holds rather than
+            # on one it binds.
+            from werkzeug.serving import make_server
+            make_server('127.0.0.1', callback_port, app, threaded=True,
+                        ssl_context='adhoc',
+                        fd=callback_socket.fileno()).serve_forever()
         sys.stdout = old_stdout
 
 
@@ -746,7 +756,8 @@ SERVER_STARTUP_TIMEOUT = 30.0
 def client_from_login_flow(api_key, app_secret, callback_url, token_path,
                            asyncio=False, enforce_enums=False, 
                            token_write_func=None, callback_timeout=300.0,
-                           interactive=True, requested_browser=None):
+                           interactive=True, requested_browser=None,
+                           callback_socket=None):
     '''
     Open a web browser to perform an OAuth webapp login flow and creates a 
     client wrapped around the resulting token. The client will be configured to 
@@ -800,6 +811,14 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
                               under the hood, so you can find a table of valid 
                               values
                               `here <https://docs.python.org/3/library/webbrowser.html#webbrowser.register>`__
+    :param callback_socket: A TCP socket already bound to ``127.0.0.1`` at the
+                            callback URL's port, for the callback server to
+                            serve on instead of binding the port itself. For
+                            a program that has to hold the port from the
+                            moment it chooses it, so that nothing else can
+                            take it before the server starts. The flow puts
+                            it in the listening state, and leaves it open:
+                            closing it is the caller's.
     '''
     api_key = __normalize_credential(api_key, 'api_key')
     app_secret = __normalize_credential(app_secret, 'app_secret')
@@ -825,6 +844,21 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
 
     callback_port = parsed.port if parsed.port else 443
     callback_path = parsed.path if parsed.path else '/'
+
+    if callback_socket is not None:
+        if not isinstance(callback_socket, socket.socket):
+            raise TypeError('callback_socket must be a socket.socket')
+        if (callback_socket.family != socket.AF_INET
+                or callback_socket.type != socket.SOCK_STREAM
+                or callback_socket.getsockname() != (
+                    '127.0.0.1', callback_port)):
+            raise ValueError(
+                    'callback_socket must be a TCP socket bound to '
+                    '127.0.0.1:{}, the callback URL\'s port'.format(
+                        callback_port))
+        # A socket that is bound but not listening refuses every connection,
+        # which the wait below would report as a server that never came up.
+        callback_socket.listen()
 
     # Imported here rather than at module scope: this is the only entry point
     # that runs a local callback server, and a process which loads its token
@@ -855,7 +889,8 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
 
     server = multiprocess.Process(
             target=__run_client_from_login_flow_server,
-            args=(output_queue, callback_port, callback_path))
+            args=(output_queue, callback_port, callback_path,
+                  callback_socket))
 
     # Context manager to kill the server upon completion
     @contextlib.contextmanager

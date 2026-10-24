@@ -70,6 +70,66 @@ CASES = [
          'extra',
          removed=('schwaby/_optional.py was deleted in 3.0.0 with the extras machinery.')),
 
+    # A login flow handed a socket serves on it, so nothing can take the port
+    # between the caller choosing it and the server starting. Served on, put
+    # in the listening state, and checked against the callback URL.
+    Case('auth/a-held-socket-is-served-on',
+         'schwaby/auth.py',
+         "        if callback_socket is None:\n            app.run(",
+         "        if True:\n            app.run(",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_held_socket_is_served_on_and_left_open',
+         'Redirect server exited'),
+
+    Case('auth/a-held-socket-reaches-the-server',
+         'schwaby/auth.py',
+         "            args=(output_queue, callback_port, callback_path,\n"
+         "                  callback_socket))",
+         "            args=(output_queue, callback_port, callback_path))",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_held_socket_is_served_on_and_left_open',
+         'Redirect server exited'),
+
+    Case('auth/a-held-socket-is-put-listening',
+         'schwaby/auth.py',
+         "        callback_socket.listen()\n",
+         "",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_held_socket_is_served_on_and_left_open',
+         'did not become ready'),
+
+    Case('auth/a-held-socket-must-be-on-the-callback-port',
+         'schwaby/auth.py',
+         "                or callback_socket.type != socket.SOCK_STREAM\n"
+         "                or callback_socket.getsockname() != (\n"
+         "                    '127.0.0.1', callback_port)):",
+         "                or callback_socket.type != socket.SOCK_STREAM):",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_held_socket_must_be_bound_to_the_callback_port',
+         # Let through, the socket is served on while the flow waits on the
+         # URL's port, where nothing answers.
+         'did not become ready',
+         subtest='another port'),
+
+    Case('auth/a-held-socket-must-be-tcp',
+         'schwaby/auth.py',
+         "                or callback_socket.type != socket.SOCK_STREAM\n",
+         "",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_held_socket_must_be_bound_to_the_callback_port',
+         # Let through, a datagram socket cannot be put listening.
+         'OSError',
+         subtest='not TCP'),
+
+    Case('auth/a-held-socket-must-be-a-socket',
+         'schwaby/auth.py',
+         "        if not isinstance(callback_socket, socket.socket):\n"
+         "            raise TypeError('callback_socket must be a socket.socket')\n",
+         "",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_held_socket_must_be_bound_to_the_callback_port',
+         "'int' object has no attribute 'family'"),
+
     # 'Invalid Service' is Schwab's error label. Reported as a new service it
     # asked for an issue, which sent a reader looking for one to support.
     Case('streaming/invalid-service-is-not-a-new-service',
