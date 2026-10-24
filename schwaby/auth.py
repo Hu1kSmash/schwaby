@@ -866,7 +866,9 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
     if callback_socket is not None:
         if not isinstance(callback_socket, socket.socket):
             raise TypeError('callback_socket must be a socket.socket')
-        if (callback_socket.family != socket.AF_INET
+        # A closed socket's fileno is -1, and getsockname raises on it.
+        if (callback_socket.fileno() == -1
+                or callback_socket.family != socket.AF_INET
                 or callback_socket.type != socket.SOCK_STREAM
                 or callback_socket.getsockname() != (
                     '127.0.0.1', callback_port)):
@@ -959,10 +961,14 @@ def client_from_login_flow(api_key, app_secret, callback_url, token_path,
                 # self-signed certificate. httpx2 says nothing about that; the
                 # suppression which used to sit here was for a urllib3 warning
                 # that never reached this code.
+                # A short connect timeout: a held socket is listening
+                # before the server is, so a probe gets into its queue and
+                # waits for a handshake nobody answers, five seconds by
+                # default, which also ran past the startup deadline.
                 resp = httpx2.get(
                         'https://127.0.0.1:{}{}'.format(
                             callback_port, INTERNAL_STATUS_PATH),
-                        verify=False)
+                        verify=False, timeout=httpx2.Timeout(5.0, connect=1.0))
             except (httpx2.ConnectError, httpx2.ConnectTimeout):
                 # Not listening yet. Which of the two you get depends on the
                 # host: a port nothing is bound to is normally refused, giving

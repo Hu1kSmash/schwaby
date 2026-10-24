@@ -664,6 +664,8 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         other = bound_callback_socket()
         unbound = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         datagram = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        closed = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        closed.close()
         for s in (other, unbound, datagram):
             self.addCleanup(s.close)
         # UDP ports are their own space, so this one can share the TCP
@@ -671,13 +673,25 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         datagram.bind(('127.0.0.1', self.port))
         url = f'https://127.0.0.1:{self.port}/callback'
 
+        import multiprocess
+        started = []
+        real_start = multiprocess.Process.start
+
+        def start(process):
+            started.append(process)
+            real_start(process)
+
+        patcher = patch.object(multiprocess.Process, 'start', start)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         # Refused before any server starts. Bounded all the same, so a check
         # that let one through fails in seconds rather than in the half
         # minute a server gets to come up.
         for name, held, port in (
                 ('another port', other, self.port),
                 ('unbound', unbound, self.port),
-                ('not TCP', datagram, self.port)):
+                ('not TCP', datagram, self.port),
+                ('closed', closed, self.port)):
             with self.subTest(name), \
                     patch('schwaby.auth.SERVER_STARTUP_TIMEOUT', 2):
                 with self.assertRaisesRegex(
@@ -692,6 +706,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
                     API_KEY, APP_SECRET, url, self.token_path,
                     callback_socket=self.socket.fileno())
         mock_webbrowser_get.assert_not_called()
+        self.assertEqual([], started, 'a callback server was started')
 
 
 class ClientFromTokenFileTest(unittest.TestCase):

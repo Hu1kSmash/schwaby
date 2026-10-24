@@ -1744,10 +1744,6 @@ class StreamClient(EnumEnforcer):
           or a frame carrying a whole channel it does not read. An unknown
           service populates ``service``; an unread channel does not, because
           a channel is not one --- its names are on ``message`` instead.
-          Schwab's ``'Invalid Service'``, which it has sent in place of a
-          service name in the second before closing a connection, arrives
-          the same way with that as ``service``, and is logged as Schwab's
-          error rather than as a service to support.
           Those last two are messages this
           client drops because Schwab added something rather than because
           anything is malformed, and they are the ones a consumer cannot see
@@ -1772,7 +1768,11 @@ class StreamClient(EnumEnforcer):
           per tick, which would otherwise be a log-volume incident on top of
           the outage -- and, because these share a bounded queue with the late
           rejections above, would push out the one thing nothing else will ever
-          report.
+          report. Schwab's ``'Invalid Service'``, which it has once sent in
+          place of a service name in the second before closing a connection,
+          is reported the same way, with that as ``service``. It is not one
+          of the two above: it is logged as Schwab's error rather than as a
+          service to support, and it is coalesced like the malformed kinds.
 
         Each is logged as it was before. The callback is what makes them
         something other than a log record.
@@ -1988,8 +1988,8 @@ class StreamClient(EnumEnforcer):
             # since a handler watching the stream needs to know the venue
             # said something was wrong.
             self._absorb('a message naming Schwab\'s error "Invalid Service" '
-                         'in place of a service, which Schwab has sent just '
-                         'before closing the connection',
+                         'in place of a service, which Schwab has once sent '
+                         'just before closing the connection',
                          service, frame=msg, service=service)
             return
 

@@ -121,6 +121,16 @@ CASES = [
          'OSError',
          subtest='not TCP'),
 
+    Case('auth/a-closed-socket-is-refused',
+         'schwaby/auth.py',
+         "        if (callback_socket.fileno() == -1\n"
+         "                or callback_socket.family != socket.AF_INET\n",
+         "        if (callback_socket.family != socket.AF_INET\n",
+         'tests/auth_test.py::ClientFromLoginFlowTest'
+         '::test_a_held_socket_must_be_bound_to_the_callback_port',
+         'Bad file descriptor',
+         subtest='closed'),
+
     Case('auth/a-held-socket-must-be-a-socket',
          'schwaby/auth.py',
          "        if not isinstance(callback_socket, socket.socket):\n"
