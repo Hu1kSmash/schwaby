@@ -38,7 +38,10 @@ class LightCheckTest(unittest.TestCase):
                               capture_output=True, check=True)
 
     def write(self, name, text):
-        with open(os.path.join(self.repo, name), 'w') as f:
+        # LF on every platform: written in text mode on Windows, each line
+        # ends in CRLF, which `git diff --check` reports as trailing
+        # whitespace.
+        with open(os.path.join(self.repo, name), 'w', newline='\n') as f:
             f.write(text)
 
     def check(self):
