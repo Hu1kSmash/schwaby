@@ -544,6 +544,14 @@ class ShardTest(unittest.TestCase):
                 name in [c.name for c in narrow],
                 'which slice %s is in depends on the others' % name)
 
+    def test_the_shard_line_names_the_slice_and_the_whole(self):
+        everything = self.cases()
+        mine = redproof.select(everything, [], (2, 3))
+        self.assertEqual(
+            'redproof: shard 2/3: %d of 200 entries' % len(mine),
+            redproof.shard_line((2, 3), len(mine), len(everything)),
+            'the shard line misstates the slice or the whole')
+
     def test_an_empty_slice_is_not_a_failed_name(self):
         # One entry, three slices: two of them hold nothing.
         one = self.cases()[:1]

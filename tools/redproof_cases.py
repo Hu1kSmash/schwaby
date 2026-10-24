@@ -6564,3 +6564,14 @@ CASES.append(
          'tests/redproof_tool_test.py::JudgeTest'
          '::test_a_rewritten_asserts_quoted_expression_is_not_what_failed',
          "quoted expression was taken for what failed"))
+
+CASES.append(
+    # A scheduler divides a run by this line, so its two counts must be the
+    # slice's and the whole's, in that order.
+    Case('harness/the-shard-line-states-slice-and-whole',
+         'tools/redproof.py',
+         '        shard[0], shard[1], in_slice, total)',
+         '        shard[0], shard[1], total, in_slice)',
+         'tests/redproof_tool_test.py::ShardTest'
+         '::test_the_shard_line_names_the_slice_and_the_whole',
+         'the shard line misstates the slice or the whole'))

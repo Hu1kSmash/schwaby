@@ -1043,6 +1043,13 @@ def in_shard(name, shard):
     return int(sha(name.encode('utf-8')), 16) % n == k - 1
 
 
+def shard_line(shard, in_slice, total):
+    '''The line a scheduler reads to see how a run was divided: this slice's
+    selected entries and the whole selection's, before slicing.'''
+    return 'redproof: shard %d/%d: %d of %d entries' % (
+        shard[0], shard[1], in_slice, total)
+
+
 def select(cases, names, shard):
     '''The entries this run judges, or None when --name matches nothing.'''
     selected = [c for c in cases
@@ -1090,6 +1097,9 @@ def judge_all(run, args, started):
     print('redproof: %d selected, %d kept, %d removed, %d to run%s' % (
         len(selected), len(kept), len(removed), len(stale),
         ' (shard %d/%d)' % args.shard if args.shard else ''), flush=True)
+    if args.shard:
+        print(shard_line(args.shard, len(selected),
+                         len(select(cases, args.name, None))), flush=True)
     if unkept:
         print('redproof: verdicts are not kept or reused in this run: %s'
               % unkept, flush=True)
