@@ -49,7 +49,11 @@ class _Collect:
         self.messages.append('syntax error: %s' % msg)
 
     def flake(self, message):
-        self.messages.append(message.message % message.message_args)
+        # Some messages name a line ("redefinition of unused 'x' from line
+        # 20"): without it a warning moved by an edit above it is the same
+        # warning, not a new one.
+        self.messages.append(re.sub(r'\bline \d+', 'line N',
+                                    message.message % message.message_args))
 
 
 def warnings_in(source, filename):
@@ -75,7 +79,7 @@ def staged_python():
     '''(path, its path at HEAD) for each staged Python file. A renamed file
     is compared with what it was, which is not a new file with every warning
     new; a symlink is not code.'''
-    out = git('diff', '--cached', '--raw', '-z', '-M', '--diff-filter=ACMR')
+    out = git('diff', '--cached', '--raw', '-z', '-M', '--diff-filter=ACMRT')
     fields = out.stdout.split(b'\0')
     staged = []
     i = 0
@@ -101,9 +105,10 @@ def new_warnings(path, before_path):
               if before_text is not None else collections.Counter())
     new = now - before
     # A file that does not parse fails whatever HEAD had: that it did not
-    # parse before either is no reason to commit it.
+    # parse before either is no reason to commit it. On 3.10 a NUL byte is
+    # reported as an `error:`, not a syntax error.
     for message in now:
-        if message.startswith('syntax error:'):
+        if message.startswith(('syntax error:', 'error:')):
             new[message] = now[message]
     return sorted(new.elements())
 

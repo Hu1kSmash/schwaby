@@ -94,6 +94,7 @@ class LightCheckTest(unittest.TestCase):
         code, out = self.check()
         self.assertEqual(1, code, 'the working tree was checked instead of '
                          'the index: ' + out)
+        self.assertIn("'sys' imported but unused", out)
 
     def test_a_renamed_file_keeps_its_old_warnings(self):
         self.git('mv', 'mod.py', 'renamed.py')
@@ -125,6 +126,26 @@ class LightCheckTest(unittest.TestCase):
         code, out = self.check()
         self.assertEqual(1, code, 'a file that still does not parse was let '
                          'through: ' + out)
+        self.assertIn('broken.py: syntax error', out)
+
+    def test_a_warning_that_names_a_line_is_the_same_when_moved(self):
+        self.stage('dup.py', 'import os\nimport os\n')
+        self.git('commit', '-q', '--no-verify', '-m', 'dup')
+        self.stage('dup.py', '# a line above it\nimport os\nimport os\n')
+        code, out = self.check()
+        self.assertEqual(0, code, 'a warning naming a line was blamed on the '
+                         'edit that moved it: ' + out)
+
+    def test_a_symlink_replaced_by_a_file_is_checked(self):
+        os.symlink('mod.py', os.path.join(self.repo, 'link.py'))
+        self.git('add', 'link.py')
+        self.git('commit', '-q', '--no-verify', '-m', 'link')
+        os.remove(os.path.join(self.repo, 'link.py'))
+        self.stage('link.py', 'import sys\n')
+        code, out = self.check()
+        self.assertEqual(1, code, 'a file that was a symlink went unchecked: '
+                         + out)
+        self.assertIn("'sys' imported but unused", out)
 
     def test_a_symlink_is_not_checked_as_code(self):
         os.symlink('mod.py', os.path.join(self.repo, 'link.py'))

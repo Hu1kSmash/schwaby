@@ -3,12 +3,15 @@
 # Turned on with: git config core.hooksPath tools/hooks
 #
 # The interpreter that has the dev tools: the active virtualenv, else one at
-# the checkout's root (.venv, or venv as CONTRIBUTING creates it), else
-# python3, which says plainly if pyflakes is missing.
+# the checkout's root (.venv, or venv as CONTRIBUTING creates it; bin/ on
+# POSIX, Scripts\ on Windows), else python3, which says plainly if pyflakes
+# is missing.
 root=$(git rev-parse --show-toplevel) || exit 1
 python=python3
-for candidate in "$root/venv/bin/python" "$root/.venv/bin/python" \
-                 "${VIRTUAL_ENV:+$VIRTUAL_ENV/bin/python}"; do
+for candidate in "$root/venv/bin/python" "$root/venv/Scripts/python.exe" \
+                 "$root/.venv/bin/python" "$root/.venv/Scripts/python.exe" \
+                 "${VIRTUAL_ENV:+$VIRTUAL_ENV/bin/python}" \
+                 "${VIRTUAL_ENV:+$VIRTUAL_ENV/Scripts/python.exe}"; do
   [ -n "$candidate" ] && [ -x "$candidate" ] && python=$candidate
 done
 exec "$python" "$root/tools/light_check.py"
