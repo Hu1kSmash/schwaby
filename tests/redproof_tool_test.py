@@ -987,7 +987,10 @@ class PoolSizeTest(unittest.TestCase):
         return argparse.Namespace(jobs=jobs)
 
     def test_two_at_a_time_unless_told_to_use_every_core(self):
+        # A host of 20, so neither the machine running the suite nor a
+        # mutation counting every core can come out at two by accident.
         with patch.dict(os.environ, {}, clear=True), \
+                patch.object(redproof, 'host_cpus', lambda: 20), \
                 patch.object(redproof, 'available_memory', lambda: None):
             self.assertEqual(2, redproof.pool_size(self.args(), 0)[0])
         with patch.dict(os.environ, {'REDPROOF_JOBS_ALL': '1'}), \
@@ -1030,9 +1033,11 @@ class PoolSizeTest(unittest.TestCase):
         size, reason = pool({'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '4c'})
         self.assertEqual(20, size)
         self.assertIn("RUNQ_CORES='4c' not understood", reason)
-        # Positive controls: unset, or above the host's count, the host
-        # decides and RUNQ_CORES is not named.
+        # Positive controls: unset, blank, equal to the host's count or above
+        # it, the host decides and RUNQ_CORES is not named.
         for env in ({'REDPROOF_JOBS_ALL': '1'},
+                    {'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '  '},
+                    {'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '20'},
                     {'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '64'}):
             with self.subTest(env=env):
                 size, reason = pool(env)

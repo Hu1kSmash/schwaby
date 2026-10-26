@@ -6631,6 +6631,20 @@ HARNESS_CASES = [
          'tests/redproof_tool_test.py::PoolSizeTest'
          '::test_the_pool_is_sized_to_runq_cores_and_says_so',
          "'RUNQ_CORES' unexpectedly found", subtest="'RUNQ_CORES': '64'"),
+    Case('harness/runq-cores-equal-to-the-host-are-not-named',
+         'tools/redproof.py',
+         "    return ', RUNQ_CORES caps them' if cap < host_cpus() else ''\n",
+         "    return ', RUNQ_CORES caps them' if cap <= host_cpus() else ''\n",
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
+         "'RUNQ_CORES' unexpectedly found", subtest="'RUNQ_CORES': '20'"),
+    Case('harness/blank-runq-cores-are-not-named',
+         'tools/redproof.py',
+         "    raw = os.environ.get('RUNQ_CORES', '').strip()\n",
+         "    raw = os.environ.get('RUNQ_CORES', '')\n",
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
+         "'RUNQ_CORES' unexpectedly found", subtest="'RUNQ_CORES': '  '"),
     Case('harness/runq-cores-it-cannot-read-are-named',
          'tools/redproof.py',
          "        return (', RUNQ_CORES=%r not understood, so not applied' % raw\n"
