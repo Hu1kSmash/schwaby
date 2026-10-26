@@ -1005,6 +1005,58 @@ class PoolSizeTest(unittest.TestCase):
         self.assertEqual(6, size)
         self.assertIn('memory holds 6', reason)
 
+    def test_a_runq_memory_cap_bounds_what_is_available(self):
+        # /proc/meminfo describes the host; a runq job's unit may be capped
+        # below it, and says so in RUNQ_MEMORY_GB.
+        host = 30 << 30
+        for value, expected in (('8', 8 << 30),
+                                ('0.5', 1 << 29),
+                                # A cap above what the host has free does
+                                # not raise it.
+                                ('64', host),
+                                ('', host), ('eight', host), ('0', host),
+                                ('-8', host)):
+            with self.subTest(RUNQ_MEMORY_GB=value), \
+                    patch.dict(os.environ, {'RUNQ_MEMORY_GB': value}), \
+                    patch.object(redproof, 'meminfo_available',
+                                 lambda: host):
+                self.assertEqual(expected, redproof.available_memory())
+        with patch.dict(os.environ, {}, clear=True), \
+                patch.object(redproof, 'meminfo_available', lambda: host):
+            self.assertEqual(host, redproof.available_memory())
+        # Where the kernel says nothing, the cap is all there is.
+        with patch.dict(os.environ, {'RUNQ_MEMORY_GB': '8'}), \
+                patch.object(redproof, 'meminfo_available', lambda: None):
+            self.assertEqual(8 << 30, redproof.available_memory())
+        with patch.dict(os.environ, {}, clear=True), \
+                patch.object(redproof, 'meminfo_available', lambda: None):
+            self.assertIsNone(redproof.available_memory())
+
+    def test_the_pool_is_sized_to_a_runq_memory_cap_and_says_so(self):
+        # 8 GiB less the floor holds six runs of a GiB, though the host has
+        # room for 28.
+        with patch.dict(os.environ, {'REDPROOF_JOBS_ALL': '1',
+                                     'RUNQ_MEMORY_GB': '8'}), \
+                patch.object(redproof, 'usable_cpus', lambda: 20), \
+                patch.object(redproof, 'meminfo_available',
+                             lambda: 30 << 30):
+            size, reason = redproof.pool_size(self.args(), 1 << 30)
+        self.assertEqual(6, size)
+        self.assertIn('8.0 GiB available, RUNQ_MEMORY_GB caps it', reason)
+        # Positive control: without the cap, or with one above what the host
+        # has free, the host's memory decides, and the cap is not named.
+        for env in ({}, {'RUNQ_MEMORY_GB': '64'}):
+            with self.subTest(env=env), \
+                    patch.dict(os.environ, dict(env, REDPROOF_JOBS_ALL='1')), \
+                    patch.object(redproof, 'usable_cpus', lambda: 20), \
+                    patch.object(redproof, 'meminfo_available',
+                                 lambda: 30 << 30):
+                if not env:
+                    os.environ.pop('RUNQ_MEMORY_GB', None)
+                size, reason = redproof.pool_size(self.args(), 1 << 30)
+                self.assertEqual(20, size)
+                self.assertNotIn('RUNQ_MEMORY_GB', reason)
+
 
 class CasesTest(unittest.TestCase):
 

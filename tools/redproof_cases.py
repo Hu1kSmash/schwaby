@@ -6484,6 +6484,60 @@ HARNESS_CASES = [
          'tests/redproof_tool_test.py::PoolSizeTest'
          '::test_memory_bounds_the_pool_and_says_so',
          '6 != 20'),
+    # A runq job's unit can be capped below what /proc/meminfo says the host
+    # has free, and RUNQ_MEMORY_GB says by how much. A case per branch.
+    Case('harness/a-runq-memory-cap-is-read',
+         'tools/redproof.py',
+         '    known = [n for n in (meminfo_available(), runq_memory_cap())\n',
+         '    known = [n for n in (meminfo_available(),)\n',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_runq_memory_cap_bounds_what_is_available',
+         '8589934592 != 32212254720', subtest="RUNQ_MEMORY_GB='8'"),
+    Case('harness/a-runq-memory-cap-only-lowers',
+         'tools/redproof.py',
+         '    return min(known) if known else None\n',
+         '    return max(known) if known else None\n',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_runq_memory_cap_bounds_what_is_available',
+         '32212254720 != 68719476736', subtest="RUNQ_MEMORY_GB='64'"),
+    Case('harness/an-unknown-measure-is-left-out',
+         'tools/redproof.py',
+         '             if n is not None]\n',
+         '             if True]\n',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_runq_memory_cap_bounds_what_is_available',
+         'not supported between instances'),
+    Case('harness/a-cap-that-is-not-a-number-is-ignored',
+         'tools/redproof.py',
+         "        cap = float(os.environ.get('RUNQ_MEMORY_GB', ''))\n"
+         "    except ValueError:\n",
+         "        cap = float(os.environ.get('RUNQ_MEMORY_GB', ''))\n"
+         "    except ZeroDivisionError:\n",
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_runq_memory_cap_bounds_what_is_available',
+         'could not convert string to float', subtest="RUNQ_MEMORY_GB='eight'"),
+    Case('harness/a-cap-that-is-not-positive-is-ignored',
+         'tools/redproof.py',
+         '    return int(cap * (1 << 30)) if cap > 0 else None\n',
+         '    return int(cap * (1 << 30))\n',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_runq_memory_cap_bounds_what_is_available',
+         '32212254720 != 0', subtest="RUNQ_MEMORY_GB='0'"),
+    Case('harness/the-pool-says-a-cap-decided-it',
+         'tools/redproof.py',
+         "    capped = (', RUNQ_MEMORY_GB caps it'\n",
+         "    capped = (''\n",
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_the_pool_is_sized_to_a_runq_memory_cap_and_says_so',
+         "RUNQ_MEMORY_GB caps it' not found"),
+    Case('harness/the-pool-names-a-cap-only-when-it-decided',
+         'tools/redproof.py',
+         '              if cap is not None and cap <= avail else \'\')\n',
+         '              if cap is not None else \'\')\n',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_the_pool_is_sized_to_a_runq_memory_cap_and_says_so',
+         "'RUNQ_MEMORY_GB' unexpectedly found",
+         subtest="'RUNQ_MEMORY_GB': '64'"),
     Case('harness/two-at-a-time-unless-told-otherwise',
          'tools/redproof.py',
          '    cpus = args.jobs or (usable_cpus() if whole else 2)',

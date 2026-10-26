@@ -77,7 +77,8 @@ a machine to itself sets; two at a time otherwise, since a run on a machine
 someone is using should stay modest. No more than memory holds, beyond the
 one run that always goes ahead: the pool is min(cores, (available memory -
 FLOOR) / the largest run measured so far), at least one, printed with its
-reason. The first baseline runs alone to give that
+reason. Available memory is MemAvailable, or a runq job's RUNQ_MEMORY_GB
+where that is lower. The first baseline runs alone to give that
 measurement. `--jobs` overrides the core count. Entries run side by side
 whatever their tests are: each login-flow test takes a free callback port of
 its own, so two no longer take each other's server for their own.
@@ -161,6 +162,18 @@ def usable_cpus():
 
 
 def available_memory():
+    '''The memory runs may use, in bytes, or None where nothing says: the
+    lower of MemAvailable and a runq job's cap. /proc/meminfo describes the
+    host, not the job's unit, so under a cap smaller than the host's free
+    memory it alone would size the pool past what the unit allows. runq
+    states the cap as RUNQ_MEMORY_GB, in GiB, as systemd's MemoryMax counts
+    them.'''
+    known = [n for n in (meminfo_available(), runq_memory_cap())
+             if n is not None]
+    return min(known) if known else None
+
+
+def meminfo_available():
     '''MemAvailable, in bytes, or None where the kernel does not say.'''
     try:
         with open('/proc/meminfo', 'rb') as f:
@@ -170,6 +183,16 @@ def available_memory():
     except OSError:
         pass
     return None
+
+
+def runq_memory_cap():
+    '''RUNQ_MEMORY_GB in bytes, or None when it is unset or not a positive
+    number.'''
+    try:
+        cap = float(os.environ.get('RUNQ_MEMORY_GB', ''))
+    except ValueError:
+        return None
+    return int(cap * (1 << 30)) if cap > 0 else None
 
 
 def gib(n):
@@ -738,8 +761,12 @@ def pool_size(args, per_task):
         return cpus, '%s; memory not measured' % cpu_reason
     by_memory = max(1, int((avail - FLOOR) // per_task))
     size = max(1, min(cpus, by_memory))
-    return size, '%s; memory holds %d (%s available - %s floor) / %s a run' % (
-        cpu_reason, by_memory, gib(avail), gib(FLOOR), gib(per_task))
+    cap = runq_memory_cap()
+    capped = (', RUNQ_MEMORY_GB caps it'
+              if cap is not None and cap <= avail else '')
+    return size, '%s; memory holds %d (%s available%s - %s floor) / %s a ' \
+        'run' % (cpu_reason, by_memory, gib(avail), capped, gib(FLOOR),
+                 gib(per_task))
 
 
 def run_entries(run, args, entries):
