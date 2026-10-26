@@ -6518,11 +6518,51 @@ HARNESS_CASES = [
          'could not convert string to float', subtest="RUNQ_MEMORY_GB='eight'"),
     Case('harness/a-cap-that-is-not-positive-is-ignored',
          'tools/redproof.py',
-         '    return int(cap * (1 << 30)) if cap > 0 else None\n',
-         '    return int(cap * (1 << 30))\n',
+         '    return int(cap * (1 << 30)) if math.isfinite(cap) and cap > 0 '
+         'else None\n',
+         '    return int(cap * (1 << 30)) if math.isfinite(cap) else None\n',
          'tests/redproof_tool_test.py::PoolSizeTest'
          '::test_a_runq_memory_cap_bounds_what_is_available',
          '32212254720 != 0', subtest="RUNQ_MEMORY_GB='0'"),
+    Case('harness/a-cap-that-is-not-finite-is-ignored',
+         'tools/redproof.py',
+         '    return int(cap * (1 << 30)) if math.isfinite(cap) and cap > 0 '
+         'else None\n',
+         '    return int(cap * (1 << 30)) if cap > 0 else None\n',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_runq_memory_cap_bounds_what_is_available',
+         'cannot convert float infinity to integer',
+         subtest="RUNQ_MEMORY_GB='inf'"),
+    Case('harness/a-runq-memory-cap-is-in-gib',
+         'tools/redproof.py',
+         '    return int(cap * (1 << 30)) if math.isfinite',
+         '    return int(cap * 10 ** 9) if math.isfinite',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_runq_memory_cap_bounds_what_is_available',
+         '8589934592 != 8000000000', subtest="RUNQ_MEMORY_GB='8'"),
+    Case('harness/a-cap-it-cannot-read-is-named',
+         'tools/redproof.py',
+         "    if cap is None and os.environ.get('RUNQ_MEMORY_GB', '').strip():\n",
+         '    if False:\n',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_cap_it_cannot_read_is_named_not_dropped',
+         'not understood" not found'),
+    # The memory watch reports the lowest the host had free. Fed from
+    # available_memory(), under a cap it would report the cap, a constant.
+    Case('harness/the-memory-watch-starts-from-the-host',
+         'tools/redproof.py',
+         '        self.lowest_available = meminfo_available()\n',
+         '        self.lowest_available = available_memory()\n',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_the_memory_watch_reads_the_host_not_the_cap',
+         '32212254720 != 8589934592'),
+    Case('harness/the-memory-watch-reads-the-host',
+         'tools/redproof.py',
+         '        avail = meminfo_available()\n',
+         '        avail = available_memory()\n',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_the_memory_watch_reads_the_host_not_the_cap',
+         '21474836480 != 8589934592'),
     Case('harness/the-pool-says-a-cap-decided-it',
          'tools/redproof.py',
          "    capped = (', RUNQ_MEMORY_GB caps it'\n",

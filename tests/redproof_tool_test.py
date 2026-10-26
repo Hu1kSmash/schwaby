@@ -8,6 +8,7 @@ import argparse
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1015,7 +1016,8 @@ class PoolSizeTest(unittest.TestCase):
                                 # not raise it.
                                 ('64', host),
                                 ('', host), ('eight', host), ('0', host),
-                                ('-8', host)):
+                                ('-8', host), ('nan', host), ('inf', host),
+                                ('1e400', host)):
             with self.subTest(RUNQ_MEMORY_GB=value), \
                     patch.dict(os.environ, {'RUNQ_MEMORY_GB': value}), \
                     patch.object(redproof, 'meminfo_available',
@@ -1056,6 +1058,40 @@ class PoolSizeTest(unittest.TestCase):
                 size, reason = redproof.pool_size(self.args(), 1 << 30)
                 self.assertEqual(20, size)
                 self.assertNotIn('RUNQ_MEMORY_GB', reason)
+
+    def test_a_cap_it_cannot_read_is_named_not_dropped(self):
+        # systemd spells a budget 8G; read as no budget at all, the pool
+        # would be sized from the host with nothing said.
+        with patch.dict(os.environ, {'REDPROOF_JOBS_ALL': '1',
+                                     'RUNQ_MEMORY_GB': '8G'}), \
+                patch.object(redproof, 'usable_cpus', lambda: 20), \
+                patch.object(redproof, 'meminfo_available',
+                             lambda: 30 << 30):
+            size, reason = redproof.pool_size(self.args(), 1 << 30)
+        self.assertEqual(20, size)
+        self.assertIn("RUNQ_MEMORY_GB='8G' not understood", reason)
+
+    def test_the_memory_watch_reads_the_host_not_the_cap(self):
+        # Under a cap below the host's free memory, available_memory() is
+        # the cap, every time: a watch on it would report a constant as the
+        # lowest the run saw.
+        host = [30 << 30]
+
+        class Snapshot:
+            def __init__(self, path):
+                self.path = path
+        with patch.dict(os.environ, {'RUNQ_MEMORY_GB': '8'}), \
+                patch.object(redproof, 'Snapshot', Snapshot), \
+                patch.object(redproof, 'meminfo_available',
+                             lambda: host[0]):
+            run = redproof.Run(argparse.Namespace())
+            self.addCleanup(shutil.rmtree, run.tmp, True)
+            self.assertEqual(30 << 30, run.lowest_available)
+            host[0] = 20 << 30
+            run.note_memory(types.SimpleNamespace(peak=0))
+            self.assertEqual(20 << 30, run.lowest_available)
+            # Positive control: the cap is in force, so the two differ.
+            self.assertEqual(8 << 30, redproof.available_memory())
 
 
 class CasesTest(unittest.TestCase):

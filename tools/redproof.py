@@ -98,6 +98,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import re
 import shutil
@@ -163,11 +164,11 @@ def usable_cpus():
 
 def available_memory():
     '''The memory runs may use, in bytes, or None where nothing says: the
-    lower of MemAvailable and a runq job's cap. /proc/meminfo describes the
-    host, not the job's unit, so under a cap smaller than the host's free
-    memory it alone would size the pool past what the unit allows. runq
-    states the cap as RUNQ_MEMORY_GB, in GiB, as systemd's MemoryMax counts
-    them.'''
+    lower of MemAvailable and a runq job's memory budget. /proc/meminfo
+    describes the host, not the job, so under a budget smaller than the
+    host's free memory it alone would size the pool past it. runq states the
+    budget as RUNQ_MEMORY_GB, in GiB: for a light job on a small rig it is the
+    unit's MemoryMax, which the kernel enforces; otherwise it is advisory.'''
     known = [n for n in (meminfo_available(), runq_memory_cap())
              if n is not None]
     return min(known) if known else None
@@ -186,13 +187,13 @@ def meminfo_available():
 
 
 def runq_memory_cap():
-    '''RUNQ_MEMORY_GB in bytes, or None when it is unset or not a positive
-    number.'''
+    '''RUNQ_MEMORY_GB in bytes, or None when it is unset or not a positive,
+    finite number.'''
     try:
         cap = float(os.environ.get('RUNQ_MEMORY_GB', ''))
     except ValueError:
         return None
-    return int(cap * (1 << 30)) if cap > 0 else None
+    return int(cap * (1 << 30)) if math.isfinite(cap) and cap > 0 else None
 
 
 def gib(n):
@@ -515,7 +516,9 @@ class Run:
             raise
         self.audit = os.path.join(self.snapshot.path, AUDIT)
         self.largest = 0
-        self.lowest_available = available_memory()
+        # The host's figure, not available_memory(): under a runq cap that
+        # is the cap itself, a constant that would read as a measurement.
+        self.lowest_available = meminfo_available()
         self.tracked_writes = {}
         # Runs whose writes could not all be checked, and why.
         self.unchecked = {}
@@ -528,7 +531,7 @@ class Run:
 
     def note_memory(self, result):
         self.largest = max(self.largest, result.peak)
-        avail = available_memory()
+        avail = meminfo_available()
         if avail is not None and (self.lowest_available is None
                                   or avail < self.lowest_available):
             self.lowest_available = avail
@@ -764,6 +767,11 @@ def pool_size(args, per_task):
     cap = runq_memory_cap()
     capped = (', RUNQ_MEMORY_GB caps it'
               if cap is not None and cap <= avail else '')
+    if cap is None and os.environ.get('RUNQ_MEMORY_GB', '').strip():
+        # Said, so that a budget spelled some other way is not dropped in
+        # silence: the pool is then sized from the host alone.
+        capped = ', RUNQ_MEMORY_GB=%r not understood, so not applied' % (
+            os.environ['RUNQ_MEMORY_GB'])
     return size, '%s; memory holds %d (%s available%s - %s floor) / %s a ' \
         'run' % (cpu_reason, by_memory, gib(avail), capped, gib(FLOOR),
                  gib(per_task))
@@ -861,7 +869,8 @@ def run_entries(run, args, entries):
         progress(verdict, name, detail, seconds, breakdown)
 
     avail = run.lowest_available
-    print('redproof: memory: largest run %s, lowest available %s' % (
+    print('redproof: memory: largest run %s, lowest the host had available '
+          '%s' % (
         gib(run.largest), gib(avail) if avail is not None else 'unknown'),
         flush=True)
     return verdicts
