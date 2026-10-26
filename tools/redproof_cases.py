@@ -6578,10 +6578,71 @@ HARNESS_CASES = [
          '::test_the_pool_is_sized_to_a_runq_memory_cap_and_says_so',
          "'RUNQ_MEMORY_GB' unexpectedly found",
          subtest="'RUNQ_MEMORY_GB': '64'"),
+    # A light runq job's unit has a CPU quota the core count cannot see, and
+    # RUNQ_CORES says it. A case per branch.
+    Case('harness/runq-cores-are-read',
+         'tools/redproof.py',
+         '    return min(host_cpus(), cap) if cap is not None else host_cpus()',
+         '    return host_cpus()',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_runq_jobs_cores_bound_the_count',
+         '4 != 7', subtest="RUNQ_CORES='4'"),
+    Case('harness/runq-cores-only-lower',
+         'tools/redproof.py',
+         '    return min(host_cpus(), cap) if cap is not None else host_cpus()',
+         '    return max(host_cpus(), cap) if cap is not None else host_cpus()',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_runq_jobs_cores_bound_the_count',
+         '7 != 16', subtest="RUNQ_CORES='16'"),
+    Case('harness/runq-cores-that-are-not-a-number-are-ignored',
+         'tools/redproof.py',
+         "        cores = int(os.environ.get('RUNQ_CORES', ''))\n"
+         "    except ValueError:\n",
+         "        cores = int(os.environ.get('RUNQ_CORES', ''))\n"
+         "    except ZeroDivisionError:\n",
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_runq_jobs_cores_bound_the_count',
+         'invalid literal for int()', subtest="RUNQ_CORES='four'"),
+    Case('harness/runq-cores-that-are-not-positive-are-ignored',
+         'tools/redproof.py',
+         '    return cores if cores > 0 else None\n',
+         '    return cores\n',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_a_runq_jobs_cores_bound_the_count',
+         '7 != 0', subtest="RUNQ_CORES='0'"),
+    Case('harness/two-at-a-time-within-runq-cores',
+         'tools/redproof.py',
+         '    cpus = args.jobs or (cores if whole else min(2, cores))',
+         '    cpus = args.jobs or (cores if whole else 2)',
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
+         '1 != 2'),
+    Case('harness/the-pool-says-runq-cores-decided-it',
+         'tools/redproof.py',
+         "    return ', RUNQ_CORES caps them' if cap < host_cpus() else ''\n",
+         "    return ''\n",
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
+         "RUNQ_CORES caps them' not found"),
+    Case('harness/the-pool-names-runq-cores-only-when-they-decided',
+         'tools/redproof.py',
+         "    return ', RUNQ_CORES caps them' if cap < host_cpus() else ''\n",
+         "    return ', RUNQ_CORES caps them'\n",
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
+         "'RUNQ_CORES' unexpectedly found", subtest="'RUNQ_CORES': '64'"),
+    Case('harness/runq-cores-it-cannot-read-are-named',
+         'tools/redproof.py',
+         "        return (', RUNQ_CORES=%r not understood, so not applied' % raw\n"
+         "                if raw else '')\n",
+         "        return ''\n",
+         'tests/redproof_tool_test.py::PoolSizeTest'
+         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
+         'not understood" not found'),
     Case('harness/two-at-a-time-unless-told-otherwise',
          'tools/redproof.py',
-         '    cpus = args.jobs or (usable_cpus() if whole else 2)',
-         '    cpus = args.jobs or usable_cpus()',
+         '    cpus = args.jobs or (cores if whole else min(2, cores))',
+         '    cpus = args.jobs or cores',
          'tests/redproof_tool_test.py::PoolSizeTest'
          '::test_two_at_a_time_unless_told_to_use_every_core',
          '2 !='),
@@ -6611,7 +6672,7 @@ SUITE_CASES = [
     # where there are two threads per core.
     Case('suite/auto-workers-come-from-the-hook',
          'tests/conftest.py',
-         '    return usable_cpus()',
+         '    return min(cores, cap) if cap is not None else cores',
          '    return None',
          'tests/suite_config_test.py::AutoWorkersTest'
          '::test_auto_is_the_usable_core_count_not_the_machines',
@@ -6630,6 +6691,38 @@ SUITE_CASES = [
          'tests/suite_config_test.py::AutoWorkersTest'
          '::test_before_3_13_the_affinity_mask_decides',
          'ignored the affinity mask'),
+    # Inside a runq job, RUNQ_CORES bounds the workers: a light job's unit
+    # has a CPU quota process_cpu_count() cannot see.
+    Case('suite/auto-workers-honour-runq-cores',
+         'tests/conftest.py',
+         '    return min(cores, cap) if cap is not None else cores',
+         '    return cores',
+         'tests/suite_config_test.py::AutoWorkersTest'
+         '::test_a_runq_jobs_cores_bound_the_workers',
+         '4 != 7', subtest="RUNQ_CORES='4'"),
+    Case('suite/runq-cores-only-lower-the-workers',
+         'tests/conftest.py',
+         '    return min(cores, cap) if cap is not None else cores',
+         '    return max(cores, cap) if cap is not None else cores',
+         'tests/suite_config_test.py::AutoWorkersTest'
+         '::test_a_runq_jobs_cores_bound_the_workers',
+         '7 != 16', subtest="RUNQ_CORES='16'"),
+    Case('suite/runq-cores-that-are-not-a-number-are-ignored',
+         'tests/conftest.py',
+         "        cores = int(os.environ.get('RUNQ_CORES', ''))\n"
+         "    except ValueError:\n",
+         "        cores = int(os.environ.get('RUNQ_CORES', ''))\n"
+         "    except ZeroDivisionError:\n",
+         'tests/suite_config_test.py::AutoWorkersTest'
+         '::test_a_runq_jobs_cores_bound_the_workers',
+         'invalid literal for int()', subtest="RUNQ_CORES='four'"),
+    Case('suite/runq-cores-that-are-not-positive-are-ignored',
+         'tests/conftest.py',
+         '    return cores if cores > 0 else None\n',
+         '    return cores\n',
+         'tests/suite_config_test.py::AutoWorkersTest'
+         '::test_a_runq_jobs_cores_bound_the_workers',
+         '7 != 0', subtest="RUNQ_CORES='0'"),
     Case('suite/the-worker-override-still-wins',
          'tests/conftest.py',
          "    if os.environ.get('PYTEST_XDIST_AUTO_NUM_WORKERS'):\n"

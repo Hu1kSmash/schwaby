@@ -78,7 +78,8 @@ someone is using should stay modest. No more than memory holds, beyond the
 one run that always goes ahead: the pool is min(cores, (available memory -
 FLOOR) / the largest run measured so far), at least one, printed with its
 reason. Available memory is MemAvailable, or a runq job's RUNQ_MEMORY_GB
-where that is lower. The first baseline runs alone to give that
+where that is lower; usable cores are bounded by its RUNQ_CORES the same
+way. The first baseline runs alone to give that
 measurement. `--jobs` overrides the core count. Entries run side by side
 whatever their tests are: each login-flow test takes a free callback port of
 its own, so two no longer take each other's server for their own.
@@ -155,11 +156,43 @@ def _untrack(pid):
 
 
 def usable_cpus():
+    '''The cores this process may run on, bounded by a runq job's
+    RUNQ_CORES.'''
+    cap = runq_cores()
+    return min(host_cpus(), cap) if cap is not None else host_cpus()
+
+
+def host_cpus():
+    '''The cores this process may run on: its affinity mask, not the
+    machine's count.'''
     if hasattr(os, 'process_cpu_count'):
         return os.process_cpu_count() or 1
     if hasattr(os, 'sched_getaffinity'):
         return len(os.sched_getaffinity(0))
     return os.cpu_count() or 1
+
+
+def runq_cores():
+    '''RUNQ_CORES: how many cores a runq job may use, or None when it is unset
+    or not a positive whole number. A light job's unit is held to a CPU quota
+    that host_cpus() cannot see, and runq says it this way.'''
+    try:
+        cores = int(os.environ.get('RUNQ_CORES', ''))
+    except ValueError:
+        return None
+    return cores if cores > 0 else None
+
+
+def runq_cores_note():
+    '''What RUNQ_CORES did to the core count, for the pool's reason.'''
+    raw = os.environ.get('RUNQ_CORES', '').strip()
+    cap = runq_cores()
+    if cap is None:
+        # Said, so that a count spelled some other way is not dropped in
+        # silence.
+        return (', RUNQ_CORES=%r not understood, so not applied' % raw
+                if raw else '')
+    return ', RUNQ_CORES caps them' if cap < host_cpus() else ''
 
 
 def available_memory():
@@ -754,11 +787,14 @@ def report(run, selected, verdicts, started):
 
 def pool_size(args, per_task):
     whole = os.environ.get('REDPROOF_JOBS_ALL') == '1'
-    cpus = args.jobs or (usable_cpus() if whole else 2)
+    cores = usable_cpus()
+    cpus = args.jobs or (cores if whole else min(2, cores))
+    note = runq_cores_note()
     cpu_reason = ('--jobs %d' % args.jobs if args.jobs else
-                  '%d usable cores, REDPROOF_JOBS_ALL=1' % cpus if whole else
+                  '%d usable cores%s, REDPROOF_JOBS_ALL=1' % (cpus, note)
+                  if whole else
                   'two at a time without REDPROOF_JOBS_ALL=1 (%d usable '
-                  'cores)' % usable_cpus())
+                  'cores%s)' % (cores, note))
     avail = available_memory()
     if avail is None or not per_task:
         return cpus, '%s; memory not measured' % cpu_reason

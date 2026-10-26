@@ -997,6 +997,48 @@ class PoolSizeTest(unittest.TestCase):
         self.assertEqual(20, size)
         self.assertIn('REDPROOF_JOBS_ALL=1', reason)
 
+    def test_a_runq_jobs_cores_bound_the_count(self):
+        # A light runq job's unit has a CPU quota process_cpu_count() does
+        # not show; RUNQ_CORES says it.
+        for value, expected in (('4', 4), (' 4 ', 4),
+                                # Above the host's count it does not raise it.
+                                ('16', 7),
+                                ('', 7), ('four', 7), ('4.5', 7), ('0', 7),
+                                ('-2', 7)):
+            with self.subTest(RUNQ_CORES=value), \
+                    patch.dict(os.environ, {'RUNQ_CORES': value}), \
+                    patch.object(redproof, 'host_cpus', lambda: 7):
+                self.assertEqual(expected, redproof.usable_cpus())
+
+    def test_the_pool_is_sized_to_runq_cores_and_says_so(self):
+        def pool(env):
+            with patch.dict(os.environ, env), \
+                    patch.object(redproof, 'host_cpus', lambda: 20), \
+                    patch.object(redproof, 'available_memory', lambda: None):
+                for name in ('RUNQ_CORES', 'REDPROOF_JOBS_ALL'):
+                    if name not in env:
+                        os.environ.pop(name, None)
+                return redproof.pool_size(self.args(), 0)
+
+        size, reason = pool({'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '4'})
+        self.assertEqual(4, size)
+        self.assertIn('4 usable cores, RUNQ_CORES caps them', reason)
+        # Two at a time is two only where two cores are allowed.
+        size, reason = pool({'RUNQ_CORES': '1'})
+        self.assertEqual(1, size)
+        self.assertIn('1 usable cores, RUNQ_CORES caps them', reason)
+        size, reason = pool({'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '4c'})
+        self.assertEqual(20, size)
+        self.assertIn("RUNQ_CORES='4c' not understood", reason)
+        # Positive controls: unset, or above the host's count, the host
+        # decides and RUNQ_CORES is not named.
+        for env in ({'REDPROOF_JOBS_ALL': '1'},
+                    {'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '64'}):
+            with self.subTest(env=env):
+                size, reason = pool(env)
+                self.assertEqual(20, size)
+                self.assertNotIn('RUNQ_CORES', reason)
+
     def test_memory_bounds_the_pool_and_says_so(self):
         with patch.dict(os.environ, {'REDPROOF_JOBS_ALL': '1'}), \
                 patch.object(redproof, 'usable_cpus', lambda: 20), \
