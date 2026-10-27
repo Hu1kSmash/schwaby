@@ -8094,6 +8094,45 @@ CASES.extend([
          'tests/packaging_test.py::DocExampleTest'
          '::test_no_login_flow_test_names_a_fixed_port',
          'a login-flow test names a fixed callback port'),
+    # Each tool as it is run: a script under python -I, from outside the
+    # checkout. An import that needs the repository root on the path passes
+    # every test that loads the tool by path, and only these see it.
+    Case('entrypoints/redproof-runs-without-the-root-on-the-path',
+         'tools/redproof.py',
+         'import argparse\n',
+         'import argparse\nimport tools\n',
+         'tests/entrypoints_test.py::EntrypointTest'
+         '::test_redproof_runs_as_a_script',
+         "No module named 'tools'"),
+    Case('entrypoints/redproof-audit-runs-without-the-root-on-the-path',
+         'tools/redproof_audit.py',
+         'import json\n',
+         'import json\nimport tools\n',
+         'tests/entrypoints_test.py::EntrypointTest'
+         '::test_redproof_audit_runs_as_a_script',
+         "No module named 'tools'"),
+    Case('entrypoints/repeat-runs-without-the-root-on-the-path',
+         'tools/repeat.py',
+         'import argparse\n',
+         'import argparse\nimport tools\n',
+         'tests/entrypoints_test.py::EntrypointTest'
+         '::test_repeat_runs_as_a_script',
+         "No module named 'tools'"),
+    # A hook that runs the check and drops its answer refuses nothing.
+    Case('entrypoints/pre-commit-refuses-on-the-checks-answer',
+         'tools/hooks/pre-commit',
+         'exec "$python" "$root/tools/light_check.py"',
+         '"$python" "$root/tools/light_check.py"; exit 0',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_commit_or_merge_through_the_hooks_is_refused_and_named',
+         'pre-commit let a warning through'),
+    Case('entrypoints/pre-merge-commit-refuses-on-the-checks-answer',
+         'tools/hooks/pre-merge-commit',
+         'exec "$python" "$root/tools/light_check.py"',
+         '"$python" "$root/tools/light_check.py"; exit 0',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_commit_or_merge_through_the_hooks_is_refused_and_named',
+         'pre-merge-commit let a warning through'),
 ])
 
 # The login-flow tests' xdist group and the harness's port-group lock were

@@ -3,6 +3,7 @@ warning is refused, and one that only moves code or keeps an old warning is
 not.'''
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -181,3 +182,61 @@ class LightCheckTest(unittest.TestCase):
                 self.assertIn('tools/light_check.py', f.read(), hook)
             self.assertTrue(os.access(os.path.join(HOOKS, hook), os.X_OK),
                             '%s is not executable' % hook)
+
+    @unittest.skipIf(os.name == 'nt', 'the hooks are sh scripts, and a test '
+                     'cannot tell which interpreter Git for Windows finds')
+    def test_a_commit_or_merge_through_the_hooks_is_refused_and_named(self):
+        # The hooks as git runs them, from a checkout's tools/: each finds
+        # an interpreter and runs the check, which refuses a commit or a
+        # merge that adds a warning.
+        os.makedirs(os.path.join(self.repo, 'tools', 'hooks'))
+        for name in ('light_check.py', 'hooks/pre-commit',
+                     'hooks/pre-merge-commit'):
+            shutil.copy2(os.path.join(ROOT, 'tools', name),
+                         os.path.join(self.repo, 'tools', name))
+        # The interpreter running this test, which has pyflakes, stands in
+        # as the active virtualenv's: the hooks take that one last, so first.
+        venv = tempfile.TemporaryDirectory()
+        self.addCleanup(venv.cleanup)
+        os.mkdir(os.path.join(venv.name, 'bin'))
+        python = os.path.join(venv.name, 'bin', 'python')
+        with open(python, 'w') as f:
+            f.write('#!/bin/sh\nexec "%s" "$@"\n' % sys.executable)
+        os.chmod(python, 0o755)
+        self.env['VIRTUAL_ENV'] = venv.name
+
+        # A side branch adding a warning, committed before the hooks are on.
+        self.git('checkout', '-q', '-b', 'side')
+        self.stage('side.py', 'import sys\n')
+        self.git('commit', '-q', '-m', 'side')
+        self.git('checkout', '-q', '-')
+        self.stage('other.py', 'def h():\n    return 3\n')
+        self.git('commit', '-q', '-m', 'other')
+        self.git('config', 'core.hooksPath', 'tools/hooks')
+        head = self.git('rev-parse', 'HEAD').stdout
+
+        def run(*args):
+            out = subprocess.run(['git', *args], cwd=self.repo, env=self.env,
+                                 capture_output=True, text=True)
+            return out.returncode, out.stdout + out.stderr
+
+        self.stage('mod.py', 'import os\nimport sys\n\n\ndef f():\n'
+                   '    return 1\n')
+        code, out = run('commit', '-q', '-m', 'warning')
+        self.assertNotEqual(0, code, 'pre-commit let a warning through: '
+                            + out)
+        self.assertIn("mod.py: 'sys' imported but unused", out)
+        self.assertEqual(head, self.git('rev-parse', 'HEAD').stdout)
+
+        # A clean commit goes through: the refusal above was the check's,
+        # not a hook that refuses everything.
+        self.stage('mod.py', 'import os\n\n\ndef f():\n    return 2\n')
+        code, out = run('commit', '-q', '-m', 'clean')
+        self.assertEqual(0, code, 'pre-commit refused a clean commit: ' + out)
+        head = self.git('rev-parse', 'HEAD').stdout
+
+        code, out = run('merge', '-q', '--no-ff', '-m', 'merge', 'side')
+        self.assertNotEqual(0, code, 'pre-merge-commit let a warning '
+                            'through: ' + out)
+        self.assertIn("side.py: 'sys' imported but unused", out)
+        self.assertEqual(head, self.git('rev-parse', 'HEAD').stdout)
