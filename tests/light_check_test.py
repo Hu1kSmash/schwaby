@@ -191,7 +191,9 @@ class LightCheckTest(unittest.TestCase):
                                           for h in os.listdir(HOOKS)]:
             shutil.copy2(os.path.join(ROOT, 'tools', name),
                          os.path.join(self.repo, 'tools', name))
+        # Empty, so a hook that misses every stand-in fails by name.
         self.ran = os.path.join(self.repo, '.git', 'interpreters')
+        open(self.ran, 'w').close()
 
     def stand_in(self, where, label):
         # The interpreter running this test, which has pyflakes, under the
@@ -207,7 +209,8 @@ class LightCheckTest(unittest.TestCase):
 
     def last_ran(self):
         with open(self.ran) as f:
-            return f.read().split()[-1]
+            ran = f.read().split()
+        return ran[-1] if ran else None
 
     @unittest.skipIf(os.name == 'nt', 'the hooks are sh scripts, and a test '
                      'cannot tell which interpreter Git for Windows finds')
@@ -292,7 +295,7 @@ class LightCheckTest(unittest.TestCase):
                             'through: ' + out)
         self.assertIn("side.py: 'sys' imported but unused", out)
         self.assertEqual(head, self.git('rev-parse', 'HEAD').stdout)
-        os.remove(self.ran)
+        open(self.ran, 'w').close()
         self.git('merge', '--abort')
 
         # And a clean merge goes through, by way of the same hook.
