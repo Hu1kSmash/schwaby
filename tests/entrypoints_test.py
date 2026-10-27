@@ -4,6 +4,7 @@ directory outside the checkout. A tool's own tests import it by path, which
 proves its functions and not that the file starts: a tool that works only
 with the repository root on the path passes every one of them.'''
 
+import json
 import os
 import re
 import shutil
@@ -18,12 +19,18 @@ TOOLS = os.path.join(ROOT, 'tools')
 
 class EntrypointTest(unittest.TestCase):
 
-    # Each tool with a main, and the test that runs it as a script.
+    # Each tool with a main, and each hook, and the test that runs it.
     RUN_BY = {
-        'light_check.py': 'tests/light_check_test.py, through both hooks',
-        'redproof.py': 'test_redproof_runs_as_a_script',
-        'redproof_audit.py': 'test_redproof_audit_runs_as_a_script',
-        'repeat.py': 'test_repeat_runs_as_a_script',
+        'light_check.py': 'light_check_test.py::'
+        'test_a_commit_or_merge_through_the_hooks_is_refused_and_named',
+        'redproof.py': 'entrypoints_test.py::test_redproof_runs_as_a_script',
+        'redproof_audit.py': 'entrypoints_test.py::'
+        'test_redproof_audit_runs_as_a_script',
+        'repeat.py': 'entrypoints_test.py::test_repeat_runs_as_a_script',
+        'hooks/pre-commit': 'light_check_test.py::'
+        'test_a_commit_or_merge_through_the_hooks_is_refused_and_named',
+        'hooks/pre-merge-commit': 'light_check_test.py::'
+        'test_a_commit_or_merge_through_the_hooks_is_refused_and_named',
     }
 
     def setUp(self):
@@ -37,20 +44,25 @@ class EntrypointTest(unittest.TestCase):
             capture_output=True, text=True, timeout=120)
 
     def test_every_tool_with_a_main_is_run_as_a_script(self):
-        mains = []
-        for name in sorted(os.listdir(TOOLS)):
+        entrypoints = ['hooks/' + h
+                       for h in os.listdir(os.path.join(TOOLS, 'hooks'))]
+        for name in os.listdir(TOOLS):
             if name.endswith('.py'):
                 with open(os.path.join(TOOLS, name), encoding='utf-8') as f:
                     if re.search(r'^if __name__ == .__main__.:', f.read(),
                                  re.M):
-                        mains.append(name)
-        self.assertEqual(sorted(self.RUN_BY), mains,
-                         'a tool with a main that no test runs as a script, '
-                         'or one listed here that has none')
+                        entrypoints.append(name)
+        self.assertEqual(sorted(self.RUN_BY), sorted(entrypoints),
+                         'a tool with a main, or a hook, that no test runs '
+                         'as it is used, or one listed here that is gone')
         for name, by in self.RUN_BY.items():
-            if by.startswith('test_'):
-                self.assertTrue(hasattr(self, by), '%s: no %s' % (name, by))
+            path, test = by.split('::')
+            with open(os.path.join(ROOT, 'tests', path),
+                      encoding='utf-8') as f:
+                self.assertIn('    def %s(self):' % test, f.read(),
+                              '%s: no %s' % (name, by))
 
+    @unittest.skipIf(os.name == 'nt', 'redproof.py runs on POSIX only')
     def test_redproof_runs_as_a_script(self):
         # From a checkout of its own, since it snapshots the git checkout it
         # sits in: a red-proof's copy of this one is not a checkout. Past its
@@ -88,13 +100,35 @@ class EntrypointTest(unittest.TestCase):
             os.path.realpath(os.path.join(package, '__init__.py')),
             run.stdout.strip())
 
+    @unittest.skipIf(os.name == 'nt', 'only redproof.py runs it this way, '
+                     'and that runs on POSIX only')
+    def test_redproof_audit_runs_pytest_as_a_script(self):
+        # Its other way in, as the harness runs each entry: pytest, with the
+        # audit hook installed and its record written.
+        with open(os.path.join(self.cwd, 'test_one.py'), 'w') as f:
+            f.write('def test_one():\n    open("made", "w").close()\n')
+        record = os.path.join(self.cwd, 'record.json')
+        env = {k: v for k, v in os.environ.items()
+               if k != 'PYTEST_ADDOPTS'}
+        env['REDPROOF_AUDIT'] = record
+        run = self.run_tool(os.path.join(TOOLS, 'redproof_audit.py'),
+                            '-q', '-p', 'no:cacheprovider', 'test_one.py',
+                            env=env)
+        self.assertEqual(0, run.returncode, run.stdout + run.stderr)
+        with open(record) as f:
+            written = json.load(f)['written']
+        self.assertIn(os.path.join(os.path.realpath(self.cwd), 'made'),
+                      [os.path.realpath(w) for w in written])
+
     @unittest.skipIf(os.name == 'nt', 'repeat.py runs on POSIX only')
     def test_repeat_runs_as_a_script(self):
         test = os.path.join(self.cwd, 'test_one.py')
         with open(test, 'w') as f:
             f.write('def test_one():\n    pass\n')
+        env = {k: v for k, v in os.environ.items()
+               if k != 'PYTEST_ADDOPTS'}
         run = self.run_tool(os.path.join(TOOLS, 'repeat.py'),
-                            '--runs', '1', test)
+                            '--runs', '1', test, env=env)
         self.assertEqual(0, run.returncode, run.stdout + run.stderr)
         self.assertIn('[1/1] passed', run.stdout)
         self.assertIn('repeat: 0 of 1 runs failed', run.stdout)

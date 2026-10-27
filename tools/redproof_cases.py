@@ -8133,6 +8133,31 @@ CASES.extend([
          'tests/light_check_test.py::LightCheckTest'
          '::test_a_commit_or_merge_through_the_hooks_is_refused_and_named',
          'pre-merge-commit let a warning through'),
+    Case('entrypoints/light-check-runs-without-the-root-on-the-path',
+         'tools/light_check.py',
+         'import collections\n',
+         'import collections\nimport tools\n',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_commit_or_merge_through_the_hooks_is_refused_and_named',
+         'ModuleNotFoundError: No module named'),
+    # Each hook takes the last interpreter present, so a misspelt one falls
+    # through to python3, which can have pyflakes and pass the same way.
+    Case('entrypoints/pre-commit-takes-the-checkouts-dot-venv',
+         'tools/hooks/pre-commit',
+         '"$root/.venv/bin/python"',
+         '"$root/.venv/bin/pythonX"',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_each_hook_takes_the_interpreter_it_names',
+         'pre-commit ran another interpreter',
+         subtest="interpreter='.venv'"),
+    Case('entrypoints/pre-merge-commit-takes-the-active-virtualenv',
+         'tools/hooks/pre-merge-commit',
+         '"${VIRTUAL_ENV:+$VIRTUAL_ENV/bin/python}"',
+         '"${VIRTUAL_ENV:+$VIRTUAL_ENV/bin/pythonX}"',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_each_hook_takes_the_interpreter_it_names',
+         'pre-merge-commit ran another interpreter',
+         subtest="interpreter='active'"),
 ])
 
 # The login-flow tests' xdist group and the harness's port-group lock were
