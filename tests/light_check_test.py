@@ -2,6 +2,7 @@
 warning is refused, and one that only moves code or keeps an old warning is
 not.'''
 
+import importlib.util
 import os
 import shlex
 import shutil
@@ -13,6 +14,119 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK = os.path.join(ROOT, 'tools', 'light_check.py')
 HOOKS = os.path.join(ROOT, 'tools', 'hooks')
+
+
+def forbidden():
+    # The check's own list, so the two cannot disagree about the words.
+    spec = importlib.util.spec_from_file_location('light_check', CHECK)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.FORBIDDEN
+
+
+# What a walk of a copy skips: what is not the repository's own.
+NOT_THE_TREE = {'.git', '.venv', 'venv', '.uv-python', 'build', 'dist',
+                '__pycache__', '.pytest_cache', 'htmlcov', '.tox'}
+
+
+def the_tree(root):
+    '''Every path the repository at root holds, relative to it: what git
+    tracks in a checkout, so nothing a developer keeps beside it is read. A
+    red-proof copy is not a checkout: it holds what is tracked and what git
+    does not ignore, and is walked, without what is not the repository's
+    own.'''
+    # Nothing from a surrounding git process, which would point ls-files at
+    # another repository.
+    env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+    try:
+        out = subprocess.run(['git', 'ls-files', '-z'], cwd=root, env=env,
+                             capture_output=True)
+    except FileNotFoundError:
+        out = None
+    if out is not None and out.returncode == 0 and out.stdout:
+        return [os.fsdecode(p) for p in out.stdout.split(b'\0') if p]
+    paths = []
+    for top, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in NOT_THE_TREE
+                   and not d.endswith('.egg-info')]
+        paths += [os.path.relpath(os.path.join(top, f), root) for f in files]
+    return paths
+
+
+def carrying(root, words):
+    '''(path, word) for each word a file under root carries, in its name or
+    its content, in any case; and how many files were read.'''
+    found, seen = [], 0
+    for rel in the_tree(root):
+        path = os.path.join(root, rel)
+        if os.path.islink(path):
+            # A link carries its target, not what the target holds.
+            content = os.fsencode(os.readlink(path)).lower()
+        elif os.path.isfile(path):
+            with open(path, 'rb') as f:
+                content = f.read().lower()
+        else:
+            continue
+        seen += 1
+        rel = rel.replace(os.sep, '/')
+        found += [(rel, w) for w in words
+                  if w in rel.lower() or w.encode('ascii') in content]
+    return found, seen
+
+
+class ForbiddenWordsTest(unittest.TestCase):
+
+    def test_no_file_in_the_tree_carries_a_forbidden_word(self):
+        words = forbidden()
+        self.assertTrue(words, 'the check forbids nothing')
+        found, seen = carrying(ROOT, words)
+        # Positive control: the walk reached the files it is for.
+        self.assertGreater(seen, 50, 'the walk read almost nothing')
+        self.assertEqual([], found)
+
+    def test_a_checkout_is_read_as_git_tracks_it(self):
+        word = forbidden()[0]
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = tmp.name
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith('GIT_')}
+        env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
+
+        def git(*args):
+            subprocess.run(['git', *args], cwd=root, env=env,
+                           capture_output=True, check=True)
+
+        def write(rel, text):
+            os.makedirs(os.path.dirname(os.path.join(root, rel)),
+                        exist_ok=True)
+            with open(os.path.join(root, rel), 'w', newline='\n') as f:
+                f.write(text)
+
+        git('init', '-q')
+        write('clean.md', 'nothing\n')
+        write('docs/deep.md', 'a %s job\n' % word.upper())
+        expected = [('docs/deep.md', word)]
+        if os.name != 'nt':
+            os.symlink('%s-target' % word, os.path.join(root, 'link'))
+            expected.append(('link', word))
+        git('add', '-A')
+        # Beside the checkout, untracked, as a developer's own files are.
+        write('env/kept.dat', 'a %s job\n' % word)
+        found, seen = carrying(root, [word])
+        self.assertEqual(sorted(expected), sorted(found),
+                         'an untracked file was read, or a tracked one or a '
+                         "link's target was missed")
+        # Positive control: outside a checkout the same files are walked,
+        # untracked ones too. Moved, not deleted: git leaves its objects
+        # read-only, which a plain rmtree cannot delete on Windows, and a
+        # TemporaryDirectory's cleanup can.
+        aside = tempfile.TemporaryDirectory()
+        self.addCleanup(aside.cleanup)
+        os.rename(os.path.join(root, '.git'), os.path.join(aside.name, 'git'))
+        found, seen = carrying(root, [word])
+        self.assertIn(('env/kept.dat', word), found,
+                      'the walk outside a checkout missed a file')
 
 
 class LightCheckTest(unittest.TestCase):
@@ -81,6 +195,51 @@ class LightCheckTest(unittest.TestCase):
         self.assertEqual(1, code, 'a file that does not parse was let '
                          'through: ' + out)
         self.assertIn('mod.py: syntax error', out)
+
+    def test_a_forbidden_word_is_refused_and_named(self):
+        word = forbidden()[0]
+        cases = [('notes.md', 'a %s job\n' % word),
+                 ('mod.py', 'import os\n\n\ndef f():\n    return %r\n'
+                  % (word.upper() + '_CORES')),
+                 ('notes-%s.txt' % word, 'nothing\n'),
+                 (word.upper() + '.TXT', 'nothing\n')]
+        if os.name != 'nt':
+            # A name git could read as a stage number: ':0:x' is not ':x'.
+            cases.append(('0:notes.md', 'a %s job\n' % word))
+        for name, text in cases:
+            with self.subTest(name=name):
+                self.stage(name, text)
+                code, out = self.check()
+                self.assertEqual(1, code, 'a file carrying a forbidden word '
+                                 'was let through: ' + out)
+                self.assertIn('%s: carries %r' % (name, word), out)
+                self.git('reset', '-q', '--hard')
+        # Positive control: the same files without the word are let through.
+        self.stage('notes.md', 'a job\n')
+        code, out = self.check()
+        self.assertEqual(0, code, out)
+
+    @unittest.skipIf(os.name == 'nt', 'no file name holds a colon there')
+    def test_a_python_file_named_like_a_stage_is_checked(self):
+        # ':0:x' is not ':x': read as the latter, '0:bad.py' would be stage 0
+        # of 'bad.py', which does not exist, and pass unread.
+        self.stage('0:bad.py', 'def f(:\n')
+        code, out = self.check()
+        self.assertEqual(1, code, 'a file named like a stage went unchecked: '
+                         + out)
+        self.assertIn('0:bad.py: syntax error', out)
+
+    def test_a_forbidden_word_already_at_head_still_fails(self):
+        # The whole file is read, not the lines a change adds: a commit
+        # touching a file that carries the word carries it again.
+        word = forbidden()[0]
+        self.stage('notes.md', 'a %s job\nfirst\n' % word)
+        self.git('commit', '-q', '-m', 'carries it')
+        self.stage('notes.md', 'a %s job\nsecond\n' % word)
+        code, out = self.check()
+        self.assertEqual(1, code, 'a word already at HEAD was let through '
+                         'again: ' + out)
+        self.assertIn('notes.md: carries', out)
 
     def test_whitespace_errors_are_refused(self):
         self.stage('notes.txt', 'trailing   \n')

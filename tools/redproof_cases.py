@@ -6429,8 +6429,8 @@ HARNESS_CASES = [
          'tests/redproof_tool_test.py::ReadsTest'
          '::test_a_run_that_started_a_process_or_read_a_secret_is_not_kept',
          'read /proc'),
-    # Where the directories above the interpreter live differs from rig to
-    # rig, so keying them would key the machine.
+    # Where the directories above the interpreter live differs from machine
+    # to machine, so keying them would key the machine.
     Case('harness/probes-above-a-root-key-nothing',
          'tools/redproof.py',
          "        if what == 'probe' and classifier.above(path):",
@@ -6484,65 +6484,65 @@ HARNESS_CASES = [
          'tests/redproof_tool_test.py::PoolSizeTest'
          '::test_memory_bounds_the_pool_and_says_so',
          '6 != 20'),
-    # A runq job's unit can be capped below what /proc/meminfo says the host
-    # has free, and RUNQ_MEMORY_GB says by how much. A case per branch.
-    Case('harness/a-runq-memory-cap-is-read',
+    # A job's unit can be capped below what /proc/meminfo says the host
+    # has free, and SUITE_MEMORY_GB says by how much. A case per branch.
+    Case('harness/a-memory-cap-is-read',
          'tools/redproof.py',
-         '    known = [n for n in (meminfo_available(), runq_memory_cap())\n',
+         '    known = [n for n in (meminfo_available(), job_memory_cap())\n',
          '    known = [n for n in (meminfo_available(),)\n',
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_a_runq_memory_cap_bounds_what_is_available',
-         '8589934592 != 32212254720', subtest="RUNQ_MEMORY_GB='8'"),
-    Case('harness/a-runq-memory-cap-only-lowers',
+         '::test_a_jobs_memory_cap_bounds_what_is_available',
+         '8589934592 != 32212254720', subtest="SUITE_MEMORY_GB='8'"),
+    Case('harness/a-memory-cap-only-lowers',
          'tools/redproof.py',
          '    return min(known) if known else None\n',
          '    return max(known) if known else None\n',
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_a_runq_memory_cap_bounds_what_is_available',
-         '32212254720 != 68719476736', subtest="RUNQ_MEMORY_GB='64'"),
+         '::test_a_jobs_memory_cap_bounds_what_is_available',
+         '32212254720 != 68719476736', subtest="SUITE_MEMORY_GB='64'"),
     Case('harness/an-unknown-measure-is-left-out',
          'tools/redproof.py',
          '             if n is not None]\n',
          '             if True]\n',
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_a_runq_memory_cap_bounds_what_is_available',
+         '::test_a_jobs_memory_cap_bounds_what_is_available',
          'not supported between instances'),
     Case('harness/a-cap-that-is-not-a-number-is-ignored',
          'tools/redproof.py',
-         "        cap = float(os.environ.get('RUNQ_MEMORY_GB', ''))\n"
+         "        cap = float(os.environ.get('SUITE_MEMORY_GB', ''))\n"
          "    except ValueError:\n",
-         "        cap = float(os.environ.get('RUNQ_MEMORY_GB', ''))\n"
+         "        cap = float(os.environ.get('SUITE_MEMORY_GB', ''))\n"
          "    except ZeroDivisionError:\n",
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_a_runq_memory_cap_bounds_what_is_available',
-         'could not convert string to float', subtest="RUNQ_MEMORY_GB='eight'"),
+         '::test_a_jobs_memory_cap_bounds_what_is_available',
+         'could not convert string to float', subtest="SUITE_MEMORY_GB='eight'"),
     Case('harness/a-cap-that-is-not-positive-is-ignored',
          'tools/redproof.py',
          '    return int(cap * (1 << 30)) if math.isfinite(cap) and cap > 0 '
          'else None\n',
          '    return int(cap * (1 << 30)) if math.isfinite(cap) else None\n',
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_a_runq_memory_cap_bounds_what_is_available',
-         '32212254720 != 0', subtest="RUNQ_MEMORY_GB='0'"),
+         '::test_a_jobs_memory_cap_bounds_what_is_available',
+         '32212254720 != 0', subtest="SUITE_MEMORY_GB='0'"),
     Case('harness/a-cap-that-is-not-finite-is-ignored',
          'tools/redproof.py',
          '    return int(cap * (1 << 30)) if math.isfinite(cap) and cap > 0 '
          'else None\n',
          '    return int(cap * (1 << 30)) if cap > 0 else None\n',
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_a_runq_memory_cap_bounds_what_is_available',
+         '::test_a_jobs_memory_cap_bounds_what_is_available',
          'cannot convert float infinity to integer',
-         subtest="RUNQ_MEMORY_GB='inf'"),
-    Case('harness/a-runq-memory-cap-is-in-gib',
+         subtest="SUITE_MEMORY_GB='inf'"),
+    Case('harness/a-memory-cap-is-in-gib',
          'tools/redproof.py',
          '    return int(cap * (1 << 30)) if math.isfinite',
          '    return int(cap * 10 ** 9) if math.isfinite',
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_a_runq_memory_cap_bounds_what_is_available',
-         '8589934592 != 8000000000', subtest="RUNQ_MEMORY_GB='8'"),
+         '::test_a_jobs_memory_cap_bounds_what_is_available',
+         '8589934592 != 8000000000', subtest="SUITE_MEMORY_GB='8'"),
     Case('harness/a-cap-it-cannot-read-is-named',
          'tools/redproof.py',
-         "    if cap is None and os.environ.get('RUNQ_MEMORY_GB', '').strip():\n",
+         "    if cap is None and os.environ.get('SUITE_MEMORY_GB', '').strip():\n",
          '    if False:\n',
          'tests/redproof_tool_test.py::PoolSizeTest'
          '::test_a_cap_it_cannot_read_is_named_not_dropped',
@@ -6565,93 +6565,93 @@ HARNESS_CASES = [
          '21474836480 != 8589934592'),
     Case('harness/the-pool-says-a-cap-decided-it',
          'tools/redproof.py',
-         "    capped = (', RUNQ_MEMORY_GB caps it'\n",
+         "    capped = (', SUITE_MEMORY_GB caps it'\n",
          "    capped = (''\n",
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_the_pool_is_sized_to_a_runq_memory_cap_and_says_so',
-         "RUNQ_MEMORY_GB caps it' not found"),
+         '::test_the_pool_is_sized_to_a_memory_cap_and_says_so',
+         "SUITE_MEMORY_GB caps it' not found"),
     Case('harness/the-pool-names-a-cap-only-when-it-decided',
          'tools/redproof.py',
          '              if cap is not None and cap <= avail else \'\')\n',
          '              if cap is not None else \'\')\n',
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_the_pool_is_sized_to_a_runq_memory_cap_and_says_so',
-         "'RUNQ_MEMORY_GB' unexpectedly found",
-         subtest="'RUNQ_MEMORY_GB': '64'"),
-    # A light runq job's unit has a CPU quota the core count cannot see, and
-    # RUNQ_CORES says it. A case per branch.
-    Case('harness/runq-cores-are-read',
+         '::test_the_pool_is_sized_to_a_memory_cap_and_says_so',
+         "'SUITE_MEMORY_GB' unexpectedly found",
+         subtest="'SUITE_MEMORY_GB': '64'"),
+    # A light job's unit has a CPU quota the core count cannot see, and
+    # SUITE_CORES says it. A case per branch.
+    Case('harness/a-core-cap-is-read',
          'tools/redproof.py',
          '    return min(host_cpus(), cap) if cap is not None else host_cpus()',
          '    return host_cpus()',
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_a_runq_jobs_cores_bound_the_count',
-         '4 != 7', subtest="RUNQ_CORES='4'"),
-    Case('harness/runq-cores-only-lower',
+         '::test_a_jobs_core_cap_bounds_the_count',
+         '4 != 7', subtest="SUITE_CORES='4'"),
+    Case('harness/a-core-cap-only-lowers',
          'tools/redproof.py',
          '    return min(host_cpus(), cap) if cap is not None else host_cpus()',
          '    return max(host_cpus(), cap) if cap is not None else host_cpus()',
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_a_runq_jobs_cores_bound_the_count',
-         '7 != 16', subtest="RUNQ_CORES='16'"),
-    Case('harness/runq-cores-that-are-not-a-number-are-ignored',
+         '::test_a_jobs_core_cap_bounds_the_count',
+         '7 != 16', subtest="SUITE_CORES='16'"),
+    Case('harness/a-core-cap-that-is-not-a-number-is-ignored',
          'tools/redproof.py',
-         "        cores = int(os.environ.get('RUNQ_CORES', ''))\n"
+         "        cores = int(os.environ.get('SUITE_CORES', ''))\n"
          "    except ValueError:\n",
-         "        cores = int(os.environ.get('RUNQ_CORES', ''))\n"
+         "        cores = int(os.environ.get('SUITE_CORES', ''))\n"
          "    except ZeroDivisionError:\n",
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_a_runq_jobs_cores_bound_the_count',
-         'invalid literal for int()', subtest="RUNQ_CORES='four'"),
-    Case('harness/runq-cores-that-are-not-positive-are-ignored',
+         '::test_a_jobs_core_cap_bounds_the_count',
+         'invalid literal for int()', subtest="SUITE_CORES='four'"),
+    Case('harness/a-core-cap-that-is-not-positive-is-ignored',
          'tools/redproof.py',
          '    return cores if cores > 0 else None\n',
          '    return cores\n',
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_a_runq_jobs_cores_bound_the_count',
-         '7 != 0', subtest="RUNQ_CORES='0'"),
-    Case('harness/two-at-a-time-within-runq-cores',
+         '::test_a_jobs_core_cap_bounds_the_count',
+         '7 != 0', subtest="SUITE_CORES='0'"),
+    Case('harness/two-at-a-time-within-the-core-cap',
          'tools/redproof.py',
          '    cpus = args.jobs or (cores if whole else min(2, cores))',
          '    cpus = args.jobs or (cores if whole else 2)',
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
+         '::test_the_pool_is_sized_to_the_core_cap_and_says_so',
          '1 != 2'),
-    Case('harness/the-pool-says-runq-cores-decided-it',
+    Case('harness/the-pool-says-the-core-cap-decided-it',
          'tools/redproof.py',
-         "    return ', RUNQ_CORES caps them' if cap < host_cpus() else ''\n",
+         "    return ', SUITE_CORES caps them' if cap < host_cpus() else ''\n",
          "    return ''\n",
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
-         "RUNQ_CORES caps them' not found"),
-    Case('harness/the-pool-names-runq-cores-only-when-they-decided',
+         '::test_the_pool_is_sized_to_the_core_cap_and_says_so',
+         "SUITE_CORES caps them' not found"),
+    Case('harness/the-pool-names-the-core-cap-only-when-it-decided',
          'tools/redproof.py',
-         "    return ', RUNQ_CORES caps them' if cap < host_cpus() else ''\n",
-         "    return ', RUNQ_CORES caps them'\n",
+         "    return ', SUITE_CORES caps them' if cap < host_cpus() else ''\n",
+         "    return ', SUITE_CORES caps them'\n",
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
-         "'RUNQ_CORES' unexpectedly found", subtest="'RUNQ_CORES': '64'"),
-    Case('harness/runq-cores-equal-to-the-host-are-not-named',
+         '::test_the_pool_is_sized_to_the_core_cap_and_says_so',
+         "'SUITE_CORES' unexpectedly found", subtest="'SUITE_CORES': '64'"),
+    Case('harness/a-core-cap-equal-to-the-host-is-not-named',
          'tools/redproof.py',
-         "    return ', RUNQ_CORES caps them' if cap < host_cpus() else ''\n",
-         "    return ', RUNQ_CORES caps them' if cap <= host_cpus() else ''\n",
+         "    return ', SUITE_CORES caps them' if cap < host_cpus() else ''\n",
+         "    return ', SUITE_CORES caps them' if cap <= host_cpus() else ''\n",
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
-         "'RUNQ_CORES' unexpectedly found", subtest="'RUNQ_CORES': '20'"),
-    Case('harness/blank-runq-cores-are-not-named',
+         '::test_the_pool_is_sized_to_the_core_cap_and_says_so',
+         "'SUITE_CORES' unexpectedly found", subtest="'SUITE_CORES': '20'"),
+    Case('harness/a-blank-core-cap-is-not-named',
          'tools/redproof.py',
-         "    raw = os.environ.get('RUNQ_CORES', '').strip()\n",
-         "    raw = os.environ.get('RUNQ_CORES', '')\n",
+         "    raw = os.environ.get('SUITE_CORES', '').strip()\n",
+         "    raw = os.environ.get('SUITE_CORES', '')\n",
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
-         "'RUNQ_CORES' unexpectedly found", subtest="'RUNQ_CORES': '  '"),
-    Case('harness/runq-cores-it-cannot-read-are-named',
+         '::test_the_pool_is_sized_to_the_core_cap_and_says_so',
+         "'SUITE_CORES' unexpectedly found", subtest="'SUITE_CORES': '  '"),
+    Case('harness/a-core-cap-it-cannot-read-is-named',
          'tools/redproof.py',
-         "        return (', RUNQ_CORES=%r not understood, so not applied' % raw\n"
+         "        return (', SUITE_CORES=%r not understood, so not applied' % raw\n"
          "                if raw else '')\n",
          "        return ''\n",
          'tests/redproof_tool_test.py::PoolSizeTest'
-         '::test_the_pool_is_sized_to_runq_cores_and_says_so',
+         '::test_the_pool_is_sized_to_the_core_cap_and_says_so',
          'not understood" not found'),
     Case('harness/two-at-a-time-unless-told-otherwise',
          'tools/redproof.py',
@@ -6705,38 +6705,38 @@ SUITE_CASES = [
          'tests/suite_config_test.py::AutoWorkersTest'
          '::test_before_3_13_the_affinity_mask_decides',
          'ignored the affinity mask'),
-    # Inside a runq job, RUNQ_CORES bounds the workers: a light job's unit
+    # Inside a job with a core cap, SUITE_CORES bounds the workers: a light job's unit
     # has a CPU quota process_cpu_count() cannot see.
-    Case('suite/auto-workers-honour-runq-cores',
+    Case('suite/auto-workers-honour-the-core-cap',
          'tests/conftest.py',
          '    return min(cores, cap) if cap is not None else cores',
          '    return cores',
          'tests/suite_config_test.py::AutoWorkersTest'
-         '::test_a_runq_jobs_cores_bound_the_workers',
-         '4 != 7', subtest="RUNQ_CORES='4'"),
-    Case('suite/runq-cores-only-lower-the-workers',
+         '::test_a_jobs_core_cap_bounds_the_workers',
+         '4 != 7', subtest="SUITE_CORES='4'"),
+    Case('suite/a-core-cap-only-lowers-the-workers',
          'tests/conftest.py',
          '    return min(cores, cap) if cap is not None else cores',
          '    return max(cores, cap) if cap is not None else cores',
          'tests/suite_config_test.py::AutoWorkersTest'
-         '::test_a_runq_jobs_cores_bound_the_workers',
-         '7 != 16', subtest="RUNQ_CORES='16'"),
-    Case('suite/runq-cores-that-are-not-a-number-are-ignored',
+         '::test_a_jobs_core_cap_bounds_the_workers',
+         '7 != 16', subtest="SUITE_CORES='16'"),
+    Case('suite/a-core-cap-that-is-not-a-number-is-ignored',
          'tests/conftest.py',
-         "        cores = int(os.environ.get('RUNQ_CORES', ''))\n"
+         "        cores = int(os.environ.get('SUITE_CORES', ''))\n"
          "    except ValueError:\n",
-         "        cores = int(os.environ.get('RUNQ_CORES', ''))\n"
+         "        cores = int(os.environ.get('SUITE_CORES', ''))\n"
          "    except ZeroDivisionError:\n",
          'tests/suite_config_test.py::AutoWorkersTest'
-         '::test_a_runq_jobs_cores_bound_the_workers',
-         'invalid literal for int()', subtest="RUNQ_CORES='four'"),
-    Case('suite/runq-cores-that-are-not-positive-are-ignored',
+         '::test_a_jobs_core_cap_bounds_the_workers',
+         'invalid literal for int()', subtest="SUITE_CORES='four'"),
+    Case('suite/a-core-cap-that-is-not-positive-is-ignored',
          'tests/conftest.py',
          '    return cores if cores > 0 else None\n',
          '    return cores\n',
          'tests/suite_config_test.py::AutoWorkersTest'
-         '::test_a_runq_jobs_cores_bound_the_workers',
-         '7 != 0', subtest="RUNQ_CORES='0'"),
+         '::test_a_jobs_core_cap_bounds_the_workers',
+         '7 != 0', subtest="SUITE_CORES='0'"),
     Case('suite/the-worker-override-still-wins',
          'tests/conftest.py',
          "    if os.environ.get('PYTEST_XDIST_AUTO_NUM_WORKERS'):\n"
@@ -6883,7 +6883,7 @@ LIGHT_CHECK_CASES = [
     # The index is what the commit will contain; the working tree may differ.
     Case('light-check/the-index-is-checked',
          'tools/light_check.py',
-         "    staged = blob(':' + path) or b''",
+         "    staged = blob(':0:' + path) or b''",
          "    staged = open(path, 'rb').read()",
          'tests/light_check_test.py::LightCheckTest'
          '::test_the_index_is_checked_not_the_working_tree',
@@ -7014,8 +7014,9 @@ CASES += SHARD_CASES
 
 
 # The interpreter pins (.python-versions). A verdict is keyed on the minor
-# version only, so it is the pin that makes every rig's build the same one;
-# a rig on another patch release sharing verdicts is what the pin prevents.
+# version only, so it is the pin that makes every machine's build the same
+# one; a machine on another patch release sharing verdicts is what the pin
+# prevents.
 PIN_CASES = [
     Case('harness/only-the-pinned-build-keeps-verdicts',
          'tools/redproof.py',
@@ -7240,8 +7241,8 @@ TOOLS_REVIEW_CASES_2 = [
     # dropped: staged code that skipped both checks.
     Case('light-check/a-type-change-is-checked',
          'tools/light_check.py',
-         "'--diff-filter=ACMRT')",
-         "'--diff-filter=ACMR')",
+         "'-M', '--diff-filter=ACMRT')",
+         "'-M', '--diff-filter=ACMR')",
          'tests/light_check_test.py::LightCheckTest'
          '::test_a_symlink_replaced_by_a_file_is_checked',
          'a file that was a symlink went unchecked'),
@@ -8271,6 +8272,73 @@ CASES.extend([
          '::test_the_built_version_must_equal_the_tag',
          "tag '', dist unnamed: exited 0",
          subtest="dist='unnamed'"),
+    # No staged file carries a name of private infrastructure, by its content
+    # or its name, in any case; and nothing in the tree does. The word is
+    # spelled in pieces here, as the check spells it.
+    Case('light-check/a-forbidden-word-in-a-file-is-refused',
+         'tools/light_check.py',
+         " or word.encode('ascii') in content]", ']',
+         'tests/light_check_test.py::LightCheckTest::test_a_forbidden_word_is_refused_and_named',
+         'a file carrying a forbidden word was let through',
+         subtest="name='notes.md'"),
+    Case('light-check/a-forbidden-word-in-a-name-is-refused',
+         'tools/light_check.py',
+         'if word in name or ', 'if ',
+         'tests/light_check_test.py::LightCheckTest::test_a_forbidden_word_is_refused_and_named',
+         'a file carrying a forbidden word was let through',
+         subtest="name='notes-"),
+    Case('light-check/a-forbidden-word-in-a-name-in-any-case-is-refused',
+         'tools/light_check.py',
+         'name = path.lower()', 'name = path',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_forbidden_word_is_refused_and_named',
+         'a file carrying a forbidden word was let through',
+         subtest="TXT'"),
+    Case('light-check/a-name-like-a-stage-is-read-as-a-name',
+         'tools/light_check.py',
+         "content = (blob(':0:' + path) or b'').lower()",
+         "content = (blob(':' + path) or b'').lower()",
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_forbidden_word_is_refused_and_named',
+         'a file carrying a forbidden word was let through',
+         subtest="name='0:notes"),
+    Case('light-check/the-tree-is-what-git-tracks',
+         'tests/light_check_test.py',
+         '    if out is not None and out.returncode == 0 and out.stdout:',
+         '    if False:',
+         'tests/light_check_test.py::ForbiddenWordsTest'
+         '::test_a_checkout_is_read_as_git_tracks_it',
+         "('env/kept.dat', "),
+    Case('light-check/a-link-carries-its-target',
+         'tests/light_check_test.py',
+         '            content = os.fsencode(os.readlink(path)).lower()',
+         "            content = b''",
+         'tests/light_check_test.py::ForbiddenWordsTest'
+         '::test_a_checkout_is_read_as_git_tracks_it',
+         "('link', "),
+    Case('light-check/a-python-name-like-a-stage-is-checked',
+         'tools/light_check.py',
+         "    staged = blob(':0:' + path) or b''",
+         "    staged = blob(':' + path) or b''",
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_python_file_named_like_a_stage_is_checked',
+         'a file named like a stage went unchecked'),
+    Case('light-check/a-forbidden-word-in-any-case-is-refused',
+         'tools/light_check.py',
+         "content = (blob(':0:' + path) or b'').lower()",
+         "content = (blob(':0:' + path) or b'')",
+         'tests/light_check_test.py::LightCheckTest::test_a_forbidden_word_is_refused_and_named',
+         'a file carrying a forbidden word was let through',
+         subtest="name='mod.py'"),
+    # Planted in capitals, in a file below the top: the walk goes down, and
+    # folds case.
+    Case('light-check/the-tree-is-walked-for-forbidden-words',
+         'docs/index.rst',
+         '``schwaby`` is an unofficial Python client for the Charles Schwab trading API.',
+         '``schwaby`` is an unofficial Python client for the Charles Schwab trading API. ' + 'R' + 'UNQ',
+         'tests/light_check_test.py::ForbiddenWordsTest'
+         '::test_no_file_in_the_tree_carries_a_forbidden_word',
+         "'docs/index.rst', "),
 ])
 
 # The login-flow tests' xdist group and the harness's port-group lock were

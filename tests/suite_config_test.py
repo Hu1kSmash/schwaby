@@ -46,17 +46,17 @@ class AutoWorkersTest(unittest.TestCase):
             sched_getaffinity=lambda pid: {0, 1, 2}, cpu_count=lambda: 99)),
             '-n auto ignored the affinity mask')
 
-    def test_a_runq_jobs_cores_bound_the_workers(self):
-        # A light runq job's unit has a CPU quota process_cpu_count() does
-        # not show; RUNQ_CORES says it.
+    def test_a_jobs_core_cap_bounds_the_workers(self):
+        # A light job's unit has a CPU quota process_cpu_count() does
+        # not show; SUITE_CORES says it.
         for value, expected in (('4', 4), (' 4 ', 4),
                                 # Above the usable count it does not raise it.
                                 ('16', 7),
                                 ('', 7), ('four', 7), ('4.5', 7), ('0', 7),
                                 ('-2', 7)):
-            with self.subTest(RUNQ_CORES=value):
+            with self.subTest(SUITE_CORES=value):
                 self.assertEqual(expected, self.workers(fake_os(
-                    environ={'RUNQ_CORES': value},
+                    environ={'SUITE_CORES': value},
                     process_cpu_count=lambda: 7)))
 
     def test_the_environment_override_still_wins(self):

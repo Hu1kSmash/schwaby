@@ -58,8 +58,10 @@ Then turn on the commit hooks:
 
 They run ``tools/light_check.py`` on what you are about to commit (measured at
 under a tenth of a second for an eight-file commit): every staged Python file
-must parse and gain no pyflakes warning it did not already have, and the diff
-must have no whitespace errors.
+must parse and gain no pyflakes warning it did not already have, the diff
+must have no whitespace errors, and no staged file may carry, in its name or
+its content, a word on the check's ``FORBIDDEN`` list: names of private
+infrastructure this repository never carries.
 The full suite is not part of it; that runs below, and on every pull request.
 
 Then check the environment before you change anything, so a later failure is

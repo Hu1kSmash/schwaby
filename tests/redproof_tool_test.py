@@ -1052,49 +1052,49 @@ class PoolSizeTest(unittest.TestCase):
         self.assertEqual(20, size)
         self.assertIn('REDPROOF_JOBS_ALL=1', reason)
 
-    def test_a_runq_jobs_cores_bound_the_count(self):
-        # A light runq job's unit has a CPU quota process_cpu_count() does
-        # not show; RUNQ_CORES says it.
+    def test_a_jobs_core_cap_bounds_the_count(self):
+        # A light job's unit has a CPU quota process_cpu_count() does
+        # not show; SUITE_CORES says it.
         for value, expected in (('4', 4), (' 4 ', 4),
                                 # Above the host's count it does not raise it.
                                 ('16', 7),
                                 ('', 7), ('four', 7), ('4.5', 7), ('0', 7),
                                 ('-2', 7)):
-            with self.subTest(RUNQ_CORES=value), \
-                    patch.dict(os.environ, {'RUNQ_CORES': value}), \
+            with self.subTest(SUITE_CORES=value), \
+                    patch.dict(os.environ, {'SUITE_CORES': value}), \
                     patch.object(redproof, 'host_cpus', lambda: 7):
                 self.assertEqual(expected, redproof.usable_cpus())
 
-    def test_the_pool_is_sized_to_runq_cores_and_says_so(self):
+    def test_the_pool_is_sized_to_the_core_cap_and_says_so(self):
         def pool(env):
             with patch.dict(os.environ, env), \
                     patch.object(redproof, 'host_cpus', lambda: 20), \
                     patch.object(redproof, 'available_memory', lambda: None):
-                for name in ('RUNQ_CORES', 'REDPROOF_JOBS_ALL'):
+                for name in ('SUITE_CORES', 'REDPROOF_JOBS_ALL'):
                     if name not in env:
                         os.environ.pop(name, None)
                 return redproof.pool_size(self.args(), 0)
 
-        size, reason = pool({'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '4'})
+        size, reason = pool({'REDPROOF_JOBS_ALL': '1', 'SUITE_CORES': '4'})
         self.assertEqual(4, size)
-        self.assertIn('4 usable cores, RUNQ_CORES caps them', reason)
+        self.assertIn('4 usable cores, SUITE_CORES caps them', reason)
         # Two at a time is two only where two cores are allowed.
-        size, reason = pool({'RUNQ_CORES': '1'})
+        size, reason = pool({'SUITE_CORES': '1'})
         self.assertEqual(1, size)
-        self.assertIn('1 usable cores, RUNQ_CORES caps them', reason)
-        size, reason = pool({'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '4c'})
+        self.assertIn('1 usable cores, SUITE_CORES caps them', reason)
+        size, reason = pool({'REDPROOF_JOBS_ALL': '1', 'SUITE_CORES': '4c'})
         self.assertEqual(20, size)
-        self.assertIn("RUNQ_CORES='4c' not understood", reason)
+        self.assertIn("SUITE_CORES='4c' not understood", reason)
         # Positive controls: unset, blank, equal to the host's count or above
-        # it, the host decides and RUNQ_CORES is not named.
+        # it, the host decides and SUITE_CORES is not named.
         for env in ({'REDPROOF_JOBS_ALL': '1'},
-                    {'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '  '},
-                    {'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '20'},
-                    {'REDPROOF_JOBS_ALL': '1', 'RUNQ_CORES': '64'}):
+                    {'REDPROOF_JOBS_ALL': '1', 'SUITE_CORES': '  '},
+                    {'REDPROOF_JOBS_ALL': '1', 'SUITE_CORES': '20'},
+                    {'REDPROOF_JOBS_ALL': '1', 'SUITE_CORES': '64'}):
             with self.subTest(env=env):
                 size, reason = pool(env)
                 self.assertEqual(20, size)
-                self.assertNotIn('RUNQ_CORES', reason)
+                self.assertNotIn('SUITE_CORES', reason)
 
     def test_memory_bounds_the_pool_and_says_so(self):
         with patch.dict(os.environ, {'REDPROOF_JOBS_ALL': '1'}), \
@@ -1105,9 +1105,9 @@ class PoolSizeTest(unittest.TestCase):
         self.assertEqual(6, size)
         self.assertIn('memory holds 6', reason)
 
-    def test_a_runq_memory_cap_bounds_what_is_available(self):
-        # /proc/meminfo describes the host; a runq job's unit may be capped
-        # below it, and says so in RUNQ_MEMORY_GB.
+    def test_a_jobs_memory_cap_bounds_what_is_available(self):
+        # /proc/meminfo describes the host; a job's unit may be capped
+        # below it, and says so in SUITE_MEMORY_GB.
         host = 30 << 30
         for value, expected in (('8', 8 << 30),
                                 ('0.5', 1 << 29),
@@ -1117,8 +1117,8 @@ class PoolSizeTest(unittest.TestCase):
                                 ('', host), ('eight', host), ('0', host),
                                 ('-8', host), ('nan', host), ('inf', host),
                                 ('1e400', host)):
-            with self.subTest(RUNQ_MEMORY_GB=value), \
-                    patch.dict(os.environ, {'RUNQ_MEMORY_GB': value}), \
+            with self.subTest(SUITE_MEMORY_GB=value), \
+                    patch.dict(os.environ, {'SUITE_MEMORY_GB': value}), \
                     patch.object(redproof, 'meminfo_available',
                                  lambda: host):
                 self.assertEqual(expected, redproof.available_memory())
@@ -1126,49 +1126,49 @@ class PoolSizeTest(unittest.TestCase):
                 patch.object(redproof, 'meminfo_available', lambda: host):
             self.assertEqual(host, redproof.available_memory())
         # Where the kernel says nothing, the cap is all there is.
-        with patch.dict(os.environ, {'RUNQ_MEMORY_GB': '8'}), \
+        with patch.dict(os.environ, {'SUITE_MEMORY_GB': '8'}), \
                 patch.object(redproof, 'meminfo_available', lambda: None):
             self.assertEqual(8 << 30, redproof.available_memory())
         with patch.dict(os.environ, {}, clear=True), \
                 patch.object(redproof, 'meminfo_available', lambda: None):
             self.assertIsNone(redproof.available_memory())
 
-    def test_the_pool_is_sized_to_a_runq_memory_cap_and_says_so(self):
+    def test_the_pool_is_sized_to_a_memory_cap_and_says_so(self):
         # 8 GiB less the floor holds six runs of a GiB, though the host has
         # room for 28.
         with patch.dict(os.environ, {'REDPROOF_JOBS_ALL': '1',
-                                     'RUNQ_MEMORY_GB': '8'}), \
+                                     'SUITE_MEMORY_GB': '8'}), \
                 patch.object(redproof, 'usable_cpus', lambda: 20), \
                 patch.object(redproof, 'meminfo_available',
                              lambda: 30 << 30):
             size, reason = redproof.pool_size(self.args(), 1 << 30)
         self.assertEqual(6, size)
-        self.assertIn('8.0 GiB available, RUNQ_MEMORY_GB caps it', reason)
+        self.assertIn('8.0 GiB available, SUITE_MEMORY_GB caps it', reason)
         # Positive control: without the cap, or with one above what the host
         # has free, the host's memory decides, and the cap is not named.
-        for env in ({}, {'RUNQ_MEMORY_GB': '64'}):
+        for env in ({}, {'SUITE_MEMORY_GB': '64'}):
             with self.subTest(env=env), \
                     patch.dict(os.environ, dict(env, REDPROOF_JOBS_ALL='1')), \
                     patch.object(redproof, 'usable_cpus', lambda: 20), \
                     patch.object(redproof, 'meminfo_available',
                                  lambda: 30 << 30):
                 if not env:
-                    os.environ.pop('RUNQ_MEMORY_GB', None)
+                    os.environ.pop('SUITE_MEMORY_GB', None)
                 size, reason = redproof.pool_size(self.args(), 1 << 30)
                 self.assertEqual(20, size)
-                self.assertNotIn('RUNQ_MEMORY_GB', reason)
+                self.assertNotIn('SUITE_MEMORY_GB', reason)
 
     def test_a_cap_it_cannot_read_is_named_not_dropped(self):
         # systemd spells a budget 8G; read as no budget at all, the pool
         # would be sized from the host with nothing said.
         with patch.dict(os.environ, {'REDPROOF_JOBS_ALL': '1',
-                                     'RUNQ_MEMORY_GB': '8G'}), \
+                                     'SUITE_MEMORY_GB': '8G'}), \
                 patch.object(redproof, 'usable_cpus', lambda: 20), \
                 patch.object(redproof, 'meminfo_available',
                              lambda: 30 << 30):
             size, reason = redproof.pool_size(self.args(), 1 << 30)
         self.assertEqual(20, size)
-        self.assertIn("RUNQ_MEMORY_GB='8G' not understood", reason)
+        self.assertIn("SUITE_MEMORY_GB='8G' not understood", reason)
 
     def test_the_memory_watch_reads_the_host_not_the_cap(self):
         # Under a cap below the host's free memory, available_memory() is
@@ -1179,7 +1179,7 @@ class PoolSizeTest(unittest.TestCase):
         class Snapshot:
             def __init__(self, path):
                 self.path = path
-        with patch.dict(os.environ, {'RUNQ_MEMORY_GB': '8'}), \
+        with patch.dict(os.environ, {'SUITE_MEMORY_GB': '8'}), \
                 patch.object(redproof, 'Snapshot', Snapshot), \
                 patch.object(redproof, 'meminfo_available',
                              lambda: host[0]):

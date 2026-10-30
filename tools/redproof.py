@@ -78,9 +78,9 @@ a machine to itself sets; two at a time otherwise, since a run on a machine
 someone is using should stay modest. No more than memory holds, beyond the
 one run that always goes ahead: the pool is min(cores, (available memory -
 FLOOR) / the largest run measured so far), at least one, printed with its
-reason. Available memory is MemAvailable, or a runq job's RUNQ_MEMORY_GB
-where that is lower; usable cores are bounded by its RUNQ_CORES the same
-way. The first baseline runs alone to give that
+reason. Available memory is MemAvailable, or a job's memory cap
+(SUITE_MEMORY_GB) where that is lower; usable cores are bounded by its core
+cap (SUITE_CORES) the same way. The first baseline runs alone to give that
 measurement. `--jobs` overrides the core count. Entries run side by side
 whatever their tests are: each login-flow test takes a free callback port of
 its own, so two no longer take each other's server for their own.
@@ -160,9 +160,8 @@ def _untrack(pid):
 
 
 def usable_cpus():
-    '''The cores this process may run on, bounded by a runq job's
-    RUNQ_CORES.'''
-    cap = runq_cores()
+    '''The cores this process may run on, bounded by a job's core cap.'''
+    cap = job_cores()
     return min(host_cpus(), cap) if cap is not None else host_cpus()
 
 
@@ -176,37 +175,39 @@ def host_cpus():
     return os.cpu_count() or 1
 
 
-def runq_cores():
-    '''RUNQ_CORES: how many cores a runq job may use, or None when it is unset
-    or not a positive whole number. A light job's unit is held to a CPU quota
-    that host_cpus() cannot see, and runq says it this way.'''
+def job_cores():
+    '''A job's core cap, SUITE_CORES: how many cores it may use, or None when
+    it is unset or not a positive whole number. A light job's unit is held to
+    a CPU quota that host_cpus() cannot see; whatever runs the job sets this
+    in its environment to say so.'''
     try:
-        cores = int(os.environ.get('RUNQ_CORES', ''))
+        cores = int(os.environ.get('SUITE_CORES', ''))
     except ValueError:
         return None
     return cores if cores > 0 else None
 
 
-def runq_cores_note():
-    '''What RUNQ_CORES did to the core count, for the pool's reason.'''
-    raw = os.environ.get('RUNQ_CORES', '').strip()
-    cap = runq_cores()
+def job_cores_note():
+    '''What SUITE_CORES did to the core count, for the pool's reason.'''
+    raw = os.environ.get('SUITE_CORES', '').strip()
+    cap = job_cores()
     if cap is None:
         # Said, so that a count spelled some other way is not dropped in
         # silence.
-        return (', RUNQ_CORES=%r not understood, so not applied' % raw
+        return (', SUITE_CORES=%r not understood, so not applied' % raw
                 if raw else '')
-    return ', RUNQ_CORES caps them' if cap < host_cpus() else ''
+    return ', SUITE_CORES caps them' if cap < host_cpus() else ''
 
 
 def available_memory():
     '''The memory runs may use, in bytes, or None where nothing says: the
-    lower of MemAvailable and a runq job's memory budget. /proc/meminfo
-    describes the host, not the job, so under a budget smaller than the
-    host's free memory it alone would size the pool past it. runq states the
-    budget as RUNQ_MEMORY_GB, in GiB: for a light job on a small rig it is the
-    unit's MemoryMax, which the kernel enforces; otherwise it is advisory.'''
-    known = [n for n in (meminfo_available(), runq_memory_cap())
+    lower of MemAvailable and a job's memory cap. /proc/meminfo describes
+    the host, not the job, so under a cap smaller than the host's free
+    memory it alone would size the pool past it. Whatever runs the job
+    states the cap in its environment as SUITE_MEMORY_GB, in GiB: for a
+    light job on a small machine it is the unit's MemoryMax, which the
+    kernel enforces; otherwise it is advisory.'''
+    known = [n for n in (meminfo_available(), job_memory_cap())
              if n is not None]
     return min(known) if known else None
 
@@ -223,11 +224,11 @@ def meminfo_available():
     return None
 
 
-def runq_memory_cap():
-    '''RUNQ_MEMORY_GB in bytes, or None when it is unset or not a positive,
+def job_memory_cap():
+    '''SUITE_MEMORY_GB in bytes, or None when it is unset or not a positive,
     finite number.'''
     try:
-        cap = float(os.environ.get('RUNQ_MEMORY_GB', ''))
+        cap = float(os.environ.get('SUITE_MEMORY_GB', ''))
     except ValueError:
         return None
     return int(cap * (1 << 30)) if math.isfinite(cap) and cap > 0 else None
@@ -587,7 +588,7 @@ class Run:
             raise
         self.audit = os.path.join(self.snapshot.path, AUDIT)
         self.largest = 0
-        # The host's figure, not available_memory(): under a runq cap that
+        # The host's figure, not available_memory(): under a memory cap that
         # is the cap itself, a constant that would read as a measurement.
         self.lowest_available = meminfo_available()
         self.tracked_writes = {}
@@ -827,7 +828,7 @@ def pool_size(args, per_task):
     whole = os.environ.get('REDPROOF_JOBS_ALL') == '1'
     cores = usable_cpus()
     cpus = args.jobs or (cores if whole else min(2, cores))
-    note = runq_cores_note()
+    note = job_cores_note()
     cpu_reason = ('--jobs %d' % args.jobs if args.jobs else
                   '%d usable cores%s, REDPROOF_JOBS_ALL=1' % (cpus, note)
                   if whole else
@@ -838,14 +839,14 @@ def pool_size(args, per_task):
         return cpus, '%s; memory not measured' % cpu_reason
     by_memory = max(1, int((avail - FLOOR) // per_task))
     size = max(1, min(cpus, by_memory))
-    cap = runq_memory_cap()
-    capped = (', RUNQ_MEMORY_GB caps it'
+    cap = job_memory_cap()
+    capped = (', SUITE_MEMORY_GB caps it'
               if cap is not None and cap <= avail else '')
-    if cap is None and os.environ.get('RUNQ_MEMORY_GB', '').strip():
+    if cap is None and os.environ.get('SUITE_MEMORY_GB', '').strip():
         # Said, so that a budget spelled some other way is not dropped in
         # silence: the pool is then sized from the host alone.
-        capped = ', RUNQ_MEMORY_GB=%r not understood, so not applied' % (
-            os.environ['RUNQ_MEMORY_GB'])
+        capped = ', SUITE_MEMORY_GB=%r not understood, so not applied' % (
+            os.environ['SUITE_MEMORY_GB'])
     return size, '%s; memory holds %d (%s available%s - %s floor) / %s a ' \
         'run' % (cpu_reason, by_memory, gib(avail), capped, gib(FLOOR),
                  gib(per_task))

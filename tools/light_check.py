@@ -16,7 +16,10 @@ commit will contain:
    __init__ files import names to re-export them -- so requiring none would
    fail every commit; requiring no new one catches the unused import or
    undefined name a change introduces;
- * `git diff --cached --check`: no whitespace errors or conflict markers.
+ * `git diff --cached --check`: no whitespace errors or conflict markers;
+ * no staged file, by its name or its content, carries a word on FORBIDDEN:
+   names of private infrastructure, which this repository never carries.
+   The whole file, not only its added lines, and any case.
 
 A warning is compared by its text without its line number, as a count per
 file, so moving code does not read as adding a warning, and a renamed file is
@@ -35,6 +38,11 @@ try:
     from pyflakes import api
 except ImportError:
     api = None
+
+
+#: Names of private infrastructure. Spelled in pieces, so that this file
+#: carries none of them either.
+FORBIDDEN = ('r' + 'unq',)
 
 
 class _Collect:
@@ -99,6 +107,22 @@ def staged_python():
     return staged
 
 
+def staged_paths():
+    '''Every staged path that the commit adds or changes.'''
+    out = git('diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRT')
+    return [os.fsdecode(p) for p in out.stdout.split(b'\0') if p]
+
+
+def forbidden_in(path):
+    '''The words on FORBIDDEN that the staged file carries, in its name or
+    its content, in any case.'''
+    # Stage 0 named outright: ':0:x' would read as stage 0 of 'x'.
+    content = (blob(':0:' + path) or b'').lower()
+    name = path.lower()
+    return [word for word in FORBIDDEN
+            if word in name or word.encode('ascii') in content]
+
+
 def compile_error(source, path):
     '''The error CPython raises compiling source, or None. pyflakes only
     parses, and some code parses and still cannot be compiled: `await`
@@ -112,7 +136,7 @@ def compile_error(source, path):
 
 
 def new_warnings(path, before_path):
-    staged = blob(':' + path) or b''
+    staged = blob(':0:' + path) or b''
     now = warnings_in(staged, path)
     if not any(m.startswith(('syntax error:', 'error:')) for m in now):
         error = compile_error(staged, path)
@@ -141,6 +165,11 @@ def main():
     for path, before in staged_python():
         for message in new_warnings(path, before):
             print('light check: %s: %s' % (path, message))
+            failed = True
+    for path in staged_paths():
+        for word in forbidden_in(path):
+            print('light check: %s: carries %r, a name of private '
+                  'infrastructure' % (path, word))
             failed = True
     check = git('diff', '--cached', '--check', check=False)
     if check.returncode != 0:

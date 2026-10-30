@@ -14,12 +14,13 @@ def usable_cpus():
     return os.cpu_count() or 1
 
 
-def runq_cores():
-    '''RUNQ_CORES: how many cores a runq job may use, or None when it is unset
-    or not a positive whole number. A light job's unit is held to a CPU quota
-    that the counts above cannot see, and runq says it this way.'''
+def job_cores():
+    '''A job's core cap, SUITE_CORES: how many cores it may use, or None when
+    it is unset or not a positive whole number. A light job's unit is held to
+    a CPU quota that the counts above cannot see; whatever runs the job sets
+    this in its environment to say so.'''
     try:
-        cores = int(os.environ.get('RUNQ_CORES', ''))
+        cores = int(os.environ.get('SUITE_CORES', ''))
     except ValueError:
         return None
     return cores if cores > 0 else None
@@ -31,12 +32,12 @@ def runq_cores():
 # that is half of what the suite can use, and it ignores an affinity mask, so
 # a run confined to four cores of a large machine starts too many. The
 # PYTEST_XDIST_AUTO_NUM_WORKERS override still wins, as it does in xdist.
-# Inside a runq job, RUNQ_CORES bounds it.
+# Inside a job with a core cap, SUITE_CORES bounds it.
 @pytest.hookimpl(optionalhook=True)
 def pytest_xdist_auto_num_workers(config):
     if os.environ.get('PYTEST_XDIST_AUTO_NUM_WORKERS'):
         return None
-    cores, cap = usable_cpus(), runq_cores()
+    cores, cap = usable_cpus(), job_cores()
     return min(cores, cap) if cap is not None else cores
 
 
