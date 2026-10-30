@@ -98,6 +98,18 @@ def bound_callback_socket():
     return s
 
 
+def bound_datagram_socket():
+    '''A loopback UDP socket on a port of its own, handed out like
+    bound_callback_socket()'s: for a test that offers a login flow a socket
+    of the wrong type, on the port its callback URL names. Bound to a port
+    the host chooses for UDP, rather than a TCP port's number, which a host
+    may refuse for UDP (Windows: WinError 10013).'''
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(('127.0.0.1', 0))
+    HANDED_OUT_PORTS.add(s.getsockname()[1])
+    return s
+
+
 # Resolved from this file rather than the working directory. Every test that
 # loads it used to require pytest to be run from the repo root, and running
 # from anywhere else failed 164 tests on a FileNotFoundError in setUp.

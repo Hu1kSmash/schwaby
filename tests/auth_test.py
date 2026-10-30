@@ -8,6 +8,7 @@ from .utils import (
         MockAsyncOAuthClient,
         MockOAuthClient,
         bound_callback_socket,
+        bound_datagram_socket,
         free_callback_port,
         naming_a_port_taken_between_pick_and_bind,
         no_duplicates
@@ -808,14 +809,14 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         import socket
         other = bound_callback_socket()
         unbound = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        datagram = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         closed = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         closed.close()
-        for s in (other, unbound, datagram):
+        for s in (other, unbound):
             self.addCleanup(s.close)
-        # UDP ports are their own space, so this one can share the TCP
-        # socket's number.
-        datagram.bind(('127.0.0.1', self.port))
+        # On the port its URL names, so only its type is wrong.
+        datagram = bound_datagram_socket()
+        self.addCleanup(datagram.close)
+        datagram_port = datagram.getsockname()[1]
         url = f'https://127.0.0.1:{self.port}/callback'
 
         import multiprocess
@@ -835,7 +836,7 @@ class ClientFromLoginFlowTest(unittest.TestCase):
         for name, held, port in (
                 ('another port', other, self.port),
                 ('unbound', unbound, self.port),
-                ('not TCP', datagram, self.port),
+                ('not TCP', datagram, datagram_port),
                 ('closed', closed, self.port)):
             with self.subTest(name), \
                     patch('schwaby.auth.SERVER_STARTUP_TIMEOUT', 2):
