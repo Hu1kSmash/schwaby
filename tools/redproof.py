@@ -125,6 +125,8 @@ REAP_LIMIT = 30
 #: The bounds on the steps before any entry runs
 GIT_LIMIT = 60
 PREPARE_LIMIT = 300
+#: The bound on a shell reading a mutant with -n
+PARSE_LIMIT = 60
 
 #: Files that may hold a secret, which an untracked file named like one is
 #: left out of every copy for
@@ -334,7 +336,7 @@ def failed_on(case, output):
 
 def parse_error(path, data):
     '''Why data does not parse as the file at path holds it, or None. Python
-    is compiled, and a script whose #! names sh, bash or dash is read by that
+    is compiled, and a script whose #! names sh or bash is read by that
     shell's -n; any other file is not checked.'''
     if path.endswith('.py'):
         try:
@@ -348,12 +350,11 @@ def parse_error(path, data):
     words = first[2:].split() if first.startswith(b'#!') else []
     if words and os.path.basename(words[0]) == b'env':
         words = words[1:]
-    if not words or os.path.basename(words[0]) not in (b'sh', b'bash',
-                                                        b'dash'):
+    if not words or os.path.basename(words[0]) not in (b'sh', b'bash'):
         return None
     shell = os.path.basename(words[0]).decode()
     out = subprocess.run([shell, '-n'], input=data, capture_output=True,
-                         timeout=GIT_LIMIT)
+                         timeout=PARSE_LIMIT)
     if out.returncode:
         return out.stderr.decode('utf-8', 'replace').strip() or (
             '%s -n exited %d' % (shell, out.returncode))

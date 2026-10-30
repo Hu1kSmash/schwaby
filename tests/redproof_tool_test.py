@@ -88,7 +88,7 @@ class MutateTest(unittest.TestCase):
         self.assertEqual(b'a = 2\nb = (\n', mutated)
 
     def test_refuses_a_shell_script_mutant_that_does_not_parse(self):
-        for shebang in ('#!/bin/sh', '#!/usr/bin/env bash'):
+        for shebang in ('#!/bin/sh', '#!/bin/bash', '#!/usr/bin/env bash'):
             with self.subTest(shebang=shebang):
                 hook = cases.Case('x/y', 'tools/hooks/x', 'exit 0', 'if',
                                   'tests/x_test.py::T::test_x', 'expected')
@@ -695,13 +695,11 @@ def task(item):
         open(MARK + item, 'w').close()
         time.sleep(30)
     if item.startswith('quick-'):
-        # Done only once the busy one has started its tests. Past the bound
-        # it says so, and the test fails on it: a quick one done first would
-        # end the run before there was anything busy to abandon.
-        deadline = time.monotonic() + 10
+        # Done only once the busy one has started its tests. Bounded by
+        # TASK_LIMIT, set below before any of these run: past it the parent
+        # kills a worker and reports it failed, and the test fails on what
+        # came first.
         while not os.path.exists(MARK + item[6:]):
-            if time.monotonic() > deadline:
-                return ('never-started', item[6:])
             time.sleep(0.01)
     return ('done', item)
 
@@ -890,6 +888,12 @@ print('dies-after', sorted(got), flush=True)
         self.assertEqual("[('failed', 'hangs', 'its worker process ran past "
                          "1 s and was killed')]", lines.get('hangs'),
                          'a task past its bound was not stopped')
+        # Each abandoned run ended on its quick item, once its busy one had
+        # started: anything else, and there was nothing busy to abandon.
+        self.assertEqual(
+            "[('done', 'quick-busy'), ('done', 'quick-wedged'), ('done', "
+            "'quick-own'), ('done', 'quick-wedged2')]", lines.get('firsts'),
+            self.say('an abandoned run did not end on its quick item'))
         # Told to stop, a busy worker stops at once; one that cannot is
         # killed at the bound, 1 s here.
         self.assertLess(float(lines.get('abandoned-busy', 99)), 0.9,
@@ -899,10 +903,6 @@ print('dies-after', sorted(got), flush=True)
         # reaping them waits out REAP_LIMIT: 30 s, not about 1.
         self.assertLess(float(lines.get('abandoned-wedged', 99)), 5,
                         self.say('a stuck worker was not killed at the bound'))
-        self.assertEqual(
-            "[('done', 'quick-busy'), ('done', 'quick-wedged'), ('done', "
-            "'quick-own'), ('done', 'quick-wedged2')]", lines.get('firsts'),
-            self.say('an abandoned run ended before its busy worker started'))
         self.assertEqual('raised', lines.get('cleanup-error'),
                          self.say('a failing cleanup was swallowed'))
         self.assertEqual("[('done', 'b'), ('done', 'c'), ('done', "

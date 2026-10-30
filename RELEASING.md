@@ -277,13 +277,18 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
 
 8. `git push origin main && git push origin vX.Y.Z`
 
-9. Create the release, only once `main` on GitHub holds the tagged commit:
+9. Create the release, only once `main` on GitHub holds the commit GitHub's
+   tag names:
 
    ```shell
    git fetch origin
-   git merge-base --is-ancestor 'vX.Y.Z^{commit}' origin/main \
+   tagged=$(git ls-remote origin 'refs/tags/vX.Y.Z^{}' | cut -f1)
+   test -n "$tagged" && git merge-base --is-ancestor "$tagged" origin/main \
        && gh release create vX.Y.Z -R Hu1kSmash/schwaby --notes-file ...
    ```
+
+   GitHub's tag, not the local one: the release is made from GitHub's, and
+   step 10 says why the two can differ.
 
    A tag can name a commit `main` does not hold: one cut on a branch, or
    pushed apart from `main`. The publish workflow refuses such a commit too,
