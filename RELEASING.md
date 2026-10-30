@@ -288,7 +288,8 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    ```
 
    GitHub's tag, not the local one: the release is made from GitHub's, and
-   step 10 says why the two can differ.
+   step 10 says why the two can differ. A tag made without `-a` has no
+   `^{}` line and is refused here; re-make it as step 7 does.
 
    A tag can name a commit `main` does not hold: one cut on a branch, or
    pushed apart from `main`. The publish workflow refuses such a commit too,
