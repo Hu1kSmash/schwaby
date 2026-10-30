@@ -8158,6 +8158,55 @@ CASES.extend([
          '::test_each_hook_takes_the_interpreter_it_names',
          'pre-merge-commit ran another interpreter',
          subtest="interpreter='active'"),
+
+    # A mutant that does not parse fails every test importing it, on whatever
+    # the import says, so it is refused.
+    Case('harness/a-mutant-that-does-not-parse-is-refused',
+         'tools/redproof.py',
+         '    if why and not parse_error(case.path, original):',
+         '    if False:',
+         'tests/redproof_tool_test.py::MutateTest::test_refuses_a_mutant_that_does_not_parse',
+         'a mutant that does not parse was applied'),
+    Case('harness/a-file-that-never-parsed-is-not-refused',
+         'tools/redproof.py',
+         ' and not parse_error(case.path, original)', '',
+         'tests/redproof_tool_test.py::MutateTest::test_takes_a_mutant_whose_original_does_not_parse_either',
+         'a file that never parsed was refused'),
+    Case('harness/a-shell-script-mutant-is-parsed',
+         'tools/redproof.py',
+         "(b'sh', b'bash',", "(b'zsh', b'ksh',",
+         'tests/redproof_tool_test.py::MutateTest::test_refuses_a_shell_script_mutant_that_does_not_parse',
+         'a shell mutant that does not parse was applied',
+         subtest="shebang='#!/bin/sh'"),
+    Case('harness/an-env-shebang-names-its-shell',
+         'tools/redproof.py',
+         '        words = words[1:]', '        pass',
+         'tests/redproof_tool_test.py::MutateTest::test_refuses_a_shell_script_mutant_that_does_not_parse',
+         'a shell mutant that does not parse was applied',
+         subtest="shebang='#!/usr/bin/env bash'"),
+    Case('harness/a-file-it-cannot-parse-is-not-checked',
+         'tools/redproof.py',
+         '        return None\n    shell = ',
+         "        return 'unparsed'\n    shell = ",
+         'tests/redproof_tool_test.py::MutateTest::test_does_not_check_a_file_it_cannot_parse',
+         'a file it cannot parse was refused'),
+    # The quick item's wait fails at its bound rather than returning done:
+    # with no time to wait, every abandoned run says so.
+    Case('harness/a-quick-item-says-its-busy-one-never-started',
+         'tests/redproof_tool_test.py',
+         '        deadline = time.monotonic() + 10\n        while not os.path.exists(MARK',
+         '        deadline = time.monotonic() - 1\n        while not os.path.exists(MARK',
+         'tests/redproof_tool_test.py::WorkerTest'
+         '::test_a_dead_worker_is_reported_and_its_tests_killed',
+         'an abandoned run ended before its busy worker started'),
+    # A release is cut only from a commit main holds.
+    Case('ci/a-release-commit-main-does-not-hold-is-refused',
+         '.github/workflows/publish.yml',
+         'git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || {',
+         'true || {',
+         'tests/suite_config_test.py::ReleaseCommitOnMainTest'
+         '::test_a_release_commit_main_does_not_hold_is_refused',
+         '1 != 0', subtest='on_main=False'),
 ])
 
 # The login-flow tests' xdist group and the harness's port-group lock were

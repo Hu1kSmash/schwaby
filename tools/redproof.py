@@ -39,8 +39,9 @@ VERDICTS
     ERROR       the harness itself failed while judging it: a defect in the
                 harness, named against the entry, and the run goes on.
     SPEC        the entry cannot be judged: its text is missing or ambiguous,
-                the mutation is a no-op, or the test fails unmutated, which
-                includes a baseline whose worker died before it finished.
+                the mutation is a no-op, the mutant does not parse where the
+                original does, or the test fails unmutated, which includes a
+                baseline whose worker died before it finished.
 
 POSIX only: each run is a process group of its own, waited for with
 os.wait4 and killed with os.killpg.
@@ -109,6 +110,7 @@ import sys
 import tempfile
 import threading
 import time
+import warnings
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CASES = 'tools/redproof_cases.py'
@@ -330,6 +332,34 @@ def failed_on(case, output):
                for title, said in failure_sections(output))
 
 
+def parse_error(path, data):
+    '''Why data does not parse as the file at path holds it, or None. Python
+    is compiled, and a script whose #! names sh, bash or dash is read by that
+    shell's -n; any other file is not checked.'''
+    if path.endswith('.py'):
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                compile(data, path, 'exec', dont_inherit=True)
+        except (SyntaxError, ValueError) as e:
+            return str(e)
+        return None
+    first = data.split(b'\n', 1)[0]
+    words = first[2:].split() if first.startswith(b'#!') else []
+    if words and os.path.basename(words[0]) == b'env':
+        words = words[1:]
+    if not words or os.path.basename(words[0]) not in (b'sh', b'bash',
+                                                        b'dash'):
+        return None
+    shell = os.path.basename(words[0]).decode()
+    out = subprocess.run([shell, '-n'], input=data, capture_output=True,
+                         timeout=GIT_LIMIT)
+    if out.returncode:
+        return out.stderr.decode('utf-8', 'replace').strip() or (
+            '%s -n exited %d' % (shell, out.returncode))
+    return None
+
+
 def mutate(case, original):
     '''The mutated bytes, or (None, why) when the entry cannot be judged.'''
     pairs = pairs_of(case)
@@ -347,6 +377,13 @@ def mutate(case, original):
     mutated = original
     for old, new in pairs:
         mutated = mutated.replace(old, new)
+    # A mutant that does not parse fails every test that imports it, on
+    # whatever the import says: a red that proves nothing, and one that
+    # passes when its expect is broad.
+    why = parse_error(case.path, mutated)
+    if why and not parse_error(case.path, original):
+        return None, ('the mutant does not parse where the original does: '
+                      '%s' % why)
     return mutated, None
 
 

@@ -78,7 +78,10 @@ class EntrypointTest(unittest.TestCase):
         env = {k: v for k, v in os.environ.items()
                if not k.startswith('GIT_')}
         env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
-        for args in (['init', '-q'], ['add', 'tools']):
+        # Its own identity too, though nothing here commits: never the host's.
+        for args in (['init', '-q'], ['config', 'user.name', 'test'],
+                     ['config', 'user.email', 'test@example.invalid'],
+                     ['add', 'tools']):
             subprocess.run(['git', *args], cwd=checkout, env=env,
                            capture_output=True, check=True)
         run = self.run_tool(os.path.join(checkout, 'tools', 'redproof.py'),

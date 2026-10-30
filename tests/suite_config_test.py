@@ -1,8 +1,11 @@
-'''The suite's own configuration: how many workers `-n auto` starts, and the
-limit every test runs under.'''
+'''The suite's own configuration: how many workers `-n auto` starts, the
+limit every test runs under, the Pythons CI runs, and the publish workflow's
+check that main holds the release commit.'''
 
 import importlib.util
 import os
+import subprocess
+import tempfile
 import types
 import unittest
 
@@ -127,3 +130,67 @@ class PythonPinsTest(unittest.TestCase):
                 '%s sets up a Python other than the pinned one' % workflow)
             self.assertEqual(uv, text.count('The interpreter is the pinned build'),
                              '%s does not check its interpreter' % workflow)
+
+
+@unittest.skipIf(os.name == 'nt', 'the step runs under bash on Linux')
+class ReleaseCommitOnMainTest(unittest.TestCase):
+
+    STEP = 'The release commit is on main'
+
+    def script(self):
+        # The step's own run block, as the workflow runs it.
+        with open(os.path.join(ROOT, '.github', 'workflows', 'publish.yml'),
+                  encoding='utf-8') as f:
+            lines = f.read().splitlines()
+        at = lines.index('      - name: %s' % self.STEP)
+        while lines[at].strip() != 'run: |':
+            at += 1
+        body = []
+        for line in lines[at + 1:]:
+            if line.strip() and not line.startswith(' ' * 10):
+                break
+            body.append(line[10:])
+        return '\n'.join(body) + '\n'
+
+    def git(self, cwd, *args):
+        return subprocess.run(['git', *args], cwd=cwd, env=self.env,
+                              capture_output=True, text=True,
+                              check=True).stdout.strip()
+
+    def commit(self, cwd, name):
+        with open(os.path.join(cwd, name), 'w') as f:
+            f.write(name)
+        self.git(cwd, 'add', name)
+        self.git(cwd, 'commit', '-q', '-m', name)
+        return self.git(cwd, 'rev-parse', 'HEAD')
+
+    def test_a_release_commit_main_does_not_hold_is_refused(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.env = {k: v for k, v in os.environ.items()
+                    if not k.startswith('GIT_')}
+        self.env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
+        origin = os.path.join(tmp.name, 'origin')
+        os.mkdir(origin)
+        self.git(origin, 'init', '-q', '-b', 'main')
+        self.git(origin, 'config', 'user.name', 'test')
+        self.git(origin, 'config', 'user.email', 'test@example.invalid')
+        tagged = self.commit(origin, 'tagged')
+        # Main has moved on since, as it does between a tag and its release.
+        self.commit(origin, 'later')
+        work = os.path.join(tmp.name, 'work')
+        self.git(tmp.name, 'clone', '-q', origin, work)
+        self.git(work, 'config', 'user.name', 'test')
+        self.git(work, 'config', 'user.email', 'test@example.invalid')
+        unmerged = self.commit(work, 'unmerged')
+        script = self.script()
+        for sha, code in ((tagged, 0), (unmerged, 1)):
+            with self.subTest(on_main=not code):
+                run = subprocess.run(
+                    ['bash', '-e', '-o', 'pipefail', '-c', script], cwd=work,
+                    env=dict(self.env, GITHUB_SHA=sha),
+                    capture_output=True, text=True, timeout=60)
+                self.assertEqual(code, run.returncode,
+                                 run.stdout + run.stderr)
+                if code:
+                    self.assertIn('%s is not on main' % sha, run.stdout)

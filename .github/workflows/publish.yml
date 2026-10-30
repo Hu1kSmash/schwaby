@@ -62,6 +62,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # A release is cut only from a commit main holds. One created from a tag
+      # on a branch that was never merged, or a dispatch from one, would
+      # publish code that never reached main.
+      - name: The release commit is on main
+        shell: bash
+        run: |
+          git fetch --quiet origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || {
+            echo "$GITHUB_SHA is not on main"; exit 1; }
       - name: Pinned Python "3.12"
         id: pin
         shell: bash

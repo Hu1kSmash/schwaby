@@ -75,6 +75,44 @@ class MutateTest(unittest.TestCase):
                               % count)
             self.assertIn('appears %d times' % count, why)
 
+    def test_refuses_a_mutant_that_does_not_parse(self):
+        mutated, why = redproof.mutate(case(new='a = ('), b'a = 1\n')
+        self.assertIsNone(mutated, 'a mutant that does not parse was applied')
+        self.assertIn('does not parse where the original does', why)
+
+    def test_takes_a_mutant_whose_original_does_not_parse_either(self):
+        # Positive control: the refusal is of a mutation that broke parsing,
+        # not of a file that never parsed.
+        mutated, why = redproof.mutate(case(), b'a = 1\nb = (\n')
+        self.assertIsNone(why, 'a file that never parsed was refused')
+        self.assertEqual(b'a = 2\nb = (\n', mutated)
+
+    def test_refuses_a_shell_script_mutant_that_does_not_parse(self):
+        for shebang in ('#!/bin/sh', '#!/usr/bin/env bash'):
+            with self.subTest(shebang=shebang):
+                hook = cases.Case('x/y', 'tools/hooks/x', 'exit 0', 'if',
+                                  'tests/x_test.py::T::test_x', 'expected')
+                original = ('%s\nexit 0\n' % shebang).encode()
+                mutated, why = redproof.mutate(hook, original)
+                self.assertIsNone(mutated, 'a shell mutant that does not '
+                                  'parse was applied')
+                self.assertIn('does not parse where the original does', why)
+                # Positive control: the same script, still parsing.
+                hook.new = 'exit 1'
+                mutated, why = redproof.mutate(hook, original)
+                self.assertIsNone(why, 'a shell mutant that parses was '
+                                  'refused')
+
+    def test_does_not_check_a_file_it_cannot_parse(self):
+        # Asked directly: through mutate() the original fails the same
+        # check, so a refusal never shows.
+        for path, data in (('docs/x.rst', b'(\n'),
+                           ('tools/hooks/x', b'if\n'),
+                           ('tools/x', b'#!/usr/bin/perl\nif\n')):
+            with self.subTest(path=path):
+                self.assertIsNone(redproof.parse_error(path, data),
+                                  'a file it cannot parse was refused')
+
 
 class FakeRun:
     '''Stands in for redproof.Run in judge(): a snapshot, and run() handing
@@ -657,9 +695,13 @@ def task(item):
         open(MARK + item, 'w').close()
         time.sleep(30)
     if item.startswith('quick-'):
-        # Done only once the busy one has started its tests.
+        # Done only once the busy one has started its tests. Past the bound
+        # it says so, and the test fails on it: a quick one done first would
+        # end the run before there was anything busy to abandon.
         deadline = time.monotonic() + 10
-        while not os.path.exists(MARK + item[6:]) and time.monotonic() < deadline:
+        while not os.path.exists(MARK + item[6:]):
+            if time.monotonic() > deadline:
+                return ('never-started', item[6:])
             time.sleep(0.01)
     return ('done', item)
 
@@ -682,10 +724,13 @@ print('big', got, flush=True)
 rp.TASK_LIMIT = 1
 print('hangs', sorted(rp.parallel(task, ['hangs'], 1, failed)), flush=True)
 rp.WORKER_STOP_LIMIT = 1
+# What each abandoned run below got first: its quick item, done.
+firsts = []
 for first in ('busy', 'wedged'):
     # The run ends early, as on a signal, with a worker still busy.
     started = time.monotonic()
     for result in rp.parallel(task, [first, 'quick-' + first], 2, failed):
+        firsts.append(result)
         break
     print('abandoned-' + first, round(time.monotonic() - started, 1),
           flush=True)
@@ -694,6 +739,7 @@ for first in ('busy', 'wedged'):
 real_reap = rp.reap
 rp.reap = lambda pgid: None
 for result in rp.parallel(task, ['own', 'quick-own'], 2, failed):
+    firsts.append(result)
     break
 rp.reap = real_reap
 # A wait cut short, as by a signal landing in it: the worker is killed, and
@@ -709,10 +755,12 @@ def cut_short(pid, deadline):
 rp._wait_gone = cut_short
 try:
     for result in rp.parallel(task, ['wedged2', 'quick-wedged2'], 2, failed):
+        firsts.append(result)
         break
 except RuntimeError:
     pass
 rp._wait_gone = real_wait_gone
+print('firsts', firsts, flush=True)
 # A cleanup that fails says so, not silently.
 real_wait_gone = rp._wait_gone
 def broken(pid, deadline):
@@ -851,6 +899,10 @@ print('dies-after', sorted(got), flush=True)
         # reaping them waits out REAP_LIMIT: 30 s, not about 1.
         self.assertLess(float(lines.get('abandoned-wedged', 99)), 5,
                         self.say('a stuck worker was not killed at the bound'))
+        self.assertEqual(
+            "[('done', 'quick-busy'), ('done', 'quick-wedged'), ('done', "
+            "'quick-own'), ('done', 'quick-wedged2')]", lines.get('firsts'),
+            self.say('an abandoned run ended before its busy worker started'))
         self.assertEqual('raised', lines.get('cleanup-error'),
                          self.say('a failing cleanup was swallowed'))
         self.assertEqual("[('done', 'b'), ('done', 'c'), ('done', "

@@ -277,12 +277,23 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
 
 8. `git push origin main && git push origin vX.Y.Z`
 
-9. `gh release create vX.Y.Z -R Hu1kSmash/schwaby --notes-file ...`
+9. Create the release, only once `main` on GitHub holds the tagged commit:
+
+   ```shell
+   git fetch origin
+   git merge-base --is-ancestor 'vX.Y.Z^{commit}' origin/main \
+       && gh release create vX.Y.Z -R Hu1kSmash/schwaby --notes-file ...
+   ```
+
+   A tag can name a commit `main` does not hold: one cut on a branch, or
+   pushed apart from `main`. The publish workflow refuses such a commit too,
+   but only once the release exists; this check stops it first.
 
    **Creating the release is what publishes to PyPI.**
    `.github/workflows/publish.yml` runs on a published release, re-runs the suite
-   on all five Pythons, runs `twine check --strict`, verifies the built version
-   matches the tag, and uploads via trusted publishing. Pushing a tag alone
+   on all five Pythons, checks `main` holds the commit, runs `twine check
+   --strict`, verifies the built version matches the tag, and uploads via
+   trusted publishing. Pushing a tag alone
    publishes nothing, so a tag can be moved before the release is created. After
    it, the version is permanent: PyPI refuses a re-upload even after a delete.
 
