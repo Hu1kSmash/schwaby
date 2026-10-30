@@ -8,11 +8,17 @@
 # It runs on a published Release rather than on a tag push, so pushing a tag by
 # itself never publishes. Creating the release is the deliberate act.
 name: publish
+run-name: publish ${{ github.ref_name }}
 
 on:
   release:
     types: [published]
-  # Lets a failed publish be retried without cutting another release.
+  # Lets a failed publish be retried without cutting another release. Run it
+  # on the release's tag (gh workflow run publish --ref vX.Y.Z): the run's
+  # commit is then the tag's, which every checkout below builds, and the
+  # pypi environment deploys only from a v* tag. Run from a branch, it would
+  # build that branch's tip, newer code under the same version, and an upload
+  # to PyPI cannot be taken back.
   workflow_dispatch:
 
 permissions:
@@ -61,18 +67,37 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
+      # Only a published release's tag is published, whichever way the run
+      # was started: a retry from a branch, or on a tag whose release was
+      # never published, stops here.
+      - name: The run is a published release's tag
+        shell: bash
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) ;;
+            *) echo "$GITHUB_REF is not a release tag: run it with --ref vX.Y.Z"
+               exit 1 ;;
+          esac
+          draft=$(gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" \
+                  --json isDraft -q .isDraft) || draft=missing
+          test "$draft" = false || {
+            echo "$GITHUB_REF_NAME has no published release"; exit 1; }
+        env:
+          GH_TOKEN: ${{ github.token }}
+      # No ref: the run's own commit, so a release whose tag was moved after
+      # it started fails here rather than building the new commit.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       # A release is cut only from a commit main holds. One created from a tag
-      # on a branch that was never merged, or a dispatch from one, would
-      # publish code that never reached main.
+      # on a branch that was never merged would publish code that never
+      # reached main.
       - name: The release commit is on main
         shell: bash
         run: |
           git fetch --quiet origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || {
-            echo "$GITHUB_SHA is not on main"; exit 1; }
+          git merge-base --is-ancestor HEAD FETCH_HEAD || {
+            echo "$(git rev-parse HEAD) is not on main"; exit 1; }
       - name: Pinned Python "3.12"
         id: pin
         shell: bash
@@ -109,16 +134,17 @@ jobs:
       # is substantial and contains what a PyPI page has to carry. Both run.
       - run: python -m twine check --strict dist/*
 
-      # The version in the artifact must match the tag being released.
-      # Publishing 2.5.1 from a tag called v2.6.0 is not recoverable: PyPI
-      # refuses re-uploads of a version, so the wrong number is permanent.
+      # The version in the artifact must match the tag being released, on a
+      # release and a retry alike. Publishing 2.5.1 from a tag called v2.6.0
+      # is not recoverable: PyPI refuses re-uploads of a version, so the
+      # wrong number is permanent.
       - name: Version must match the tag
-        if: github.event_name == 'release'
+        shell: bash
         run: |
           tag="${GITHUB_REF_NAME#v}"
           built=$(ls dist/*.tar.gz | sed -E 's/.*schwaby-(.*)\.tar\.gz/\1/')
           echo "tag=$tag built=$built"
-          test "$tag" = "$built"
+          test -n "$tag" && test "$tag" = "$built"
 
       # upload-artifact and download-artifact are versioned separately and
       # their majors are offset by one from v5 onward -- download picked up an

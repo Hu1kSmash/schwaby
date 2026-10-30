@@ -303,6 +303,21 @@ turned the 2.3.0 `login` split from a saving into three late failure modes.
    publishes nothing, so a tag can be moved before the release is created. After
    it, the version is permanent: PyPI refuses a re-upload even after a delete.
 
+   If the publish fails, retry it without cutting another release, on the
+   release's tag itself:
+
+   ```shell
+   gh workflow run publish -R Hu1kSmash/schwaby --ref vX.Y.Z
+   ```
+
+   The run then builds that tag's commit, with the tag's own copy of the
+   workflow, and runs every check a release does. Run from a branch, or on a
+   tag with no published release, it stops before building: the branch's tip
+   would be newer code under the same version. The `pypi` environment also
+   deploys only from a `v*` tag. That holds for tags from v5.3.0 on. Older
+   tags carry a workflow without these checks, and every version they name
+   is already on PyPI, which refuses a re-upload.
+
 10. **If you move a tag, say so — a normal `git fetch` will not follow it.**
 
    Deleting and re-creating a pushed tag is sometimes right; v3.0.0 was re-cut

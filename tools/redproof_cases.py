@@ -8209,11 +8209,68 @@ CASES.extend([
     # A release is cut only from a commit main holds.
     Case('ci/a-release-commit-main-does-not-hold-is-refused',
          '.github/workflows/publish.yml',
-         'git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || {',
+         'git merge-base --is-ancestor HEAD FETCH_HEAD || {',
          'true || {',
          'tests/suite_config_test.py::ReleaseCommitOnMainTest'
          '::test_a_release_commit_main_does_not_hold_is_refused',
          '1 != 0', subtest='on_main=False'),
+    # A publish builds its run's own commit: a release's, or on a retry the
+    # tag's it was run on.
+    Case('ci/a-checkout-builds-the-runs-own-commit',
+         '.github/workflows/publish.yml',
+         '        with:\n          fetch-depth: 0\n',
+         '        with:\n          ref: main\n          fetch-depth: 0\n',
+         'tests/suite_config_test.py::PublishBuildsTheTagTest::test_every_checkout_builds_the_runs_own_commit',
+         "a checkout builds something other than the run's commit"),
+    Case('ci/the-version-check-runs-on-a-retry',
+         '.github/workflows/publish.yml',
+         '      - name: Version must match the tag\n',
+         "      - name: Version must match the tag\n"
+         "        if: github.event_name == 'release'\n",
+         'tests/suite_config_test.py::PublishBuildsTheTagTest::test_the_version_check_runs_on_every_trigger',
+         'the version check is skipped on some trigger'),
+    # Only a published release's tag is published.
+    Case('ci/a-retry-must-run-on-a-release-tag',
+         '.github/workflows/publish.yml',
+         '            refs/tags/v*) ;;', '            *) ;;',
+         'tests/suite_config_test.py::PublishBuildsTheTagTest::test_only_a_published_release_tag_is_published',
+         'refs/heads/main, isDraft false: exited 0',
+         subtest="ref='refs/heads/main'"),
+    Case('ci/a-tag-must-have-a-published-release',
+         '.github/workflows/publish.yml',
+         'test "$draft" = false || {', 'true || {',
+         'tests/suite_config_test.py::PublishBuildsTheTagTest::test_only_a_published_release_tag_is_published',
+         'refs/tags/v5.3.0, isDraft true: exited 0',
+         subtest="draft='true'"),
+    Case('ci/a-missing-release-is-not-published',
+         '.github/workflows/publish.yml',
+         '--json isDraft -q .isDraft) || draft=missing',
+         '--json isDraft -q .isDraft) || draft=false',
+         'tests/suite_config_test.py::PublishBuildsTheTagTest::test_only_a_published_release_tag_is_published',
+         'refs/tags/v5.3.0, isDraft missing: exited 0',
+         subtest="draft='missing'"),
+    Case('ci/the-tag-step-asks-whether-the-release-is-a-draft',
+         '.github/workflows/publish.yml',
+         '--json isDraft -q .isDraft)', '--json isPrerelease -q .isPrerelease)',
+         'tests/suite_config_test.py::PublishBuildsTheTagTest'
+         '::test_only_a_published_release_tag_is_published',
+         "it asked gh something other than whether the tag's release is a "
+         'draft', subtest="draft='false'"),
+    # The version check, on a release and a retry alike.
+    Case('ci/the-built-version-must-equal-the-tag',
+         '.github/workflows/publish.yml',
+         'test -n "$tag" && test "$tag" = "$built"', 'test -n "$tag"',
+         'tests/suite_config_test.py::PublishBuildsTheTagTest'
+         '::test_the_built_version_must_equal_the_tag',
+         "tag 'v5.2.0', dist built: exited 0",
+         subtest="tag='v5.2.0'"),
+    Case('ci/an-empty-tag-is-refused',
+         '.github/workflows/publish.yml',
+         'test -n "$tag" && test "$tag" = "$built"', 'test "$tag" = "$built"',
+         'tests/suite_config_test.py::PublishBuildsTheTagTest'
+         '::test_the_built_version_must_equal_the_tag',
+         "tag '', dist unnamed: exited 0",
+         subtest="dist='unnamed'"),
 ])
 
 # The login-flow tests' xdist group and the harness's port-group lock were
