@@ -371,8 +371,6 @@ class LightCheckTest(unittest.TestCase):
             ran = f.read().split()
         return ran[-1] if ran else None
 
-    @unittest.skipIf(os.name == 'nt', 'the hooks are sh scripts, and a test '
-                     'cannot tell which interpreter Git for Windows finds')
     def test_each_hook_takes_the_interpreter_it_names(self):
         # The last one present wins: venv, then .venv at the checkout's root,
         # then the active virtualenv.
@@ -393,18 +391,17 @@ class LightCheckTest(unittest.TestCase):
                     self.stand_in(where, label)
                     if venv:
                         env['VIRTUAL_ENV'] = venv
+                    # Through git, which on Windows runs it with its own sh.
                     out = subprocess.run(
-                        [os.path.join(self.repo, 'tools', 'hooks', hook)],
-                        cwd=self.repo, env=env, capture_output=True,
-                        text=True)
+                        ['git', '-c', 'core.hooksPath=tools/hooks', 'hook',
+                         'run', hook], cwd=self.repo, env=env,
+                        capture_output=True, text=True)
                     self.assertEqual(0, out.returncode,
                                      out.stdout + out.stderr)
                     self.assertEqual(label, self.last_ran(),
                                      '%s ran another interpreter' % hook)
             env.pop('VIRTUAL_ENV')
 
-    @unittest.skipIf(os.name == 'nt', 'the hooks are sh scripts, and a test '
-                     'cannot tell which interpreter Git for Windows finds')
     def test_a_commit_or_merge_through_the_hooks_is_refused_and_named(self):
         # Through git itself: the check's answer is the commit's or the
         # merge's, refusing one that adds a warning and letting a clean one

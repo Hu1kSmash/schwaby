@@ -8119,6 +8119,53 @@ CASES.extend([
          'tests/entrypoints_test.py::EntrypointTest'
          '::test_repeat_runs_as_a_script',
          "No module named 'tools'"),
+    # The pytest way in, which the harness runs each entry through: an import
+    # placed on that path alone fails it and leaves --where working.
+    Case('entrypoints/redproof-audit-runs-pytest-without-the-root-on-the-path',
+         'tools/redproof_audit.py',
+         '    import pytest\n',
+         '    import tools\n    import pytest\n',
+         'tests/entrypoints_test.py::EntrypointTest'
+         '::test_redproof_audit_runs_pytest_as_a_script',
+         "No module named 'tools'"),
+    Case('entrypoints/redproof-audit-installs-without-the-root-on-the-path',
+         'tools/redproof_audit.py',
+         'if _OUT:\n    _install()\n',
+         'if _OUT:\n    import tools\n    _install()\n',
+         'tests/entrypoints_test.py::EntrypointTest'
+         '::test_redproof_audit_runs_pytest_as_a_script',
+         "No module named 'tools'"),
+    # The test each tool is run by is the one its entry names, in that class,
+    # and it runs on this platform.
+    Case('entrypoints/run-by-finds-the-class',
+         'tests/light_check_test.py',
+         'class LightCheckTest(unittest.TestCase):',
+         'class LightCheckTests(unittest.TestCase):',
+         'tests/entrypoints_test.py::EntrypointTest'
+         '::test_every_tool_with_a_main_is_run_as_a_script',
+         'light_check.py: no light_check_test.py::LightCheckTest::'),
+    Case('entrypoints/run-by-finds-the-method',
+         'tests/entrypoints_test.py',
+         '    def test_repeat_runs_as_a_script(self):',
+         '    def test_repeat_runs_as_script(self):',
+         'tests/entrypoints_test.py::EntrypointTest'
+         '::test_every_tool_with_a_main_is_run_as_a_script',
+         'repeat.py: no entrypoints_test.py::EntrypointTest::test_repeat'),
+    Case('entrypoints/run-by-test-is-not-skipped',
+         'tests/entrypoints_test.py',
+         "@unittest.skipIf(os.name == 'nt', 'repeat.py runs on POSIX only')",
+         "@unittest.skipIf(True, 'repeat.py runs on POSIX only')",
+         'tests/entrypoints_test.py::EntrypointTest'
+         '::test_every_tool_with_a_main_is_run_as_a_script',
+         'test_repeat_runs_as_a_script is skipped here'),
+    Case('entrypoints/run-by-class-is-not-skipped',
+         'tests/light_check_test.py',
+         'class LightCheckTest(unittest.TestCase):',
+         "@unittest.skip('off')\nclass LightCheckTest(unittest.TestCase):",
+         'tests/entrypoints_test.py::EntrypointTest'
+         '::test_every_tool_with_a_main_is_run_as_a_script',
+         'LightCheckTest::test_a_commit_or_merge_through_the_hooks_is_refused'
+         '_and_named is skipped here'),
     # A hook that runs the check and drops its answer refuses nothing.
     Case('entrypoints/pre-commit-refuses-on-the-checks-answer',
          'tools/hooks/pre-commit',

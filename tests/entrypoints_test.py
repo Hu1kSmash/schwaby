@@ -4,6 +4,7 @@ directory outside the checkout. A tool's own tests import it by path, which
 proves its functions and not that the file starts: a tool that works only
 with the repository root on the path passes every one of them.'''
 
+import importlib
 import json
 import os
 import re
@@ -21,17 +22,22 @@ class EntrypointTest(unittest.TestCase):
 
     # Each tool with a main, and each hook, and the test that runs it.
     RUN_BY = {
-        'light_check.py': 'light_check_test.py::'
+        'light_check.py': 'light_check_test.py::LightCheckTest::'
         'test_a_commit_or_merge_through_the_hooks_is_refused_and_named',
-        'redproof.py': 'entrypoints_test.py::test_redproof_runs_as_a_script',
-        'redproof_audit.py': 'entrypoints_test.py::'
+        'redproof.py': 'entrypoints_test.py::EntrypointTest::'
+        'test_redproof_runs_as_a_script',
+        'redproof_audit.py': 'entrypoints_test.py::EntrypointTest::'
         'test_redproof_audit_runs_as_a_script',
-        'repeat.py': 'entrypoints_test.py::test_repeat_runs_as_a_script',
-        'hooks/pre-commit': 'light_check_test.py::'
+        'repeat.py': 'entrypoints_test.py::EntrypointTest::'
+        'test_repeat_runs_as_a_script',
+        'hooks/pre-commit': 'light_check_test.py::LightCheckTest::'
         'test_a_commit_or_merge_through_the_hooks_is_refused_and_named',
-        'hooks/pre-merge-commit': 'light_check_test.py::'
+        'hooks/pre-merge-commit': 'light_check_test.py::LightCheckTest::'
         'test_a_commit_or_merge_through_the_hooks_is_refused_and_named',
     }
+    # The tools that run on POSIX only, whose tests skip on Windows. Every
+    # other test above runs everywhere.
+    POSIX_ONLY = {'redproof.py', 'repeat.py'}
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -56,11 +62,19 @@ class EntrypointTest(unittest.TestCase):
                          'a tool with a main, or a hook, that no test runs '
                          'as it is used, or one listed here that is gone')
         for name, by in self.RUN_BY.items():
-            path, test = by.split('::')
-            with open(os.path.join(ROOT, 'tests', path),
-                      encoding='utf-8') as f:
-                self.assertIn('    def %s(self):' % test, f.read(),
-                              '%s: no %s' % (name, by))
+            path, cls, test = by.split('::')
+            module = importlib.import_module(
+                'tests.' + path[:-len('.py')])
+            self.assertIn(cls, vars(module), '%s: no %s' % (name, by))
+            method = vars(vars(module)[cls]).get(test)
+            self.assertTrue(callable(method), '%s: no %s' % (name, by))
+            skipped = (getattr(vars(module)[cls], '__unittest_skip__', False)
+                       or getattr(method, '__unittest_skip__', False))
+            expected = os.name == 'nt' and name in self.POSIX_ONLY
+            self.assertEqual(expected, skipped,
+                             '%s: %s %s here' % (
+                                 name, by,
+                                 'is skipped' if skipped else 'runs'))
 
     @unittest.skipIf(os.name == 'nt', 'redproof.py runs on POSIX only')
     def test_redproof_runs_as_a_script(self):
