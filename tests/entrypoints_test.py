@@ -36,7 +36,8 @@ class EntrypointTest(unittest.TestCase):
         'test_a_commit_or_merge_through_the_hooks_is_refused_and_named',
     }
     # The tools that run on POSIX only, whose tests skip on Windows. Every
-    # other test above runs everywhere.
+    # other test above runs everywhere. A skip is seen by its decorator, on
+    # the method or its class; one taken inside the test is not.
     POSIX_ONLY = {'redproof.py', 'repeat.py'}
 
     def setUp(self):
@@ -65,7 +66,7 @@ class EntrypointTest(unittest.TestCase):
             path, cls, test = by.split('::')
             module = importlib.import_module(
                 'tests.' + path[:-len('.py')])
-            self.assertIn(cls, vars(module), '%s: no %s' % (name, by))
+            self.assertTrue(hasattr(module, cls), '%s: no %s' % (name, by))
             method = vars(vars(module)[cls]).get(test)
             self.assertTrue(callable(method), '%s: no %s' % (name, by))
             skipped = (getattr(vars(module)[cls], '__unittest_skip__', False)

@@ -4,12 +4,15 @@ not.'''
 
 import importlib.util
 import os
-import shlex
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import unittest
+from venv import EnvBuilder
+
+import pyflakes
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK = os.path.join(ROOT, 'tools', 'light_check.py')
@@ -355,16 +358,19 @@ class LightCheckTest(unittest.TestCase):
         open(self.ran, 'w').close()
 
     def stand_in(self, where, label):
-        # The interpreter running this test, which has pyflakes, under the
-        # name a hook looks for, noting each time it is the one that ran: a
-        # hook that missed it would find another python3, which may have
-        # pyflakes too and pass the same way.
-        os.makedirs(os.path.join(where, 'bin'), exist_ok=True)
-        python = os.path.join(where, 'bin', 'python')
-        with open(python, 'w') as f:
-            f.write('#!/bin/sh\necho %s >> %s\nexec %s "$@"\n' % (
-                label, shlex.quote(self.ran), shlex.quote(sys.executable)))
-        os.chmod(python, 0o755)
+        # A virtualenv, laid out as this platform lays one out (bin/python;
+        # Scripts\python.exe on Windows), under the name a hook looks for.
+        # Its interpreter notes each time it is the one that ran, and finds
+        # this test's pyflakes: a hook that missed it would find another
+        # python3, which may have pyflakes too and pass the same way.
+        EnvBuilder(symlinks=os.name != 'nt').create(where)
+        site = sysconfig.get_path(
+            'purelib', 'nt' if os.name == 'nt' else 'posix_prefix',
+            vars={'base': where, 'platbase': where})
+        with open(os.path.join(site, 'stand_in.pth'), 'w') as f:
+            f.write('import sys; open(%r, "a").write(%r)\n%s\n' % (
+                self.ran, label + '\n',
+                os.path.dirname(os.path.dirname(pyflakes.__file__))))
 
     def last_ran(self):
         with open(self.ran) as f:
@@ -391,11 +397,15 @@ class LightCheckTest(unittest.TestCase):
                     self.stand_in(where, label)
                     if venv:
                         env['VIRTUAL_ENV'] = venv
-                    # Through git, which on Windows runs it with its own sh.
-                    out = subprocess.run(
-                        ['git', '-c', 'core.hooksPath=tools/hooks', 'hook',
-                         'run', hook], cwd=self.repo, env=env,
-                        capture_output=True, text=True)
+                    # As git runs it. On Windows that is with git's own
+                    # sh, which only git starts (`git hook run`, git 2.36
+                    # or later).
+                    run = ([os.path.join(self.repo, 'tools', 'hooks', hook)]
+                           if os.name != 'nt' else
+                           ['git', '-c', 'core.hooksPath=tools/hooks',
+                            'hook', 'run', hook])
+                    out = subprocess.run(run, cwd=self.repo, env=env,
+                                         capture_output=True, text=True)
                     self.assertEqual(0, out.returncode,
                                      out.stdout + out.stderr)
                     self.assertEqual(label, self.last_ran(),

@@ -8120,7 +8120,8 @@ CASES.extend([
          '::test_repeat_runs_as_a_script',
          "No module named 'tools'"),
     # The pytest way in, which the harness runs each entry through: an import
-    # placed on that path alone fails it and leaves --where working.
+    # in main past --where, and one at the install, which runs only with
+    # REDPROOF_AUDIT set. Without it set, --where passes under both.
     Case('entrypoints/redproof-audit-runs-pytest-without-the-root-on-the-path',
          'tools/redproof_audit.py',
          '    import pytest\n',
@@ -8136,7 +8137,8 @@ CASES.extend([
          '::test_redproof_audit_runs_pytest_as_a_script',
          "No module named 'tools'"),
     # The test each tool is run by is the one its entry names, in that class,
-    # and it runs on this platform.
+    # and it is not skipped here. Here is POSIX: that a POSIX-only tool's
+    # test skips on Windows is checked only by a run there.
     Case('entrypoints/run-by-finds-the-class',
          'tests/light_check_test.py',
          'class LightCheckTest(unittest.TestCase):',
