@@ -12,8 +12,6 @@ import tempfile
 import unittest
 from venv import EnvBuilder
 
-import pyflakes
-
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECK = os.path.join(ROOT, 'tools', 'light_check.py')
 HOOKS = os.path.join(ROOT, 'tools', 'hooks')
@@ -363,12 +361,16 @@ class LightCheckTest(unittest.TestCase):
         # Its interpreter notes each time it is the one that ran, and finds
         # this test's pyflakes: a hook that missed it would find another
         # python3, which may have pyflakes too and pass the same way.
+        # Imported here, so an environment without pyflakes fails the tests
+        # that need it rather than collecting none of the suite.
+        import pyflakes
         EnvBuilder(symlinks=os.name != 'nt').create(where)
         site = sysconfig.get_path(
             'purelib', 'nt' if os.name == 'nt' else 'posix_prefix',
             vars={'base': where, 'platbase': where})
         with open(os.path.join(site, 'stand_in.pth'), 'w') as f:
-            f.write('import sys; open(%r, "a").write(%r)\n%s\n' % (
+            f.write('import sys; f = open(%r, "a"); f.write(%r); f.close()'
+                    '\n%s\n' % (
                 self.ran, label + '\n',
                 os.path.dirname(os.path.dirname(pyflakes.__file__))))
 
@@ -397,8 +399,8 @@ class LightCheckTest(unittest.TestCase):
                     self.stand_in(where, label)
                     if venv:
                         env['VIRTUAL_ENV'] = venv
-                    # As git runs it. On Windows that is with git's own
-                    # sh, which only git starts (`git hook run`, git 2.36
+                    # The hook itself; on Windows, through git, since only
+                    # git starts its own sh there (`git hook run`, git 2.36
                     # or later).
                     run = ([os.path.join(self.repo, 'tools', 'hooks', hook)]
                            if os.name != 'nt' else
