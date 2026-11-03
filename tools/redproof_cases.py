@@ -8271,7 +8271,7 @@ CASES.extend([
          'a branch with no test change chose entries'),
     Case('changed-set/no-changed-test-runs-nothing',
          'tools/redproof.py',
-         '        if not cases:\n            return 0\n',
+         "        if not cases:\n            # Still the count a scheduler reads: nothing to run.\n            print('redproof: 0 selected, 0 removed, 0 to run%s' % (\n                ' (shard %d/%d)' % args.shard if args.shard else ''),\n                flush=True)\n            return 0\n",
          '',
          'tests/redproof_tool_test.py::ChangedSetTest'
          '::test_the_tool_runs_only_the_changed_set',
@@ -8304,6 +8304,72 @@ CASES.extend([
          'tests/light_check_test.py::LightCheckTest'
          '::test_a_changed_test_helper_says_the_set_is_release_sized',
          'this commit changes a shared test helper'),
+
+    Case('changed-set/a-helper-is-a-file-tests-read',
+         'tools/redproof.py',
+         "                     if p.startswith('tests/testdata/')\n                     or p.endswith('.py') and not is_test_module(p))",
+         "                     if not p.endswith('_test.py'))",
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_a_file_under_tests_that_no_test_reads_chooses_nothing',
+         'a file no test reads was taken for a helper'),
+    Case('changed-set/testdata-is-a-helper',
+         'tools/redproof.py',
+         "                     if p.startswith('tests/testdata/')\n                     or p.endswith",
+         '                     if p.endswith',
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_a_changed_helper_chooses_every_entry',
+         'a changed helper did not choose every entry',
+         subtest="helper='tests/testdata/preferences.json'"),
+    Case('changed-set/conftest-is-a-helper',
+         'tools/redproof.py',
+         "    return name != 'conftest.py' and fnmatch.fnmatch(name, '*test*.py')",
+         "    return fnmatch.fnmatch(name, '*test*.py')",
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_a_changed_helper_chooses_every_entry',
+         'a changed helper did not choose every entry',
+         subtest="helper='tests/conftest.py'"),
+    Case('changed-set/a-test-module-is-pytests-pattern',
+         'tools/redproof.py',
+         "fnmatch.fnmatch(name, '*test*.py')",
+         "fnmatch.fnmatch(name, '*_test.py')",
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_a_file_under_tests_that_no_test_reads_chooses_nothing',
+         'a file no test reads was taken for a helper'),
+    Case('changed-set/not-a-surrounding-gits-index',
+         'tools/redproof.py',
+         "        return subprocess.run(['git', *args], cwd=cwd, env=env,\n",
+         "        return subprocess.run(['git', *args], cwd=cwd,\n",
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_the_branch_is_what_changed_since_it_left_its_base',
+         "the branch's changes since it left main were misread"),
+    Case('changed-set/an-empty-set-still-prints-its-count',
+         'tools/redproof.py',
+         "            print('redproof: 0 selected, 0 removed, 0 to run%s' % (\n                ' (shard %d/%d)' % args.shard if args.shard else ''),\n                flush=True)\n",
+         '',
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_the_tool_runs_only_the_changed_set',
+         'an empty changed set printed no count to run'),
+    Case('changed-set/a-refusal-says-it-looked-in-the-changed-set',
+         'tools/redproof.py',
+         "'of the changed set has a name that' if args.touching else 'name'",
+         "'name'",
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_the_tool_runs_only_the_changed_set',
+         'the refusal did not say where it looked'),
+    Case('changed-set/light-check-a-failure-to-name-is-a-note',
+         'tools/light_check.py',
+         '    except Exception as e:\n        # Executing the entries',
+         '    except ImportError as e:\n        # Executing the entries',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_entries_that_cannot_be_read_do_not_refuse_the_commit',
+         'entries that could not be read refused the commit'),
+    Case('changed-set/light-check-no-entries-names-none',
+         'tools/light_check.py',
+         '    if entries is None:\n        return [], []\n',
+         '',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_checkout_without_entries_names_none',
+         'a checkout with no entries said something about them'),
 
     # A mutant that does not parse fails every test importing it, on whatever
     # the import says, so it is refused.

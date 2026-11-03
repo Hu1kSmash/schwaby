@@ -7,6 +7,10 @@ to arrive on the assertion you named.
     .venv/bin/python -I -B tools/redproof.py --shard 2/3     # one slice of three
     .venv/bin/python -I -B tools/redproof.py --touching main # the changed set
 
+--touching chooses the entries whose test file, or the file they mutate, is
+one the branch changes under tests/ since it left that base; when there are
+none it runs nothing and exits 0.
+
 A test that passes whether or not the fix is there is worse than none, because
 it looks like protection. So revert the fix and watch the test fail. Doing that
 by hand failed four times in one sitting here, every time producing a red, just
@@ -98,6 +102,7 @@ place.
 '''
 
 import argparse
+import fnmatch
 import hashlib
 import importlib.util
 import json
@@ -777,14 +782,25 @@ def select(cases, names, shard):
     return selected
 
 
+def is_test_module(path):
+    '''Whether pytest collects the file as a test module, by setup.cfg's
+    python_files: *test*.py, but never conftest.py, which is a plugin every
+    test beside it loads.'''
+    name = os.path.basename(path)
+    return name != 'conftest.py' and fnmatch.fnmatch(name, '*test*.py')
+
+
 def changed_set(cases, changed):
-    '''The entries whose run reads a test file among `changed` (repository
-    paths), and the shared helpers among those files. A test file is any
-    file under tests/. An entry's run reads its own test files and the file
-    it mutates. A helper, any of them but a *_test.py, may be read by every
-    test, so a changed one selects every entry.'''
+    '''The entries a change to `changed` (repository paths) can break, and
+    the shared helpers among those paths. An entry is chosen by its own test
+    files and the file it mutates, under tests/; a test module that imports
+    another is not followed. A helper, a Python file under tests/ that is
+    not a test module or anything under tests/testdata/, may be read by
+    every test, so a changed one chooses every entry.'''
     sentinels = {p for p in changed if p.startswith('tests/')}
-    helpers = sorted(p for p in sentinels if not p.endswith('_test.py'))
+    helpers = sorted(p for p in sentinels
+                     if p.startswith('tests/testdata/')
+                     or p.endswith('.py') and not is_test_module(p))
     if helpers:
         return list(cases), helpers
     return [c for c in cases
@@ -796,10 +812,14 @@ def changed_since(base, cwd=ROOT):
     '''The paths the branch changes since it left `base`: committed or not,
     tracked or new, and nothing `base` changed since. A rename is both of
     its paths, so a moved test file is the one it was and the one it is.'''
+    # Nothing from a surrounding git process: GIT_INDEX_FILE and friends
+    # would point these at another index or repository.
+    env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+
     def git(*args):
-        return subprocess.run(['git', *args], cwd=cwd, capture_output=True,
-                              check=True, timeout=GIT_LIMIT).stdout.decode(
-                                  'utf-8')
+        return subprocess.run(['git', *args], cwd=cwd, env=env,
+                              capture_output=True, check=True,
+                              timeout=GIT_LIMIT).stdout.decode('utf-8')
     fork = git('merge-base', base, 'HEAD').strip()
     paths = git('diff', '--name-only', '--no-renames', '-z', fork, '--')
     paths += git('ls-files', '-z', '--others', '--exclude-standard')
@@ -812,9 +832,9 @@ def touching_line(base, selected, helpers):
         return ('redproof: touching %s: a shared test helper changed (%s), '
                 'so the changed set is every entry, a release-sized run'
                 % (base, ', '.join(helpers)))
-    return ('redproof: touching %s: %d entr%s read a test file the branch '
-            'changes' % (base, len(selected),
-                         'y' if len(selected) == 1 else 'ies'))
+    return ('redproof: touching %s: %d entr%s test or mutate a test file '
+            'the branch changes' % (base, len(selected),
+                                    'y' if len(selected) == 1 else 'ies'))
 
 
 def judge_all(run, args, started):
@@ -831,11 +851,16 @@ def judge_all(run, args, started):
         cases, helpers = changed_set(cases, changed)
         print(touching_line(args.touching, cases, helpers), flush=True)
         if not cases:
+            # Still the count a scheduler reads: nothing to run.
+            print('redproof: 0 selected, 0 removed, 0 to run%s' % (
+                ' (shard %d/%d)' % args.shard if args.shard else ''),
+                flush=True)
             return 0
     selected = select(cases, args.name, args.shard)
     if selected is None:
-        print('redproof: no entry name contains %s' % ' or '.join(
-            map(repr, args.name)))
+        print('redproof: no entry %s contains %s' % (
+            'of the changed set has a name that' if args.touching else 'name',
+            ' or '.join(map(repr, args.name))))
         return 2
 
     removed = [c for c in selected if c.removed]

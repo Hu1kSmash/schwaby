@@ -22,9 +22,10 @@ commit will contain:
    The whole file, not only its added lines, and any case.
 
 When the commit changes a file under tests/, it names the red-proof entries
-whose run reads one, by tools/redproof.py's own rule: before the branch
-merges, its changed set runs as one red-proof (`tools/redproof.py
---touching main`). That is a note, not a failure.
+whose test file, or the file they mutate, is one of them, by
+tools/redproof.py's own rule: before the branch merges, its changed set runs
+as one red-proof (`tools/redproof.py --touching main`). That is a note, not
+a failure, and so is not being able to work it out.
 
 A warning is compared by its text without its line number, as a count per
 file, so moving code does not read as adding a warning, and a renamed file is
@@ -163,8 +164,8 @@ def new_warnings(path, before_path):
 
 
 def changed_entries():
-    '''The names of the red-proof entries whose run reads a test file this
-    commit changes, and the shared helpers among those files, by
+    '''The names of the red-proof entries whose test file or mutated file is
+    a test file this commit changes, and the shared helpers among those, by
     tools/redproof.py's rule and from the index's entries. Nothing when the
     commit changes no test file, or the checkout has no red-proof.'''
     out = git('diff', '--cached', '--name-only', '--no-renames', '-z')
@@ -210,15 +211,23 @@ def main():
         sys.stdout.write(re.sub(r'(?m)^(?=.)', 'light check: ',
                                 check.stdout.decode('utf-8', 'replace')))
         failed = True
-    names, helpers = changed_entries()
+    try:
+        names, helpers = changed_entries()
+    except Exception as e:
+        # Executing the entries can fail on what the commit stages; that is
+        # the red-proof's to report, not a reason to refuse the commit.
+        print('light check: could not name the red-proof entries this '
+              "commit's test changes reach (%s: %s); `tools/redproof.py "
+              "--touching main` will say" % (type(e).__name__, e))
+        names, helpers = [], []
     if helpers:
         print('light check: this commit changes a shared test helper (%s), so '
               "the branch's changed set is every red-proof entry: a "
               'release-sized run, which the PR says' % ', '.join(helpers))
     elif names:
-        print('light check: %d red-proof entr%s read a test file this commit '
-              "changes; before the branch merges, red-proof its changed set "
-              'as one job (tools/redproof.py --touching main):' % (
+        print('light check: %d red-proof entr%s test or mutate a test file '
+              'this commit changes; before the branch merges, red-proof its '
+              'changed set as one job (tools/redproof.py --touching main):' % (
                   len(names), 'y' if len(names) == 1 else 'ies'))
         for name in names:
             print('light check:   ' + name)

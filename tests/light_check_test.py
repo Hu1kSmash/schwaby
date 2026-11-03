@@ -271,8 +271,8 @@ class LightCheckTest(unittest.TestCase):
         code, out = self.check()
         self.assertEqual(0, code, 'naming the changed set failed the '
                          'commit: ' + out)
-        self.assertIn('1 red-proof entry read a test file this commit '
-                      'changes', out, out)
+        self.assertIn('1 red-proof entry test or mutate a test file this '
+                      'commit changes', out, out)
         self.assertIn('light check:   a/one\n', out)
         self.assertNotIn('b/two', out, 'an entry whose test is unchanged '
                          'was named')
@@ -293,6 +293,31 @@ class LightCheckTest(unittest.TestCase):
         self.assertIn('light check:   a/one\n', out,
                       'the entries named were not the index\'s')
         self.assertNotIn('not-staged', out)
+
+    def test_entries_that_cannot_be_read_do_not_refuse_the_commit(self):
+        self.changed_set_checkout()
+        self.stage('tools/redproof_cases.py', 'raise ValueError("bad")\n')
+        self.stage('tests/a_test.py', '# a, changed\n')
+        code, out = self.check()
+        self.assertEqual(0, code, 'entries that could not be read refused '
+                         'the commit: ' + out)
+        self.assertIn('could not name the red-proof entries', out, out)
+        self.assertIn('ValueError: bad', out)
+
+    def test_a_checkout_without_entries_names_none(self):
+        # A checkout with the tool but no entries in its index: nothing to
+        # name, and nothing to say about it.
+        os.makedirs(os.path.join(self.repo, 'tests'))
+        self.stage('tests/a_test.py', '# a\n')
+        code, out = self.check()
+        self.assertEqual(0, code, out)
+        self.assertNotIn('red-proof', out, 'a checkout with no entries said '
+                         'something about them')
+        # And with entries, the same change names them.
+        os.makedirs(os.path.join(self.repo, 'tools'))
+        self.stage('tools/redproof_cases.py', self.entries('a/one', 'b/two'))
+        code, out = self.check()
+        self.assertIn('light check:   a/one\n', out)
 
     def test_a_changed_test_helper_says_the_set_is_release_sized(self):
         self.changed_set_checkout()

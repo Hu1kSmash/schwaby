@@ -1087,11 +1087,18 @@ class ChangedSetTest(unittest.TestCase):
                          self.chosen('schwaby/x.py', 'tools/redproof.py'),
                          'a change outside tests/ chose an entry')
 
+    def test_a_file_under_tests_that_no_test_reads_chooses_nothing(self):
+        # A merge tool's leftover and a test module no entry names are not
+        # helpers: neither turns the set into every entry.
+        self.assertEqual(([], []),
+                         self.chosen('tests/a_test.py.orig', 'tests/test.py'),
+                         'a file no test reads was taken for a helper')
+
     def test_the_line_says_what_was_chosen(self):
         one = self.entries()[:1]
         self.assertEqual(
-            'redproof: touching main: 1 entry read a test file the branch '
-            'changes', redproof.touching_line('main', one, []))
+            'redproof: touching main: 1 entry test or mutate a test file the '
+            'branch changes', redproof.touching_line('main', one, []))
         self.assertEqual(
             'redproof: touching main: a shared test helper changed '
             '(tests/utils.py), so the changed set is every entry, a '
@@ -1138,7 +1145,10 @@ class ChangedSetTest(unittest.TestCase):
         git('commit', '-q', '-am', 'main moves')
         git('switch', '-q', 'branch')
         git('stash', 'pop', '-q')
-        with patch.dict(os.environ, env, clear=True):
+        # As if from inside a git process with an index of its own.
+        with patch.dict(os.environ, dict(
+                env, GIT_INDEX_FILE=os.path.join(repo, 'no-such-index')),
+                clear=True):
             changed = redproof.changed_since('main', cwd=repo)
         self.assertEqual(
             {'tests/a_test.py', 'tests/b_test.py', 'tests/c_test.py',
@@ -1174,12 +1184,14 @@ class ChangedSetTest(unittest.TestCase):
             return out.returncode, out.stdout + out.stderr
 
         code, out = run('--touching', 'main')
-        self.assertIn('touching main: 0 entries read a test file the '
-                      'branch changes', out,
+        self.assertIn('touching main: 0 entries test or mutate a test file '
+                      'the branch changes', out,
                       'a branch with no test change chose entries')
         self.assertEqual(0, code, 'a branch with no test change did not '
                          'stop at the selection: ' + out)
-        self.assertNotIn('selected', out, 'a branch with no test change '
+        self.assertIn('redproof: 0 selected, 0 removed, 0 to run\n', out,
+                      'an empty changed set printed no count to run')
+        self.assertNotIn('baseline', out, 'a branch with no test change '
                          'ran entries')
 
         git('switch', '-q', '-c', 'branch')
@@ -1187,10 +1199,13 @@ class ChangedSetTest(unittest.TestCase):
         # Past the selection to the first thing it can refuse without
         # running an entry.
         code, out = run('--touching', 'main', '--name', 'two')
-        self.assertIn('touching main: 1 entry read a test file the branch '
-                      'changes', out, 'the changed set was not chosen')
-        self.assertIn("no entry name contains 'two'", out,
-                      'an entry outside the changed set was selected')
+        self.assertIn('touching main: 1 entry test or mutate a test file '
+                      'the branch changes', out,
+                      'the changed set was not chosen')
+        self.assertIn("no entry of the changed set has a name that contains "
+                      "'two'", out,
+                      'an entry outside the changed set was selected, or '
+                      'the refusal did not say where it looked')
         self.assertEqual(2, code, out)
 
         code, out = run('--touching', 'no-such-base')
