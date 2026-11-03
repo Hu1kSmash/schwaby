@@ -803,7 +803,9 @@ def select(cases, names, shard):
 
 def test_patterns(read):
     '''The file names pytest collects tests from: setup.cfg's python_files,
-    as `read` gives it, else pytest's own default.'''
+    as `read` gives it, else pytest's own default. This repository
+    configures pytest in setup.cfg alone; a pytest.ini, pyproject.toml or
+    tox.ini section would take precedence over it, and is not read.'''
     parser = configparser.ConfigParser(interpolation=None)
     try:
         parser.read_string((read('setup.cfg') or b'').decode('utf-8'))
@@ -813,22 +815,39 @@ def test_patterns(read):
                       fallback='test_*.py *_test.py').split()
 
 
+def _is_test(node):
+    return (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith('test'))
+
+
+def _is_test_class(node):
+    # Named Test*, or a unittest TestCase: the classes pytest collects from.
+    bases = [b.attr if isinstance(b, ast.Attribute) else getattr(b, 'id', '')
+             for b in node.bases]
+    return node.name.startswith('Test') or any(
+        b.endswith('TestCase') for b in bases)
+
+
 def defines_a_test(source):
-    '''Whether a module defines a function or method pytest would run, one
-    named test*. One that does not parse is taken to.'''
+    '''Whether a module defines a test pytest would run: a test* function
+    at its top level, or a test* method of a class pytest collects (named
+    Test*, or a TestCase). A test* function nested in another, or a method
+    of any other class, is a helper's. A class whose tests are all
+    inherited defines none. One that does not parse is taken to.'''
     try:
         tree = ast.parse(source)
     except (SyntaxError, ValueError):
         return True
-    return any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-               and node.name.startswith('test') for node in ast.walk(tree))
+    return any(_is_test(node) or isinstance(node, ast.ClassDef)
+               and _is_test_class(node) and any(map(_is_test, node.body))
+               for node in tree.body)
 
 
 def is_test_module(path, read, patterns):
     '''Whether the file is a test module: named as pytest collects them,
-    never conftest.py, a plugin every test beside it loads, and defining a
-    test, or gone, when its entries name it. A helper named like a test,
-    tests/test_helpers.py say, defines none.'''
+    never conftest.py, a plugin every test beside it loads, and either gone
+    or defining a test. A helper named like a test, tests/test_helpers.py
+    say, defines none.'''
     name = os.path.basename(path)
     if name == 'conftest.py' or not any(fnmatch.fnmatch(name, pattern)
                                         for pattern in patterns):
@@ -861,7 +880,8 @@ def changed_since(base, cwd=ROOT):
     tracked or a new Python file, and nothing `base` changed since. A rename
     is both of its paths, so a moved test file is the one it was and the one
     it is. An untracked file that is not Python, a merge tool's .orig or an
-    editor's swap file, is no change: no committed test can read it.'''
+    editor's swap file, is no change until it is staged or committed: a new
+    data file counts once it is, which is the tree a merge is proven on.'''
     def git(*args):
         return subprocess.run(['git', *args], cwd=cwd, env=git_env(),
                               capture_output=True, check=True,

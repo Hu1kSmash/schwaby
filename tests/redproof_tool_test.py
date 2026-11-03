@@ -1050,11 +1050,14 @@ class ChangedSetTest(unittest.TestCase):
                        'tests/e_test.py::T::test_e', 'e'),
         ]
 
-    # What a file holds, by path; any other is a test module defining one.
+    # What a file holds, by path; any other is a test module shaped as this
+    # repository's are, a TestCase with a test method.
     files = {'setup.cfg': b'[tool:pytest]\npython_files = *test*.py\n'}
+    TEST_MODULE = (b'import unittest\n\n\nclass T(unittest.TestCase):\n\n'
+                   b'    def test_x(self):\n        pass\n')
 
     def read(self, path):
-        return self.files.get(path, b'def test_x():\n    pass\n')
+        return self.files.get(path, self.TEST_MODULE)
 
     def chosen(self, *changed, files=None):
         read = self.read if files is None else dict(self.files, **files).get
@@ -1098,6 +1101,39 @@ class ChangedSetTest(unittest.TestCase):
         self.assertEqual(['tests/test_helpers.py'], helpers,
                          'a helper named like a test was taken for a test')
 
+    def test_a_test_is_one_pytest_would_run(self):
+        tests = {
+            'a function': b'def test_x():\n    pass\n',
+            'a TestCase method': self.TEST_MODULE,
+            'a method of a Test class': (b'class TestX:\n\n'
+                                         b'    def test_x(self):\n'
+                                         b'        pass\n'),
+            'an async method': (b'class TestX:\n\n'
+                                b'    async def test_x(self):\n'
+                                b'        pass\n'),
+            'what does not parse': b'def test_x(:\n',
+        }
+        helpers = {
+            'a function inside another': (b'def helper():\n\n'
+                                          b'    def test_inner():\n'
+                                          b'        pass\n'),
+            'a method of another class': (b'class FakeServer:\n\n'
+                                          b'    def test_connection(self):\n'
+                                          b'        pass\n'),
+            'tests all inherited': (b'from .base import Base\n\n\n'
+                                    b'class TestX(Base):\n    pass\n'),
+        }
+        for shape, source in tests.items():
+            with self.subTest(shape=shape):
+                self.assertEqual([], self.chosen(
+                    'tests/x_test.py', files={'tests/x_test.py': source})[1],
+                    'a test pytest would run was taken for a helper')
+        for shape, source in helpers.items():
+            with self.subTest(shape=shape):
+                self.assertEqual(['tests/x_test.py'], self.chosen(
+                    'tests/x_test.py', files={'tests/x_test.py': source})[1],
+                    'a module pytest runs nothing in was taken for a test')
+
     def test_a_test_module_is_what_setup_cfg_says(self):
         cfg = {'setup.cfg': b'[tool:pytest]\npython_files = check_*.py\n'}
         self.assertEqual((['a/by-its-test'], []), self.chosen(
@@ -1109,6 +1145,10 @@ class ChangedSetTest(unittest.TestCase):
         self.assertEqual((['a/by-its-test'], []), self.chosen(
             'tests/a_test.py', files={'setup.cfg': None}),
             "pytest's default was not taken without setup.cfg")
+        self.assertEqual(['tests/atest.py'], self.chosen(
+            'tests/atest.py', files={'setup.cfg': None})[1],
+            "pytest's default, test_*.py and *_test.py, was not the one "
+            'taken without setup.cfg')
 
     def test_a_change_outside_tests_chooses_nothing(self):
         # What an entry mutates outside tests/ is code, not a check: a code
@@ -1193,6 +1233,17 @@ class ChangedSetTest(unittest.TestCase):
              'tests/new_test.py'}, changed,
             'the branch\'s changes since it left main were misread')
 
+    def test_every_variable_that_points_git_elsewhere_is_dropped(self):
+        # git's own list of them, less the three that carry configuration
+        # rather than a place.
+        out = subprocess.run(['git', 'rev-parse', '--local-env-vars'],
+                             capture_output=True, text=True, check=True)
+        config = {'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT'}
+        missing = set(out.stdout.split()) - config - set(redproof.GIT_LOCATION)
+        self.assertEqual(set(), missing,
+                         'git points itself elsewhere by a variable a run '
+                         'keeps')
+
     def test_the_snapshot_reads_this_checkout_whatever_git_exports(self):
         # Started inside a git process: its index and repository are not
         # this checkout's.
@@ -1274,6 +1325,13 @@ class ChangedSetTest(unittest.TestCase):
                       'an entry outside the changed set was selected, or '
                       'the refusal did not say where it looked')
         self.assertEqual(2, code, out)
+
+        # Judged by what the checkout holds: a helper named like a test.
+        self.write(repo, 'tests/test_helpers.py', 'def helper():\n    pass\n')
+        code, out = run('--touching', 'main', '--name', 'two')
+        self.assertIn('a shared test helper changed (tests/test_helpers.py)',
+                      out, 'the run did not judge a file by what the '
+                      'checkout holds')
 
         code, out = run('--touching', 'no-such-base')
         self.assertEqual(2, code, out)

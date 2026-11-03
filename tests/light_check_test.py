@@ -332,9 +332,11 @@ class LightCheckTest(unittest.TestCase):
         self.assertIn('light check:   a/one\n', out)
 
     def test_a_staged_helper_named_like_a_test_is_a_helper(self):
-        # Judged by what the index holds: it defines no test.
+        # Judged by what the index holds, which defines no test, not the
+        # working tree, which does.
         self.changed_set_checkout()
         self.stage('tests/test_helpers.py', 'def helper():\n    pass\n')
+        self.write('tests/test_helpers.py', 'def test_x():\n    pass\n')
         code, out = self.check()
         self.assertIn('this commit changes a shared test helper '
                       '(tests/test_helpers.py)', out,
