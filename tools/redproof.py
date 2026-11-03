@@ -5,6 +5,7 @@ to arrive on the assertion you named.
     .venv/bin/python -I -B tools/redproof.py --name auth/    # names containing it
     .venv/bin/python -I -B tools/redproof.py --jobs 4        # entries at once
     .venv/bin/python -I -B tools/redproof.py --shard 2/3     # one slice of three
+    .venv/bin/python -I -B tools/redproof.py --touching main # the changed set
 
 A test that passes whether or not the fix is there is worse than none, because
 it looks like protection. So revert the fix and watch the test fail. Doing that
@@ -724,6 +725,9 @@ def main(argv):
                         'with REDPROOF_JOBS_ALL=1, two otherwise)')
     parser.add_argument('--shard', type=shard_arg, metavar='K/N',
                         help='judge only slice K of N (K from 1)')
+    parser.add_argument('--touching', metavar='BASE',
+                        help='only the entries whose run reads a test file '
+                        'changed since the branch left BASE')
     args = parser.parse_args(argv)
 
     started = time.monotonic()
@@ -773,9 +777,61 @@ def select(cases, names, shard):
     return selected
 
 
+def changed_set(cases, changed):
+    '''The entries whose run reads a test file among `changed` (repository
+    paths), and the shared helpers among those files. A test file is any
+    file under tests/. An entry's run reads its own test files and the file
+    it mutates. A helper, any of them but a *_test.py, may be read by every
+    test, so a changed one selects every entry.'''
+    sentinels = {p for p in changed if p.startswith('tests/')}
+    helpers = sorted(p for p in sentinels if not p.endswith('_test.py'))
+    if helpers:
+        return list(cases), helpers
+    return [c for c in cases
+            if c.path in sentinels
+            or any(t.split('::')[0] in sentinels for t in tests_of(c))], []
+
+
+def changed_since(base, cwd=ROOT):
+    '''The paths the branch changes since it left `base`: committed or not,
+    tracked or new, and nothing `base` changed since. A rename is both of
+    its paths, so a moved test file is the one it was and the one it is.'''
+    def git(*args):
+        return subprocess.run(['git', *args], cwd=cwd, capture_output=True,
+                              check=True, timeout=GIT_LIMIT).stdout.decode(
+                                  'utf-8')
+    fork = git('merge-base', base, 'HEAD').strip()
+    paths = git('diff', '--name-only', '--no-renames', '-z', fork, '--')
+    paths += git('ls-files', '-z', '--others', '--exclude-standard')
+    return {p for p in paths.split('\0') if p}
+
+
+def touching_line(base, selected, helpers):
+    '''What --touching chose, for the session to put in the PR.'''
+    if helpers:
+        return ('redproof: touching %s: a shared test helper changed (%s), '
+                'so the changed set is every entry, a release-sized run'
+                % (base, ', '.join(helpers)))
+    return ('redproof: touching %s: %d entr%s read a test file the branch '
+            'changes' % (base, len(selected),
+                         'y' if len(selected) == 1 else 'ies'))
+
+
 def judge_all(run, args, started):
     snapshot = run.snapshot
     cases = load_cases(snapshot.path)
+    if args.touching:
+        try:
+            changed = changed_since(args.touching)
+        except (OSError, subprocess.SubprocessError) as e:
+            print('redproof: --touching %s: %s' % (
+                args.touching, (getattr(e, 'stderr', None) or b'').decode(
+                    'utf-8', 'replace').strip() or e))
+            return 2
+        cases, helpers = changed_set(cases, changed)
+        print(touching_line(args.touching, cases, helpers), flush=True)
+        if not cases:
+            return 0
     selected = select(cases, args.name, args.shard)
     if selected is None:
         print('redproof: no entry name contains %s' % ' or '.join(

@@ -8209,6 +8209,102 @@ CASES.extend([
          'pre-merge-commit ran another interpreter',
          subtest="interpreter='active'"),
 
+    # The changed set (--touching): the entries whose run reads a test file
+    # the branch changes, which run before it merges; and the light check's
+    # naming of them for each commit.
+    Case('changed-set/an-entry-is-chosen-by-what-it-mutates',
+         'tools/redproof.py',
+         '            if c.path in sentinels\n            or any(',
+         '            if any(',
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_an_entry_is_chosen_by_the_test_file_it_mutates',
+         'an entry was not chosen by the test file it mutates'),
+    Case('changed-set/an-entry-is-chosen-by-any-of-its-tests',
+         'tools/redproof.py',
+         "any(t.split('::')[0] in sentinels for t in tests_of(c))",
+         "tests_of(c)[0].split('::')[0] in sentinels",
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_an_entry_is_chosen_by_any_of_its_tests',
+         'an entry was not chosen by its second test'),
+    Case('changed-set/a-helper-chooses-every-entry',
+         'tools/redproof.py',
+         '    if helpers:\n        return list(cases), helpers\n',
+         '',
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_a_changed_helper_chooses_every_entry',
+         'a changed helper did not choose every entry',
+         subtest="helper='tests/utils.py'"),
+    Case('changed-set/only-tests-are-checks',
+         'tools/redproof.py',
+         "    sentinels = {p for p in changed if p.startswith('tests/')}\n",
+         '    sentinels = set(changed)\n',
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_a_change_outside_tests_chooses_nothing',
+         'a change outside tests/ chose an entry'),
+    Case('changed-set/a-rename-is-both-paths',
+         'tools/redproof.py',
+         "git('diff', '--name-only', '--no-renames', '-z', fork, '--')",
+         "git('diff', '--name-only', '-z', fork, '--')",
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_the_branch_is_what_changed_since_it_left_its_base',
+         "the branch's changes since it left main were misread"),
+    Case('changed-set/from-where-the-branch-left',
+         'tools/redproof.py',
+         "    fork = git('merge-base', base, 'HEAD').strip()\n",
+         '    fork = base\n',
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_the_branch_is_what_changed_since_it_left_its_base',
+         "the branch's changes since it left main were misread"),
+    Case('changed-set/a-new-file-is-a-change',
+         'tools/redproof.py',
+         "    paths += git('ls-files', '-z', '--others', '--exclude-standard')\n",
+         '',
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_the_branch_is_what_changed_since_it_left_its_base',
+         "the branch's changes since it left main were misread"),
+    Case('changed-set/the-run-is-the-changed-set',
+         'tools/redproof.py',
+         '        cases, helpers = changed_set(cases, changed)\n',
+         '        helpers = changed_set(cases, changed)[1]\n',
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_the_tool_runs_only_the_changed_set',
+         'a branch with no test change chose entries'),
+    Case('changed-set/no-changed-test-runs-nothing',
+         'tools/redproof.py',
+         '        if not cases:\n            return 0\n',
+         '',
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_the_tool_runs_only_the_changed_set',
+         'a branch with no test change did not stop at the selection'),
+    Case('changed-set/light-check-names-the-entries',
+         'tools/light_check.py',
+         "        for name in names:\n            print('light check:   ' + name)\n",
+         '',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_changed_test_file_names_its_entries',
+         'light check:   a/one'),
+    Case('changed-set/light-check-a-rename-is-both-paths',
+         'tools/light_check.py',
+         "out = git('diff', '--cached', '--name-only', '--no-renames', '-z')",
+         "out = git('diff', '--cached', '--name-only', '-z')",
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_moved_test_file_names_the_entries_of_its_old_name',
+         'a moved test file did not name its entries'),
+    Case('changed-set/light-check-names-the-index-s-entries',
+         'tools/light_check.py',
+         "    entries = blob(':0:' + redproof.CASES)\n",
+         "    entries = open(redproof.CASES, 'rb').read()\n",
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_the_entries_named_are_the_index_s',
+         "the entries named were not the index's"),
+    Case('changed-set/light-check-says-a-helper-is-release-sized',
+         'tools/light_check.py',
+         "    if helpers:\n        print('light check: this commit changes a shared test helper",
+         "    if False:\n        print('light check: this commit changes a shared test helper",
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_a_changed_test_helper_says_the_set_is_release_sized',
+         'this commit changes a shared test helper'),
+
     # A mutant that does not parse fails every test importing it, on whatever
     # the import says, so it is refused.
     Case('harness/a-mutant-that-does-not-parse-is-refused',

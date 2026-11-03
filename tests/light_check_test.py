@@ -242,6 +242,67 @@ class LightCheckTest(unittest.TestCase):
                          'again: ' + out)
         self.assertIn('notes.md: carries', out)
 
+    def changed_set_checkout(self):
+        # Two entries, one per test file, in the checkout's own index.
+        os.makedirs(os.path.join(self.repo, 'tools'))
+        self.stage('tools/redproof_cases.py', self.entries('a/one', 'b/two'))
+        os.makedirs(os.path.join(self.repo, 'tests'))
+        self.stage('tests/a_test.py', '# a\n')
+        self.stage('tests/b_test.py', '# b\n')
+        self.git('commit', '-q', '-m', 'entries')
+
+    @staticmethod
+    def entries(a, b):
+        return ('class Case:\n'
+                '    def __init__(self, name, test):\n'
+                '        self.name, self.path, self.test = name, "x.py", test\n'
+                'CASES = [Case(%r, "tests/a_test.py::T::t"),\n'
+                '         Case(%r, "tests/b_test.py::T::t")]\n' % (a, b))
+
+    def test_a_changed_test_file_names_its_entries(self):
+        self.changed_set_checkout()
+        self.stage('mod.py', 'import os\n\n\ndef f():\n    return 2\n')
+        code, out = self.check()
+        self.assertEqual(0, code, out)
+        self.assertNotIn('red-proof', out, 'a commit with no test change '
+                         'named entries')
+
+        self.stage('tests/a_test.py', '# a, changed\n')
+        code, out = self.check()
+        self.assertEqual(0, code, 'naming the changed set failed the '
+                         'commit: ' + out)
+        self.assertIn('1 red-proof entry read a test file this commit '
+                      'changes', out, out)
+        self.assertIn('light check:   a/one\n', out)
+        self.assertNotIn('b/two', out, 'an entry whose test is unchanged '
+                         'was named')
+
+    def test_a_moved_test_file_names_the_entries_of_its_old_name(self):
+        self.changed_set_checkout()
+        self.git('mv', 'tests/b_test.py', 'tests/c_test.py')
+        code, out = self.check()
+        self.assertIn('light check:   b/two\n', out,
+                      'a moved test file did not name its entries')
+
+    def test_the_entries_named_are_the_index_s(self):
+        self.changed_set_checkout()
+        self.stage('tests/a_test.py', '# a, changed\n')
+        self.write('tools/redproof_cases.py',
+                   self.entries('a/not-staged', 'b/two'))
+        code, out = self.check()
+        self.assertIn('light check:   a/one\n', out,
+                      'the entries named were not the index\'s')
+        self.assertNotIn('not-staged', out)
+
+    def test_a_changed_test_helper_says_the_set_is_release_sized(self):
+        self.changed_set_checkout()
+        self.stage('tests/utils.py', '# shared\n')
+        code, out = self.check()
+        self.assertEqual(0, code, out)
+        self.assertIn('this commit changes a shared test helper '
+                      '(tests/utils.py)', out, out)
+        self.assertIn('release-sized', out)
+
     def test_whitespace_errors_are_refused(self):
         self.stage('notes.txt', 'trailing   \n')
         code, out = self.check()

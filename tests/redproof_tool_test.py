@@ -1033,6 +1033,171 @@ class ShardTest(unittest.TestCase):
         self.assertIsNone(redproof.select(one, ['nothing-like-it'], (1, 3)))
 
 
+class ChangedSetTest(unittest.TestCase):
+    '''--touching: the entries whose run reads a test file the branch
+    changes, before it merges.'''
+
+    def entries(self):
+        return [
+            cases.Case('a/by-its-test', 'schwaby/x.py', 'a', 'b',
+                       'tests/a_test.py::T::test_a', 'e'),
+            cases.Case('b/by-what-it-mutates', 'tests/b_test.py', 'a', 'b',
+                       'tests/c_test.py::T::test_c', 'e'),
+            cases.Case('d/by-either-test', 'schwaby/y.py', 'a', 'b',
+                       ['tests/c_test.py::T::test_c',
+                        'tests/d_test.py::T::test_d'], 'e'),
+            cases.Case('e/untouched', 'schwaby/x.py', 'a', 'b',
+                       'tests/e_test.py::T::test_e', 'e'),
+        ]
+
+    def chosen(self, *changed):
+        selected, helpers = redproof.changed_set(self.entries(), set(changed))
+        return [c.name for c in selected], helpers
+
+    def test_an_entry_is_chosen_by_its_test_file(self):
+        self.assertEqual((['a/by-its-test'], []),
+                         self.chosen('tests/a_test.py', 'schwaby/x.py'),
+                         'an entry was not chosen by its test file')
+
+    def test_an_entry_is_chosen_by_the_test_file_it_mutates(self):
+        self.assertEqual((['b/by-what-it-mutates'], []),
+                         self.chosen('tests/b_test.py'),
+                         'an entry was not chosen by the test file it '
+                         'mutates')
+
+    def test_an_entry_is_chosen_by_any_of_its_tests(self):
+        self.assertEqual((['d/by-either-test'], []),
+                         self.chosen('tests/d_test.py'),
+                         'an entry was not chosen by its second test')
+
+    def test_a_changed_helper_chooses_every_entry(self):
+        for helper in ('tests/utils.py', 'tests/conftest.py',
+                       'tests/testdata/preferences.json'):
+            with self.subTest(helper=helper):
+                selected, helpers = self.chosen(helper, 'tests/a_test.py')
+                self.assertEqual(len(self.entries()), len(selected),
+                                 'a changed helper did not choose every '
+                                 'entry')
+                self.assertEqual([helper], helpers)
+
+    def test_a_change_outside_tests_chooses_nothing(self):
+        # What an entry mutates outside tests/ is code, not a check: a code
+        # change alone needs no red-proof before merge.
+        self.assertEqual(([], []),
+                         self.chosen('schwaby/x.py', 'tools/redproof.py'),
+                         'a change outside tests/ chose an entry')
+
+    def test_the_line_says_what_was_chosen(self):
+        one = self.entries()[:1]
+        self.assertEqual(
+            'redproof: touching main: 1 entry read a test file the branch '
+            'changes', redproof.touching_line('main', one, []))
+        self.assertEqual(
+            'redproof: touching main: a shared test helper changed '
+            '(tests/utils.py), so the changed set is every entry, a '
+            'release-sized run',
+            redproof.touching_line('main', one, ['tests/utils.py']))
+
+    def git_repo(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith('GIT_')}
+        env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
+
+        def git(*args):
+            return subprocess.run(['git', *args], cwd=tmp.name, env=env,
+                                  capture_output=True, check=True)
+        for args in (['init', '-q', '-b', 'main'],
+                     ['config', 'user.name', 'test'],
+                     ['config', 'user.email', 'test@example.invalid']):
+            git(*args)
+        return tmp.name, env, git
+
+    def write(self, repo, path, text):
+        os.makedirs(os.path.dirname(os.path.join(repo, path)), exist_ok=True)
+        with open(os.path.join(repo, path), 'w') as f:
+            f.write(text)
+
+    def test_the_branch_is_what_changed_since_it_left_its_base(self):
+        repo, env, git = self.git_repo()
+        for name in ('a', 'b', 'm', 'u'):
+            self.write(repo, 'tests/%s_test.py' % name, '# %s\n' % name)
+        git('add', '.')
+        git('commit', '-q', '-m', 'start')
+        git('switch', '-q', '-c', 'branch')
+        git('mv', 'tests/b_test.py', 'tests/c_test.py')
+        git('commit', '-q', '-m', 'moved')
+        # Changed and not committed; new and not tracked.
+        self.write(repo, 'tests/a_test.py', '# a, changed\n')
+        self.write(repo, 'tests/new_test.py', '# new\n')
+        # And main moves on, in a file the branch never touched.
+        git('stash', '-q', '-u')
+        git('switch', '-q', 'main')
+        self.write(repo, 'tests/m_test.py', '# m, on main\n')
+        git('commit', '-q', '-am', 'main moves')
+        git('switch', '-q', 'branch')
+        git('stash', 'pop', '-q')
+        with patch.dict(os.environ, env, clear=True):
+            changed = redproof.changed_since('main', cwd=repo)
+        self.assertEqual(
+            {'tests/a_test.py', 'tests/b_test.py', 'tests/c_test.py',
+             'tests/new_test.py'}, changed,
+            'the branch\'s changes since it left main were misread')
+
+    def test_the_tool_runs_only_the_changed_set(self):
+        # As a script, from a checkout of its own: the selection reaches
+        # the run, a branch that changes no test file runs nothing, and a
+        # base git cannot find is refused by name.
+        repo, env, git = self.git_repo()
+        os.makedirs(os.path.join(repo, 'tools'))
+        shutil.copy2(os.path.join(ROOT, 'tools', 'redproof.py'),
+                     os.path.join(repo, 'tools', 'redproof.py'))
+        self.write(repo, 'tools/redproof_cases.py',
+                   'class Case:\n'
+                   '    def __init__(self, name, test):\n'
+                   '        self.name, self.path, self.test = name, '
+                   '"schwaby/x.py", test\n'
+                   '        self.removed = None\n'
+                   'CASES = [Case("a/one", "tests/a_test.py::T::t"),\n'
+                   '         Case("b/two", "tests/b_test.py::T::t")]\n')
+        self.write(repo, 'tests/a_test.py', '# a\n')
+        git('add', '.')
+        git('commit', '-q', '-m', 'start')
+
+        def run(*args):
+            out = subprocess.run(
+                [sys.executable, '-I', '-B',
+                 os.path.join(repo, 'tools', 'redproof.py'), *args],
+                cwd=repo, env=env, capture_output=True, text=True,
+                timeout=120)
+            return out.returncode, out.stdout + out.stderr
+
+        code, out = run('--touching', 'main')
+        self.assertIn('touching main: 0 entries read a test file the '
+                      'branch changes', out,
+                      'a branch with no test change chose entries')
+        self.assertEqual(0, code, 'a branch with no test change did not '
+                         'stop at the selection: ' + out)
+        self.assertNotIn('selected', out, 'a branch with no test change '
+                         'ran entries')
+
+        git('switch', '-q', '-c', 'branch')
+        self.write(repo, 'tests/a_test.py', '# a, changed\n')
+        # Past the selection to the first thing it can refuse without
+        # running an entry.
+        code, out = run('--touching', 'main', '--name', 'two')
+        self.assertIn('touching main: 1 entry read a test file the branch '
+                      'changes', out, 'the changed set was not chosen')
+        self.assertIn("no entry name contains 'two'", out,
+                      'an entry outside the changed set was selected')
+        self.assertEqual(2, code, out)
+
+        code, out = run('--touching', 'no-such-base')
+        self.assertEqual(2, code, out)
+        self.assertIn('redproof: --touching no-such-base:', out)
+
+
 class PoolSizeTest(unittest.TestCase):
 
     def args(self, jobs=None):

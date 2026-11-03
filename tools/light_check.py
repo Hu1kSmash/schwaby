@@ -21,6 +21,11 @@ commit will contain:
    names of private infrastructure, which this repository never carries.
    The whole file, not only its added lines, and any case.
 
+When the commit changes a file under tests/, it names the red-proof entries
+whose run reads one, by tools/redproof.py's own rule: before the branch
+merges, its changed set runs as one red-proof (`tools/redproof.py
+--touching main`). That is a note, not a failure.
+
 A warning is compared by its text without its line number, as a count per
 file, so moving code does not read as adding a warning, and a renamed file is
 compared with its old path at HEAD. A syntax error is never subtracted: a
@@ -29,10 +34,12 @@ HEAD had.
 '''
 
 import collections
+import importlib.util
 import os
 import re
 import subprocess
 import sys
+import tempfile
 
 try:
     from pyflakes import api
@@ -155,6 +162,33 @@ def new_warnings(path, before_path):
     return sorted(new.elements())
 
 
+def changed_entries():
+    '''The names of the red-proof entries whose run reads a test file this
+    commit changes, and the shared helpers among those files, by
+    tools/redproof.py's rule and from the index's entries. Nothing when the
+    commit changes no test file, or the checkout has no red-proof.'''
+    out = git('diff', '--cached', '--name-only', '--no-renames', '-z')
+    changed = {os.fsdecode(p) for p in out.stdout.split(b'\0') if p}
+    tool = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'redproof.py')
+    if not any(p.startswith('tests/') for p in changed) or not os.path.isfile(
+            tool):
+        return [], []
+    spec = importlib.util.spec_from_file_location('redproof', tool)
+    redproof = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(redproof)
+    entries = blob(':0:' + redproof.CASES)
+    if entries is None:
+        return [], []
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, os.path.dirname(redproof.CASES)))
+        with open(os.path.join(tmp, redproof.CASES), 'wb') as f:
+            f.write(entries)
+        cases = redproof.load_cases(tmp)
+    selected, helpers = redproof.changed_set(cases, changed)
+    return [c.name for c in selected], helpers
+
+
 def main():
     if api is None:
         print('light check: pyflakes is not installed for %s; '
@@ -176,6 +210,18 @@ def main():
         sys.stdout.write(re.sub(r'(?m)^(?=.)', 'light check: ',
                                 check.stdout.decode('utf-8', 'replace')))
         failed = True
+    names, helpers = changed_entries()
+    if helpers:
+        print('light check: this commit changes a shared test helper (%s), so '
+              "the branch's changed set is every red-proof entry: a "
+              'release-sized run, which the PR says' % ', '.join(helpers))
+    elif names:
+        print('light check: %d red-proof entr%s read a test file this commit '
+              "changes; before the branch merges, red-proof its changed set "
+              'as one job (tools/redproof.py --touching main):' % (
+                  len(names), 'y' if len(names) == 1 else 'ies'))
+        for name in names:
+            print('light check:   ' + name)
     if failed:
         print('light check: failed, so nothing was committed')
     return 1 if failed else 0

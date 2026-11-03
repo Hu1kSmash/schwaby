@@ -41,6 +41,16 @@ entries live in `tools/redproof_cases.py`; add one when you fix something, and
 run it with `python -I -B tools/redproof.py --name <part of its name>`. It
 works on copies, so the working tree is never touched.
 
+**A branch that changes a test file red-proofs its changed set before it
+merges.** That is every entry whose run reads a file the branch changes
+under `tests/`: its test file, or the file it mutates.
+`python -I -B tools/redproof.py --touching main` runs exactly those, and the
+commit hook names them as each commit is made. A reworded assertion or a
+moved test breaks the entries that quote it, and nothing else would notice
+before the release. A change to a shared helper (`conftest.py`, `utils.py`,
+`testdata/`) can reach every test, so its changed set is every entry; the
+pull request says so.
+
 **Check the mutation actually applied.** A `sed` expression spanning two lines
 matches nothing, and a restore within the same second reuses stale bytecode
 (CPython invalidates on mtime and size). Both have produced a false green here.

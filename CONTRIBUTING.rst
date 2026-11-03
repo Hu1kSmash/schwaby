@@ -61,7 +61,9 @@ under a tenth of a second for an eight-file commit): every staged Python file
 must parse and gain no pyflakes warning it did not already have, the diff
 must have no whitespace errors, and no staged file may carry, in its name or
 its content, a word on the check's ``FORBIDDEN`` list: names of private
-infrastructure this repository never carries.
+infrastructure this repository never carries. A commit that changes a file
+under ``tests/`` is also told which red-proof entries read it, which run
+before the branch merges (``RELEASING.md`` says how).
 The full suite is not part of it; that runs below, and on every pull request.
 
 Then check the environment before you change anything, so a later failure is
