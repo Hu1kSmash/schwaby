@@ -102,6 +102,8 @@ place.
 '''
 
 import argparse
+import ast
+import configparser
 import fnmatch
 import hashlib
 import importlib.util
@@ -397,16 +399,33 @@ def mutate(case, original):
 
 # --------------------------------------------------------------- the snapshot
 
+#: What a surrounding git process exports to point git at another index,
+#: repository or work tree: dropped from every git call here, so a run
+#: started inside one reads this checkout. Configuration passed the same way
+#: (GIT_CONFIG_COUNT and its keys, GIT_CONFIG_PARAMETERS) is kept.
+GIT_LOCATION = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_IMPLICIT_WORK_TREE',
+                'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
+                'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_COMMON_DIR',
+                'GIT_PREFIX', 'GIT_NAMESPACE', 'GIT_GRAFT_FILE',
+                'GIT_SHALLOW_FILE', 'GIT_NO_REPLACE_OBJECTS',
+                'GIT_REPLACE_REF_BASE')
+
+
+def git_env():
+    return {k: v for k, v in os.environ.items() if k not in GIT_LOCATION}
+
+
 def repo_files():
     out = subprocess.run(
         ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
-        cwd=ROOT, capture_output=True, check=True, timeout=GIT_LIMIT).stdout
+        cwd=ROOT, env=git_env(), capture_output=True, check=True,
+        timeout=GIT_LIMIT).stdout
     return sorted({f for f in out.decode('utf-8').split('\0')
                    if f and os.path.isfile(os.path.join(ROOT, f))})
 
 
 def tracked_files():
-    out = subprocess.run(['git', 'ls-files', '-z'], cwd=ROOT,
+    out = subprocess.run(['git', 'ls-files', '-z'], cwd=ROOT, env=git_env(),
                          capture_output=True, check=True,
                          timeout=GIT_LIMIT).stdout
     return {f for f in out.decode('utf-8').split('\0') if f}
@@ -782,25 +801,54 @@ def select(cases, names, shard):
     return selected
 
 
-def is_test_module(path):
-    '''Whether pytest collects the file as a test module, by setup.cfg's
-    python_files: *test*.py, but never conftest.py, which is a plugin every
-    test beside it loads.'''
+def test_patterns(read):
+    '''The file names pytest collects tests from: setup.cfg's python_files,
+    as `read` gives it, else pytest's own default.'''
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read_string((read('setup.cfg') or b'').decode('utf-8'))
+    except (configparser.Error, UnicodeDecodeError):
+        pass
+    return parser.get('tool:pytest', 'python_files',
+                      fallback='test_*.py *_test.py').split()
+
+
+def defines_a_test(source):
+    '''Whether a module defines a function or method pytest would run, one
+    named test*. One that does not parse is taken to.'''
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return True
+    return any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and node.name.startswith('test') for node in ast.walk(tree))
+
+
+def is_test_module(path, read, patterns):
+    '''Whether the file is a test module: named as pytest collects them,
+    never conftest.py, a plugin every test beside it loads, and defining a
+    test, or gone, when its entries name it. A helper named like a test,
+    tests/test_helpers.py say, defines none.'''
     name = os.path.basename(path)
-    return name != 'conftest.py' and fnmatch.fnmatch(name, '*test*.py')
+    if name == 'conftest.py' or not any(fnmatch.fnmatch(name, pattern)
+                                        for pattern in patterns):
+        return False
+    source = read(path)
+    return source is None or defines_a_test(source)
 
 
-def changed_set(cases, changed):
+def changed_set(cases, changed, read):
     '''The entries a change to `changed` (repository paths) can break, and
-    the shared helpers among those paths. An entry is chosen by its own test
+    the shared helpers among those paths, reading each file's content with
+    `read` (a path's bytes, or None). An entry is chosen by its own test
     files and the file it mutates, under tests/; a test module that imports
-    another is not followed. A helper, a Python file under tests/ that is
-    not a test module or anything under tests/testdata/, may be read by
-    every test, so a changed one chooses every entry.'''
+    another is not followed. A helper, any file under tests/ that is not a
+    test module (conftest.py, utils.py, a package's __init__.py, data), may
+    be read by every test, so a changed one chooses every entry.'''
     sentinels = {p for p in changed if p.startswith('tests/')}
+    patterns = test_patterns(read)
     helpers = sorted(p for p in sentinels
-                     if p.startswith('tests/testdata/')
-                     or p.endswith('.py') and not is_test_module(p))
+                     if not is_test_module(p, read, patterns))
     if helpers:
         return list(cases), helpers
     return [c for c in cases
@@ -810,20 +858,19 @@ def changed_set(cases, changed):
 
 def changed_since(base, cwd=ROOT):
     '''The paths the branch changes since it left `base`: committed or not,
-    tracked or new, and nothing `base` changed since. A rename is both of
-    its paths, so a moved test file is the one it was and the one it is.'''
-    # Nothing from a surrounding git process: GIT_INDEX_FILE and friends
-    # would point these at another index or repository.
-    env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
-
+    tracked or a new Python file, and nothing `base` changed since. A rename
+    is both of its paths, so a moved test file is the one it was and the one
+    it is. An untracked file that is not Python, a merge tool's .orig or an
+    editor's swap file, is no change: no committed test can read it.'''
     def git(*args):
-        return subprocess.run(['git', *args], cwd=cwd, env=env,
+        return subprocess.run(['git', *args], cwd=cwd, env=git_env(),
                               capture_output=True, check=True,
                               timeout=GIT_LIMIT).stdout.decode('utf-8')
     fork = git('merge-base', base, 'HEAD').strip()
     paths = git('diff', '--name-only', '--no-renames', '-z', fork, '--')
-    paths += git('ls-files', '-z', '--others', '--exclude-standard')
-    return {p for p in paths.split('\0') if p}
+    new = git('ls-files', '-z', '--others', '--exclude-standard')
+    return ({p for p in paths.split('\0') if p}
+            | {p for p in new.split('\0') if p.endswith('.py')})
 
 
 def touching_line(base, selected, helpers):
@@ -848,13 +895,15 @@ def judge_all(run, args, started):
                 args.touching, (getattr(e, 'stderr', None) or b'').decode(
                     'utf-8', 'replace').strip() or e))
             return 2
-        cases, helpers = changed_set(cases, changed)
+        cases, helpers = changed_set(cases, changed, snapshot.content.get)
         print(touching_line(args.touching, cases, helpers), flush=True)
         if not cases:
-            # Still the count a scheduler reads: nothing to run.
+            # Still the lines a scheduler reads: nothing to run.
             print('redproof: 0 selected, 0 removed, 0 to run%s' % (
                 ' (shard %d/%d)' % args.shard if args.shard else ''),
                 flush=True)
+            if args.shard:
+                print(shard_line(args.shard, 0, 0), flush=True)
             return 0
     selected = select(cases, args.name, args.shard)
     if selected is None:

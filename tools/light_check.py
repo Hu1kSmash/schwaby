@@ -186,7 +186,8 @@ def changed_entries():
         with open(os.path.join(tmp, redproof.CASES), 'wb') as f:
             f.write(entries)
         cases = redproof.load_cases(tmp)
-    selected, helpers = redproof.changed_set(cases, changed)
+    selected, helpers = redproof.changed_set(
+        cases, changed, lambda path: blob(':0:' + path))
     return [c.name for c in selected], helpers
 
 

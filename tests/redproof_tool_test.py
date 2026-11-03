@@ -1050,8 +1050,16 @@ class ChangedSetTest(unittest.TestCase):
                        'tests/e_test.py::T::test_e', 'e'),
         ]
 
-    def chosen(self, *changed):
-        selected, helpers = redproof.changed_set(self.entries(), set(changed))
+    # What a file holds, by path; any other is a test module defining one.
+    files = {'setup.cfg': b'[tool:pytest]\npython_files = *test*.py\n'}
+
+    def read(self, path):
+        return self.files.get(path, b'def test_x():\n    pass\n')
+
+    def chosen(self, *changed, files=None):
+        read = self.read if files is None else dict(self.files, **files).get
+        selected, helpers = redproof.changed_set(self.entries(), set(changed),
+                                                 read)
         return [c.name for c in selected], helpers
 
     def test_an_entry_is_chosen_by_its_test_file(self):
@@ -1072,13 +1080,35 @@ class ChangedSetTest(unittest.TestCase):
 
     def test_a_changed_helper_chooses_every_entry(self):
         for helper in ('tests/utils.py', 'tests/conftest.py',
-                       'tests/testdata/preferences.json'):
+                       'tests/orders/__init__.py',
+                       'tests/testdata/preferences.json',
+                       'tests/orders/data.json'):
             with self.subTest(helper=helper):
                 selected, helpers = self.chosen(helper, 'tests/a_test.py')
                 self.assertEqual(len(self.entries()), len(selected),
                                  'a changed helper did not choose every '
                                  'entry')
                 self.assertEqual([helper], helpers)
+
+    def test_a_helper_named_like_a_test_is_a_helper(self):
+        # pytest collects it, and finds nothing to run in it.
+        selected, helpers = self.chosen(
+            'tests/test_helpers.py',
+            files={'tests/test_helpers.py': b'def helper():\n    pass\n'})
+        self.assertEqual(['tests/test_helpers.py'], helpers,
+                         'a helper named like a test was taken for a test')
+
+    def test_a_test_module_is_what_setup_cfg_says(self):
+        cfg = {'setup.cfg': b'[tool:pytest]\npython_files = check_*.py\n'}
+        self.assertEqual((['a/by-its-test'], []), self.chosen(
+            'tests/a_test.py', files={}),
+            'a test module named as setup.cfg says was taken for a helper')
+        self.assertEqual(['tests/a_test.py'], self.chosen(
+            'tests/a_test.py', files=cfg)[1],
+            "setup.cfg's python_files was not read")
+        self.assertEqual((['a/by-its-test'], []), self.chosen(
+            'tests/a_test.py', files={'setup.cfg': None}),
+            "pytest's default was not taken without setup.cfg")
 
     def test_a_change_outside_tests_chooses_nothing(self):
         # What an entry mutates outside tests/ is code, not a check: a code
@@ -1087,12 +1117,12 @@ class ChangedSetTest(unittest.TestCase):
                          self.chosen('schwaby/x.py', 'tools/redproof.py'),
                          'a change outside tests/ chose an entry')
 
-    def test_a_file_under_tests_that_no_test_reads_chooses_nothing(self):
-        # A merge tool's leftover and a test module no entry names are not
-        # helpers: neither turns the set into every entry.
-        self.assertEqual(([], []),
-                         self.chosen('tests/a_test.py.orig', 'tests/test.py'),
-                         'a file no test reads was taken for a helper')
+    def test_a_test_module_no_entry_names_chooses_nothing(self):
+        # tests/test.py, a test module, and one that is gone.
+        self.assertEqual(([], []), self.chosen(
+            'tests/test.py', 'tests/gone_test.py',
+            files={'tests/gone_test.py': None}),
+            'a test module no entry names chose entries')
 
     def test_the_line_says_what_was_chosen(self):
         one = self.entries()[:1]
@@ -1135,9 +1165,15 @@ class ChangedSetTest(unittest.TestCase):
         git('switch', '-q', '-c', 'branch')
         git('mv', 'tests/b_test.py', 'tests/c_test.py')
         git('commit', '-q', '-m', 'moved')
-        # Changed and not committed; new and not tracked.
+        # Changed and not committed; new and not tracked; and what a merge
+        # tool and an editor leave, and one more that git's configuration,
+        # passed by environment, says to ignore.
         self.write(repo, 'tests/a_test.py', '# a, changed\n')
         self.write(repo, 'tests/new_test.py', '# new\n')
+        self.write(repo, 'tests/a_test.py.orig', '# a, before\n')
+        self.write(repo, 'tests/.a_test.py.swp', '')
+        self.write(repo, 'tests/ignored_test.py', '# ignored\n')
+        self.write(repo, 'ignore', 'tests/ignored_test.py\n')
         # And main moves on, in a file the branch never touched.
         git('stash', '-q', '-u')
         git('switch', '-q', 'main')
@@ -1147,13 +1183,39 @@ class ChangedSetTest(unittest.TestCase):
         git('stash', 'pop', '-q')
         # As if from inside a git process with an index of its own.
         with patch.dict(os.environ, dict(
-                env, GIT_INDEX_FILE=os.path.join(repo, 'no-such-index')),
+                env, GIT_INDEX_FILE=os.path.join(repo, 'no-such-index'),
+                GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='core.excludesFile',
+                GIT_CONFIG_VALUE_0=os.path.join(repo, 'ignore')),
                 clear=True):
             changed = redproof.changed_since('main', cwd=repo)
         self.assertEqual(
             {'tests/a_test.py', 'tests/b_test.py', 'tests/c_test.py',
              'tests/new_test.py'}, changed,
             'the branch\'s changes since it left main were misread')
+
+    def test_the_snapshot_reads_this_checkout_whatever_git_exports(self):
+        # Started inside a git process: its index and repository are not
+        # this checkout's.
+        repo, env, git = self.git_repo()
+        self.write(repo, 'tests/a_test.py', '# a\n')
+        git('add', '.')
+        git('commit', '-q', '-m', 'start')
+        with patch.object(redproof, 'ROOT', repo):
+            with patch.dict(os.environ, dict(
+                    env, GIT_INDEX_FILE=os.path.join(repo, 'no-such-index')),
+                    clear=True):
+                tracked = redproof.tracked_files()
+            with patch.dict(os.environ, dict(
+                    env, GIT_DIR=os.path.join(repo, 'no-such-repository')),
+                    clear=True):
+                try:
+                    files = redproof.repo_files()
+                except subprocess.CalledProcessError as e:
+                    files = e.stderr.decode('utf-8', 'replace')
+        self.assertEqual({'tests/a_test.py'}, tracked,
+                         'the snapshot read another index')
+        self.assertEqual(['tests/a_test.py'], files,
+                         'the snapshot read another repository')
 
     def test_the_tool_runs_only_the_changed_set(self):
         # As a script, from a checkout of its own: the selection reaches
@@ -1171,7 +1233,7 @@ class ChangedSetTest(unittest.TestCase):
                    '        self.removed = None\n'
                    'CASES = [Case("a/one", "tests/a_test.py::T::t"),\n'
                    '         Case("b/two", "tests/b_test.py::T::t")]\n')
-        self.write(repo, 'tests/a_test.py', '# a\n')
+        self.write(repo, 'tests/a_test.py', 'def test_a():\n    pass\n')
         git('add', '.')
         git('commit', '-q', '-m', 'start')
 
@@ -1193,9 +1255,14 @@ class ChangedSetTest(unittest.TestCase):
                       'an empty changed set printed no count to run')
         self.assertNotIn('baseline', out, 'a branch with no test change '
                          'ran entries')
+        code, out = run('--touching', 'main', '--shard', '1/3')
+        self.assertIn('redproof: 0 selected, 0 removed, 0 to run (shard '
+                      '1/3)\nredproof: shard 1/3: 0 of 0 entries\n', out,
+                      'an empty changed set printed no shard line')
 
         git('switch', '-q', '-c', 'branch')
-        self.write(repo, 'tests/a_test.py', '# a, changed\n')
+        self.write(repo, 'tests/a_test.py', 'def test_a():\n    pass\n\n'
+                   '# changed\n')
         # Past the selection to the first thing it can refuse without
         # running an entry.
         code, out = run('--touching', 'main', '--name', 'two')

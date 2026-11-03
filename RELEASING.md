@@ -48,10 +48,11 @@ module is not followed to it.
 `python -I -B tools/redproof.py --touching main` runs those, and the commit
 hook names them as each commit is made. A reworded assertion or a
 moved test breaks the entries that quote it, and nothing else would notice
-before the release. A change to a shared helper (a Python file under
-`tests/` that is not a test module, such as `conftest.py` or `utils.py`, or
-anything in `testdata/`) can reach every test, so its changed set is every
-entry; the pull request says so.
+before the release. A change to a shared helper, any file under `tests/`
+that is not a test module (one named as `setup.cfg`'s `python_files` says,
+other than `conftest.py`, that defines a test), such as `utils.py` or a
+data file, can reach every test, so its changed set is every entry; the pull
+request says so.
 
 **Check the mutation actually applied.** A `sed` expression spanning two lines
 matches nothing, and a restore within the same second reuses stale bytecode

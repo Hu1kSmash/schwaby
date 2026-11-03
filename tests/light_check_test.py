@@ -247,8 +247,8 @@ class LightCheckTest(unittest.TestCase):
         os.makedirs(os.path.join(self.repo, 'tools'))
         self.stage('tools/redproof_cases.py', self.entries('a/one', 'b/two'))
         os.makedirs(os.path.join(self.repo, 'tests'))
-        self.stage('tests/a_test.py', '# a\n')
-        self.stage('tests/b_test.py', '# b\n')
+        self.stage('tests/a_test.py', 'def test_a():\n    pass\n')
+        self.stage('tests/b_test.py', 'def test_b():\n    pass\n')
         self.git('commit', '-q', '-m', 'entries')
 
     @staticmethod
@@ -267,7 +267,7 @@ class LightCheckTest(unittest.TestCase):
         self.assertNotIn('red-proof', out, 'a commit with no test change '
                          'named entries')
 
-        self.stage('tests/a_test.py', '# a, changed\n')
+        self.stage('tests/a_test.py', 'def test_a():\n    return\n')
         code, out = self.check()
         self.assertEqual(0, code, 'naming the changed set failed the '
                          'commit: ' + out)
@@ -286,7 +286,7 @@ class LightCheckTest(unittest.TestCase):
 
     def test_the_entries_named_are_the_index_s(self):
         self.changed_set_checkout()
-        self.stage('tests/a_test.py', '# a, changed\n')
+        self.stage('tests/a_test.py', 'def test_a():\n    return\n')
         self.write('tools/redproof_cases.py',
                    self.entries('a/not-staged', 'b/two'))
         code, out = self.check()
@@ -297,7 +297,7 @@ class LightCheckTest(unittest.TestCase):
     def test_entries_that_cannot_be_read_do_not_refuse_the_commit(self):
         self.changed_set_checkout()
         self.stage('tools/redproof_cases.py', 'raise ValueError("bad")\n')
-        self.stage('tests/a_test.py', '# a, changed\n')
+        self.stage('tests/a_test.py', 'def test_a():\n    return\n')
         code, out = self.check()
         self.assertEqual(0, code, 'entries that could not be read refused '
                          'the commit: ' + out)
@@ -307,7 +307,7 @@ class LightCheckTest(unittest.TestCase):
     def test_entries_that_exit_do_not_decide_the_check(self):
         self.changed_set_checkout()
         self.stage('tools/redproof_cases.py', 'import sys\nsys.exit(0)\n')
-        self.stage('tests/a_test.py', '# a, changed\n')
+        self.stage('tests/a_test.py', 'def test_a():\n    return\n')
         self.stage('mod.py', 'import os\nimport sys\n\n\ndef f():\n'
                    '    return 1\n')
         code, out = self.check()
@@ -320,7 +320,7 @@ class LightCheckTest(unittest.TestCase):
         # A checkout with the tool but no entries in its index: nothing to
         # name, and nothing to say about it.
         os.makedirs(os.path.join(self.repo, 'tests'))
-        self.stage('tests/a_test.py', '# a\n')
+        self.stage('tests/a_test.py', 'def test_a():\n    pass\n')
         code, out = self.check()
         self.assertEqual(0, code, out)
         self.assertNotIn('red-proof', out, 'a checkout with no entries said '
@@ -330,6 +330,16 @@ class LightCheckTest(unittest.TestCase):
         self.stage('tools/redproof_cases.py', self.entries('a/one', 'b/two'))
         code, out = self.check()
         self.assertIn('light check:   a/one\n', out)
+
+    def test_a_staged_helper_named_like_a_test_is_a_helper(self):
+        # Judged by what the index holds: it defines no test.
+        self.changed_set_checkout()
+        self.stage('tests/test_helpers.py', 'def helper():\n    pass\n')
+        code, out = self.check()
+        self.assertIn('this commit changes a shared test helper '
+                      '(tests/test_helpers.py)', out,
+                      'a staged helper named like a test was taken for a '
+                      'test: ' + out)
 
     def test_a_changed_test_helper_says_the_set_is_release_sized(self):
         self.changed_set_checkout()
