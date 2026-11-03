@@ -8572,10 +8572,20 @@ CASES.extend([
     Case('changed-set/light-check-judges-the-index-not-the-tree',
          'tools/light_check.py',
          "        cases, changed, lambda path: blob(':0:' + path))",
-         "        cases, changed, lambda path: open(path, 'rb').read())",
+         "        cases, changed, lambda path: open(path, 'rb').read()\n"
+         "        if os.path.isfile(path) else None)",
          'tests/light_check_test.py::LightCheckTest'
          '::test_a_staged_helper_named_like_a_test_is_a_helper',
          'a staged helper named like a test was taken for a test'),
+
+    Case('changed-set/a-bare-base-name-is-read',
+         'tools/redproof.py',
+         "    bases = [b.attr if isinstance(b, ast.Attribute) else getattr(b, 'id', '')",
+         "    bases = [b.attr if isinstance(b, ast.Attribute) else ''",
+         'tests/redproof_tool_test.py::ChangedSetTest'
+         '::test_a_test_is_one_pytest_would_run',
+         'a test pytest would run was taken for a helper',
+         subtest="shape='a bare TestCase base'"),
 
     # A mutant that does not parse fails every test importing it, on whatever
     # the import says, so it is refused.

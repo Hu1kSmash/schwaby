@@ -1105,6 +1105,10 @@ class ChangedSetTest(unittest.TestCase):
         tests = {
             'a function': b'def test_x():\n    pass\n',
             'a TestCase method': self.TEST_MODULE,
+            'a bare TestCase base': (b'from unittest import TestCase\n\n\n'
+                                     b'class T(TestCase):\n\n'
+                                     b'    def test_x(self):\n'
+                                     b'        pass\n'),
             'a method of a Test class': (b'class TestX:\n\n'
                                          b'    def test_x(self):\n'
                                          b'        pass\n'),
@@ -1239,6 +1243,8 @@ class ChangedSetTest(unittest.TestCase):
         out = subprocess.run(['git', 'rev-parse', '--local-env-vars'],
                              capture_output=True, text=True, check=True)
         config = {'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT'}
+        self.assertIn('GIT_DIR', out.stdout.split(),
+                      'git listed none of the variables it reads')
         missing = set(out.stdout.split()) - config - set(redproof.GIT_LOCATION)
         self.assertEqual(set(), missing,
                          'git points itself elsewhere by a variable a run '

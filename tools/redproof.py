@@ -821,7 +821,8 @@ def _is_test(node):
 
 
 def _is_test_class(node):
-    # Named Test*, or a unittest TestCase: the classes pytest collects from.
+    # Named Test*, or with a base named *TestCase, as unittest's are: the
+    # classes pytest collects from, by name.
     bases = [b.attr if isinstance(b, ast.Attribute) else getattr(b, 'id', '')
              for b in node.bases]
     return node.name.startswith('Test') or any(
@@ -831,9 +832,10 @@ def _is_test_class(node):
 def defines_a_test(source):
     '''Whether a module defines a test pytest would run: a test* function
     at its top level, or a test* method of a class pytest collects (named
-    Test*, or a TestCase). A test* function nested in another, or a method
-    of any other class, is a helper's. A class whose tests are all
-    inherited defines none. One that does not parse is taken to.'''
+    Test*, or with a base named *TestCase). A test* function nested in
+    another, or a method of any other class, is a helper's. A class whose
+    tests are all inherited defines none. One that does not parse is taken
+    to.'''
     try:
         tree = ast.parse(source)
     except (SyntaxError, ValueError):

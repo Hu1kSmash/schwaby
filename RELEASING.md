@@ -51,8 +51,8 @@ moved test breaks the entries that quote it, and nothing else would notice
 before the release. A change to a shared helper, any file under `tests/`
 that is not a test module (one named as `setup.cfg`'s `python_files` says,
 other than `conftest.py`, that is gone or defines a test pytest would run),
-such as `utils.py` or a data file, can reach every test, so its changed set is every entry; the pull
-request says so.
+such as `utils.py` or a data file, can reach every test, so its changed set
+is every entry; the pull request says so.
 
 **Check the mutation actually applied.** A `sed` expression spanning two lines
 matches nothing, and a restore within the same second reuses stale bytecode
