@@ -213,9 +213,10 @@ def main():
         failed = True
     try:
         names, helpers = changed_entries()
-    except Exception as e:
+    except (Exception, SystemExit) as e:
         # Executing the entries can fail on what the commit stages; that is
-        # the red-proof's to report, not a reason to refuse the commit.
+        # the red-proof's to report, not a reason to refuse the commit, and
+        # an exit there must not decide the check's answer either way.
         print('light check: could not name the red-proof entries this '
               "commit's test changes reach (%s: %s); `tools/redproof.py "
               "--touching main` will say" % (type(e).__name__, e))

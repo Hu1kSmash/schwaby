@@ -304,6 +304,18 @@ class LightCheckTest(unittest.TestCase):
         self.assertIn('could not name the red-proof entries', out, out)
         self.assertIn('ValueError: bad', out)
 
+    def test_entries_that_exit_do_not_decide_the_check(self):
+        self.changed_set_checkout()
+        self.stage('tools/redproof_cases.py', 'import sys\nsys.exit(0)\n')
+        self.stage('tests/a_test.py', '# a, changed\n')
+        self.stage('mod.py', 'import os\nimport sys\n\n\ndef f():\n'
+                   '    return 1\n')
+        code, out = self.check()
+        self.assertEqual(1, code, 'entries that exited let a new warning '
+                         'through: ' + out)
+        self.assertIn("mod.py: 'sys' imported but unused", out)
+        self.assertIn('could not name the red-proof entries', out, out)
+
     def test_a_checkout_without_entries_names_none(self):
         # A checkout with the tool but no entries in its index: nothing to
         # name, and nothing to say about it.

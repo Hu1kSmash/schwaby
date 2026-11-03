@@ -8358,8 +8358,8 @@ CASES.extend([
          'the refusal did not say where it looked'),
     Case('changed-set/light-check-a-failure-to-name-is-a-note',
          'tools/light_check.py',
-         '    except Exception as e:\n        # Executing the entries',
-         '    except ImportError as e:\n        # Executing the entries',
+         '    except (Exception, SystemExit) as e:\n',
+         '    except (ImportError, SystemExit) as e:\n',
          'tests/light_check_test.py::LightCheckTest'
          '::test_entries_that_cannot_be_read_do_not_refuse_the_commit',
          'entries that could not be read refused the commit'),
@@ -8370,6 +8370,14 @@ CASES.extend([
          'tests/light_check_test.py::LightCheckTest'
          '::test_a_checkout_without_entries_names_none',
          'a checkout with no entries said something about them'),
+
+    Case('changed-set/light-check-an-exit-in-the-entries-decides-nothing',
+         'tools/light_check.py',
+         '    except (Exception, SystemExit) as e:\n',
+         '    except Exception as e:\n',
+         'tests/light_check_test.py::LightCheckTest'
+         '::test_entries_that_exit_do_not_decide_the_check',
+         'entries that exited let a new warning through'),
 
     # A mutant that does not parse fails every test importing it, on whatever
     # the import says, so it is refused.
