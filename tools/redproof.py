@@ -896,7 +896,7 @@ def changed_since(base, cwd=ROOT):
 
 
 def touching_line(base, selected, helpers):
-    '''What --touching chose, for the session to put in the PR.'''
+    '''What --touching chose.'''
     if helpers:
         return ('redproof: touching %s: a shared test helper changed (%s), '
                 'so the changed set is every entry, a release-sized run'

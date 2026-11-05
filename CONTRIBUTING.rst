@@ -62,8 +62,8 @@ must parse and gain no pyflakes warning it did not already have, the diff
 must have no whitespace errors, and no staged file may carry, in its name or
 its content, a word on the check's ``FORBIDDEN`` list: names of private
 infrastructure this repository never carries. A commit that changes a file
-under ``tests/`` is also told which red-proof entries test or mutate it, to run
-before the branch merges (``RELEASING.md`` says how).
+under ``tests/`` is also told which red-proof entries test or mutate it; the
+release red-proof runs them (``RELEASING.md`` says more).
 The full suite is not part of it; that runs below, and on every pull request.
 
 Then check the environment before you change anything, so a later failure is

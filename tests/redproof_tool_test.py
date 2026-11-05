@@ -1034,8 +1034,8 @@ class ShardTest(unittest.TestCase):
 
 
 class ChangedSetTest(unittest.TestCase):
-    '''--touching: the entries whose run reads a test file the branch
-    changes, before it merges.'''
+    '''--touching: the entries a branch's test changes reach, test file or
+    file mutated.'''
 
     def entries(self):
         return [

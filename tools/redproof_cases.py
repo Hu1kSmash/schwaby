@@ -8209,9 +8209,9 @@ CASES.extend([
          'pre-merge-commit ran another interpreter',
          subtest="interpreter='active'"),
 
-    # The changed set (--touching): the entries whose run reads a test file
-    # the branch changes, which run before it merges; and the light check's
-    # naming of them for each commit.
+    # The changed set (--touching): the entries a branch's test changes
+    # reach, test file or file mutated; and the light check's naming of them
+    # for each commit.
     Case('changed-set/an-entry-is-chosen-by-what-it-mutates',
          'tools/redproof.py',
          '            if c.path in sentinels\n            or any(',

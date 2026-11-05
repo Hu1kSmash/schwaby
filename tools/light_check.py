@@ -23,9 +23,9 @@ commit will contain:
 
 When the commit changes a file under tests/, it names the red-proof entries
 whose test file, or the file they mutate, is one of them, by
-tools/redproof.py's own rule: before the branch merges, its changed set runs
-as one red-proof (`tools/redproof.py --touching main`). That is a note, not
-a failure, and so is not being able to work it out.
+tools/redproof.py's own rule: the release red-proof runs them, and
+`tools/redproof.py --touching main` runs just those, to see early. That is a
+note, not a failure, and so is not being able to work it out.
 
 A warning is compared by its text without its line number, as a count per
 file, so moving code does not read as adding a warning, and a renamed file is
@@ -223,13 +223,14 @@ def main():
               "--touching main` will say" % (type(e).__name__, e))
         names, helpers = [], []
     if helpers:
-        print('light check: this commit changes a shared test helper (%s), so '
-              "the branch's changed set is every red-proof entry: a "
-              'release-sized run, which the PR says' % ', '.join(helpers))
+        print('light check: this commit changes a shared test helper (%s), '
+              'which every red-proof entry may read: the release red-proof '
+              'runs them, and --touching would be a release-sized run'
+              % ', '.join(helpers))
     elif names:
         print('light check: %d red-proof entr%s test or mutate a test file '
-              'this commit changes; before the branch merges, red-proof its '
-              'changed set as one job (tools/redproof.py --touching main):' % (
+              'this commit changes; the release red-proof runs them, and '
+              '`tools/redproof.py --touching main` runs just those:' % (
                   len(names), 'y' if len(names) == 1 else 'ies'))
         for name in names:
             print('light check:   ' + name)
