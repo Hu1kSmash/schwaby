@@ -26,6 +26,51 @@ was measured, and every number, is unchanged.
 
 ---
 
+## 5.3.0
+
+*2026-11-05*
+
+One change to what a token refresh or a login's code exchange keeps, and
+changes to how this project's own tests and releases run. Nothing public is
+added, removed or renamed. Code written for 5.2.0 runs unchanged unless it
+relied on a token being stored from a response that was not a success.
+
+### A token is kept only from a success
+
+When the token endpoint answers a refresh, or a login's code exchange, with
+a usable token at a status outside 200 to 299, such as a redirect, a 401 or
+a 429, the token is no longer stored. 5.2.0 stored it, as authlib does. Now
+the refresh raises `TokenRefreshError` and the exchange raises
+`LoginExchangeError`, with the code `http_<status>`. `status_code`,
+`rate_limited` and `endpoint_answered` are set as for any other refusal.
+This holds for the synchronous and the asynchronous client alike. A response with a 5xx status is still handed to
+authlib unchanged, as before.
+
+Nothing has been seen sending a token at such a status. This closes the
+case rather than answering a report of one.
+
+### For contributors
+
+- The publish workflow publishes only a published release's tag, and
+  refuses a release commit that `main` does not hold. A failed publish is
+  retried on the tag itself, with `gh workflow run publish --ref vX.Y.Z`.
+  Before creating the release, `RELEASING.md` checks the tag as GitHub holds
+  it.
+- `tools/redproof.py` refuses an entry whose mutant does not parse where its
+  original does: a Python file by compiling it, an sh or bash script by its
+  shell's `-n`. Its pool, and the suite's `-n auto` workers, are bounded by
+  `SUITE_CORES`, and its pool by `SUITE_MEMORY_GB`, when whatever runs the
+  job sets them. `--touching BASE` runs only the entries a branch's test
+  changes reach.
+- The commit check refuses a staged file that carries a word on its
+  `FORBIDDEN` list, and names the red-proof entries a commit's test changes
+  reach.
+- Each tool with a main, and both commit hooks, are tested as they are run:
+  under `python -I`, from outside the checkout. The hooks are tested on
+  Windows too.
+
+---
+
 ## 5.2.0
 
 *2026-10-24*
