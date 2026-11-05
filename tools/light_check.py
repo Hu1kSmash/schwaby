@@ -5,7 +5,7 @@ is about to be committed.
 
 Run by tools/hooks/pre-commit and tools/hooks/pre-merge-commit; `git config
 core.hooksPath tools/hooks` turns them on in a clone. The full suite and the
-red-proof are the heavy checks, run before a merge rather than on every
+red-proof are the heavy checks, run at a release rather than on every
 commit.
 
 It checks the index, not the working tree, because the index is what the
@@ -24,8 +24,9 @@ commit will contain:
 When the commit changes a file under tests/, it names the red-proof entries
 whose test file, or the file they mutate, is one of them, by
 tools/redproof.py's own rule: the release red-proof runs them, and
-`tools/redproof.py --touching main` runs just those, to see early. That is a
-note, not a failure, and so is not being able to work it out.
+`tools/redproof.py --touching main` runs the whole branch's set, these among
+them, to see early. That is a note, not a failure, and so is not being able
+to work it out.
 
 A warning is compared by its text without its line number, as a count per
 file, so moving code does not read as adding a warning, and a renamed file is
@@ -230,7 +231,7 @@ def main():
     elif names:
         print('light check: %d red-proof entr%s test or mutate a test file '
               'this commit changes; the release red-proof runs them, and '
-              '`tools/redproof.py --touching main` runs just those:' % (
+              "`tools/redproof.py --touching main` runs the branch's set:" % (
                   len(names), 'y' if len(names) == 1 else 'ies'))
         for name in names:
             print('light check:   ' + name)

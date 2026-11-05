@@ -1156,7 +1156,7 @@ class ChangedSetTest(unittest.TestCase):
 
     def test_a_change_outside_tests_chooses_nothing(self):
         # What an entry mutates outside tests/ is code, not a check: a code
-        # change alone needs no red-proof before merge.
+        # change alone puts no entry in the changed set.
         self.assertEqual(([], []),
                          self.chosen('schwaby/x.py', 'tools/redproof.py'),
                          'a change outside tests/ chose an entry')

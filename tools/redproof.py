@@ -883,7 +883,8 @@ def changed_since(base, cwd=ROOT):
     is both of its paths, so a moved test file is the one it was and the one
     it is. An untracked file that is not Python, a merge tool's .orig or an
     editor's swap file, is no change until it is staged or committed: a new
-    data file counts once it is, which is the tree a merge is proven on.'''
+    data file counts once it is, as the committed tree is what a release
+    proves.'''
     def git(*args):
         return subprocess.run(['git', *args], cwd=cwd, env=git_env(),
                               capture_output=True, check=True,
